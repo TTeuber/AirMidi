@@ -52,23 +52,31 @@ module -> slide switch -> TPS63020 buck-boost -> XIAO 3V3. TRS Type A MIDI out (
 ### Test rig
 
 ```
-                 USB (flash, console, power)
-   Mac  ─────────────────────────────────────── receiver (C6)
-    │  BLE MIDI / Wi-Fi                         J2 OUT ──TRS──▶ Pod MIDI IN  (stock, H11L1, D14)
-    │                                           J3 IN  ◀──TRS── Pod MIDI OUT (added, D29)
-    └── J-Link clone ── SWD ── Daisy Pod (Seed with JTAG header) ── headphones (user listens)
+            USB (flash, console, power)                          USB (class-compliant MIDI)
+   Mac ─────────────────────────────── receiver (C6)        ┌──────────────────────── Arturia AudioFuse Studio
+    │                                  J2 OUT ──TRS A↔B──▶ MIDI IN  ┘
+    │  BLE MIDI / Wi-Fi                J3 IN  ◀──TRS A↔B── MIDI OUT
+    └─ (the same Mac sees the receiver over the air and the AudioFuse over USB)
 ```
 
-- **Daisy Pod MIDI out (user adds):** USART1 TX on **D29 = PB14 (AF4)**, because the usual TX pin D13 (PB6) is the
-  Pod's encoder click. USART1 keeps RX on D14, so one libDaisy `MidiUartHandler` does both directions. 3.3 V MIDI out
-  per CA-033: TRS ring (pin 4) -> 33R -> 3V3, TRS tip (pin 5) -> 10R -> TX, sleeve to GND. Check D29's Seed pin
-  number against the pinout before soldering.
-- Flashing the Pod: `openocd -f interface/jlink.cfg -c "transport select swd" -f target/stm32h7x.cfg -c "program
-  build/pod_synth.elf verify reset exit"` (OpenOCD 0.12 from Homebrew). The same connection reads variables for
-  the automated tests (message counters, last message, CI state), as `peek.sh` did on the H7S7.
-- Toolchains: ESP-IDF v5.5.x at `~/Developer/esp-idf`, libDaisy at `$LIBDAISY_PATH` (`~/Developer/libDaisy`),
-  arm-none-eabi-gcc 14.3. Mac: macOS 26.5.2.
-- Without the Pod, the receiver still tests itself with a TRS cable from J2 to J3 (loopback).
+- **Both ends on one clock.** The Mac sends over BLE/Wi-Fi and receives the same message back through the AudioFuse's
+  USB MIDI port (and the other way round), so latency and jitter are measured one way, with one clock, by a script.
+  No round trip to halve, no second board to debug.
+- **TRS type mismatch:** the AudioFuse Studio's MIDI jacks are **TRS Type B**, the receiver is **Type A** (tip and ring
+  swapped). Two A↔B crossover cables or adapters are needed (or the AudioFuse's included B->DIN adapters + Type A->DIN
+  adapters + DIN cables). Plugged straight together nothing is damaged (the reverse diode at each opto clamps), but no
+  data gets through.
+- **Jacks on the receiver** (front wall, facing it, switch on the right): the right-hand jack, nearer the switch, is
+  **J3 MIDI IN**; the one nearer the middle is **J2 MIDI OUT**.
+- **MIDI-CI device stand-in:** the AudioFuse does not implement MIDI-CI, so a Mac program on the AudioFuse ports plays
+  the device: it links the same `midici_responder` C library the devices will use, compiled for macOS, and answers
+  Discovery and Property Exchange with a demo `ChCtrlList`. Sound checks: a soft synth on the Mac listening to the
+  AudioFuse MIDI in (the user listens).
+- Without the AudioFuse, the receiver still tests itself with a TRS cable from J2 to J3 (loopback).
+- Toolchains: ESP-IDF v5.5.x at `~/Developer/esp-idf`, Python (bleak, python-rtmidi) for the test scripts. Mac:
+  macOS 26.5.2.
+- The Daisy Pod (libDaisy at `$LIBDAISY_PATH`, J-Link clone + OpenOCD) stays an option for a hardware demo device
+  in phase 5; it has MIDI in only and would need a MIDI out added on D29 (PB14, USART1 TX; D13 is its encoder click).
 
 ## Features
 
@@ -104,11 +112,11 @@ BLE MIDI 2.0 is still an unpublished draft: BLE stays MIDI 1.0 until it is final
 - **Hand-written profiles:** for devices without MIDI-CI (almost every synth on the market), a JSON profile in the
   same `ChCtrlList` format can be uploaded from the web UI. The control page does not care where the JSON came from.
 - **`midici_responder`**: a small portable C library for the device side (Discovery reply, PE capabilities,
-  `ResourceList`/`DeviceInfo`/`ChCtrlList` gets, `ChCtrlList` driven from a static table). The Pod demo synth uses
-  it first, then the user's own devices.
+  `ResourceList`/`DeviceInfo`/`ChCtrlList` gets, `ChCtrlList` driven from a static table). The Mac device stand-in
+  uses it first, then the user's own devices.
 - Specs (downloaded to `modeling/reference/`, not redistributable, referenced by number): M2-100 overview, M2-101
-  MIDI-CI 1.2.1, M2-102 Profiles, M2-103 Property Exchange common rules, M2-104 UMP + MIDI 2.0 protocol 1.1.2.
-  Still to get: M2-117 PE Controller Resources, M2-124 Network MIDI 2.0 (UDP).
+  MIDI-CI 1.2.1, M2-102 Profiles, M2-103 Property Exchange common rules, M2-104 UMP + MIDI 2.0 protocol 1.1.2,
+  M2-117 PE Controller Resources 1.0.1, M2-124 Network MIDI 2.0 (UDP) 1.0.1.
 
 ### Routing and merge
 
@@ -216,8 +224,9 @@ airmidi/
                              espnow_midi, usb_midi, power, config, ota, webui, led_button), partitions.csv,
                              sdkconfig.defaults.esp32c6 / .esp32s3
   web/                       web UI source, built into firmware/components/webui
-  devices/pod_synth/         Daisy Pod demo synth (libDaisy, midici_responder), Makefile, flash.sh (OpenOCD J-Link)
-  tools/                     hil/ (Python: bleak, rtmidi, serial, OpenOCD reads), sign/, release helpers
+  devices/mac_standin/       MIDI-CI device stand-in for the Mac (midici_responder on CoreMIDI), test-only
+  devices/pod_synth/         optional hardware demo device (libDaisy, midici_responder)
+  tools/                     hil/ (Python: bleak, python-rtmidi, serial), sign/, release helpers
   hardware/                  exported from the modeling workspace: schematic PDF, KiCad project + bundled libs,
                              Gerbers, BOM, STEP/STL, renders (do not edit here)
   .github/workflows/         build C6 + S3 (espressif/idf image), host tests, format/lint, release on tag
@@ -235,50 +244,55 @@ it uses bundled, so it opens on another machine.
   splitting), MIDI-CI message build/parse and PE chunking, responder answers.
 - **On-target tests:** ESP-IDF unity test app for the drivers (UART loopback with J2 -> J3, NVS, partition/OTA state).
 - **Hardware-in-the-loop** (`tools/hil/`, run from the Mac with both boards attached):
-  - BLE note in -> TRS out -> Pod counters over SWD: every message arrives, in order.
-  - Pod knob CC -> receiver TRS in -> BLE out to the Mac.
-  - Round-trip latency and jitter per transport (Mac -> receiver -> Pod -> receiver -> Mac, halved), with Wi-Fi off
-    and on, reported in `docs/measurements.md`.
-  - MIDI-CI: discovery + `ChCtrlList` from the Pod shows up in the web UI's JSON endpoint.
+  - Mac -> BLE/Wi-Fi -> receiver -> TRS -> AudioFuse -> USB -> Mac: every message arrives, in order, unchanged
+    (notes, CCs, clock, long SysEx, bursts).
+  - Mac -> AudioFuse -> TRS -> receiver -> BLE/Wi-Fi -> Mac: the same the other way.
+  - One-way latency and jitter per transport and direction, timed on the Mac's clock, with Wi-Fi off and on,
+    reported in `docs/measurements.md`.
+  - Merge: both directions busy at once; the TRS out stays well-formed.
+  - MIDI-CI: the Mac device stand-in on the AudioFuse ports answers Discovery + PE, and its `ChCtrlList` shows up in
+    the web UI's JSON endpoint.
   - OTA: upload, self-test, mark valid; and a deliberately broken image rolls back.
-- **The user's ears:** the Pod's synth on headphones for the sound checks.
+- **The user's ears:** a soft synth on the Mac fed by the AudioFuse MIDI in, for the sound checks.
 
 ## Order of work
 
 ### Spikes first (throwaway code in `spikes/`, deleted or folded in later; results go into the decision log)
 
-- **S0 rig:** Pod MIDI out soldered; OpenOCD + J-Link flashes the Pod; a minimal Pod program plays notes from TRS
-  in and echoes them to TRS out; SWD reads of its counters work.
+- **S0 rig:** A↔B crossover cables in place; a minimal receiver program echoes TRS in to TRS out; a Mac script
+  sends through the AudioFuse out and reads it back on the AudioFuse in (message count, order, timing).
 - **S1 Network MIDI on the Mac:** does macOS 26.5 find a Network MIDI 2.0 endpoint the ESP32 advertises (Audio MIDI
   Setup, a CoreMIDI client)? CoreMIDI has no public Network MIDI 2.0 API, only `MIDINetworkSession` (RTP-MIDI). If
   it does not: RTP-MIDI first, Network MIDI 2.0 later for Windows and future macOS.
 - **S2 radio sharing on the C6:** BLE MIDI latency/jitter with Wi-Fi off, Wi-Fi connected but idle, and Wi-Fi busy.
   Decides how Network mode treats BLE.
-- **S3 MIDI-CI over TRS:** receiver sends Discovery + one PE get; the Pod answers from a hard-coded reply. Also: does
-  macOS `MIDICIDeviceManager` see the Pod through the receiver's BLE MIDI?
+- **S3 MIDI-CI over TRS:** receiver sends Discovery + one PE get; a Mac script on the AudioFuse ports answers from a
+  hard-coded reply. Also: does macOS `MIDICIDeviceManager` discover a CI device through the receiver's BLE MIDI?
 
 ### Phases (each ends working, tested and committed)
 
 1. **Foundation:** repo skeleton, CI (build both boards, host tests, format check), board layer, `lib/` UMP +
    MIDI 1.0 parser/encoder + translation with tests, logging, version string, NVS config.
 2. **Bridge:** TRS in/out, BLE MIDI peripheral, router + merge, LED + button + modes (Play only), battery gauge +
-   low-battery shutdown, light sleep; HIL test with the Pod; power and latency measured.
+   low-battery shutdown, light sleep; HIL test through the AudioFuse; power and latency measured.
 3. **Wi-Fi + OTA:** Setup AP + station join, mDNS, web UI shell (status, config, update), partition table, signed OTA
    with rollback and self-test, GitHub Release builds.
 4. **Network MIDI:** Network MIDI 2.0 or RTP-MIDI per S1 (the other one later), UMP endpoint + function blocks,
    WebSocket control surface (generic page).
 5. **MIDI-CI:** initiator over TRS, PE gets, profile cache, pass-through, hand-written profile upload, generated
-   control page; `midici_responder` library and the Pod demo synth using it. Demo video: the web page discovers the
-   Pod, draws its controls, a fader moves the filter.
+   control page; `midici_responder` library and the Mac device stand-in using it. Demo video: the web page discovers
+   the device, draws its controls, a fader moves the synth's filter.
 6. **Extras, in any order:** USB MIDI on the S3, ESP-NOW cable between two boxes, BLE central, the second network
    transport, OTA over BLE.
 
-### Pod demo synth
+### Demo device (optional, phase 5)
 
-One voice (saw/square oscillator, low-pass filter with resonance, ADSR), about six CC parameters (cutoff, resonance,
+The Mac stand-in proves MIDI-CI works; a real box is the better demo. Candidate: the Daisy Pod with a MIDI out added
+(D29), running one voice (saw/square oscillator, low-pass filter with resonance, ADSR), about six CC parameters (cutoff, resonance,
 attack, decay, release, waveform) described in its `ChCtrlList`. The Pod's knobs control cutoff and resonance and also
 send their CCs out of the new MIDI out; the encoder picks the waveform; the LEDs show MIDI in and CI activity.
-Oscillator and filter from DaisySP (to install next to libDaisy) or written by hand, whichever is smaller.
+Oscillator and filter from DaisySP (to install next to libDaisy) or written by hand, whichever is smaller. Later the
+user's own devices (sd_synth) take this role.
 
 ## Open questions
 
@@ -287,7 +301,7 @@ Oscillator and filter from DaisySP (to install next to libDaisy) or written by h
 - Network MIDI 2.0 vs RTP-MIDI first: spike S1.
 - BLE + Wi-Fi together on the C6: spike S2.
 - USB MIDI 2.0 class support in TinyUSB on the S3: check before phase 6.
-- Get the M2-117 (PE Controller Resources) and M2-124 (Network MIDI 2.0) specs from midi.org.
+- A↔B crossover cables or adapters for the AudioFuse (Type B): what does the user have?
 - GitHub: repo created under the user's account when they say so; nothing is pushed until then.
 
 ## Decision log
@@ -303,4 +317,5 @@ Oscillator and filter from DaisySP (to install next to libDaisy) or written by h
 | 2026-10-06 | MIDI-CI over TRS for device discovery and control layouts, with hand-written profiles as fallback | works at 31250 baud; almost no commercial gear implements Property Exchange yet |
 | 2026-10-06 | C11 for firmware and libs | closest to embedded job listings; ports to Daisy/STM32 |
 | 2026-10-06 | Daisy Pod as the device under test, MIDI out added on D29 (PB14) | the Pod has MIDI in only; D13 is its encoder click |
+| 2026-10-07 | AudioFuse Studio replaces the Pod as the test rig; Pod only as an optional demo device | both ends on the Mac's clock, true one-way latency, no second firmware to debug; needs A↔B cables (AudioFuse is Type B) |
 | 2026-10-06 | Spikes S0-S3 before phase 1 | test what is uncertain before building on it |
