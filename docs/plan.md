@@ -318,4 +318,5 @@ user's own devices (sd_synth) take this role.
 | 2026-10-06 | C11 for firmware and libs | closest to embedded job listings; ports to Daisy/STM32 |
 | 2026-10-06 | Daisy Pod as the device under test, MIDI out added on D29 (PB14) | the Pod has MIDI in only; D13 is its encoder click |
 | 2026-10-07 | AudioFuse Studio replaces the Pod as the test rig; Pod only as an optional demo device | both ends on the Mac's clock, true one-way latency, no second firmware to debug; needs A↔B cables (AudioFuse is Type B) |
+| 2026-10-07 | S0 passed: both TRS directions through the crossovers, every message back unchanged (notes, CCs on 16 channels, clock, 253-byte SysEx, 300-note burst) | round trip Mac -> AudioFuse -> receiver echo -> AudioFuse -> Mac: 3.0 ms median for 3-byte messages (1.9 ms of it is wire time at 31250 baud), 1.6 ms for clock; lesson: `uart_read_bytes()` waits for its full length, so read 1 byte then what is buffered |
 | 2026-10-06 | Spikes S0-S3 before phase 1 | test what is uncertain before building on it |
