@@ -20,7 +20,7 @@ target_include_directories(unity PUBLIC unity)
 target_compile_options(unity PRIVATE -Wno-pedantic)
 
 enable_testing()
-foreach(name ump midi1_in midi1_out translate settings)
+foreach(name ump midi1_in midi1_out translate settings blemidi router merge ui)
     add_executable(test_${name} test_${name}.c)
     target_link_libraries(test_${name} airmidi_core unity)
     add_test(NAME ${name} COMMAND test_${name})

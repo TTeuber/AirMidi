@@ -6,5 +6,9 @@ add_library(airmidi_core STATIC
     src/midi1_out.c
     src/translate.c
     src/settings.c
+    src/blemidi.c
+    src/router.c
+    src/merge.c
+    src/ui.c
 )
 target_include_directories(airmidi_core PUBLIC include)
