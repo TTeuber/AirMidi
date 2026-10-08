@@ -1,0 +1,19 @@
+menu "airmidi board"
+
+    choice AIRMIDI_BOARD
+        prompt "Board"
+        default AIRMIDI_BOARD_XIAO_C6 if IDF_TARGET_ESP32C6
+        default AIRMIDI_BOARD_XIAO_S3 if IDF_TARGET_ESP32S3
+        help
+            The receiver PCB (rev A) with the XIAO module it carries. Selects the pin table and the board init.
+
+        config AIRMIDI_BOARD_XIAO_C6
+            bool "receiver rev A + XIAO ESP32-C6"
+            depends on IDF_TARGET_ESP32C6
+
+        config AIRMIDI_BOARD_XIAO_S3
+            bool "receiver rev A + XIAO ESP32-S3"
+            depends on IDF_TARGET_ESP32S3
+    endchoice
+
+endmenu

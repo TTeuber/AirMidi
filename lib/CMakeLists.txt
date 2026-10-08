@@ -5,5 +5,6 @@ add_library(airmidi_core STATIC
     src/midi1_in.c
     src/midi1_out.c
     src/translate.c
+    src/settings.c
 )
 target_include_directories(airmidi_core PUBLIC include)

@@ -1,0 +1,8 @@
+# Common to both boards. Per-target files (sdkconfig.defaults.esp32c6 / .esp32s3) are applied on top by ESP-IDF.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# The console goes to the USB port on both boards: UART0's pins are the MIDI port (D6/D7).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_FREERTOS_HZ=1000
