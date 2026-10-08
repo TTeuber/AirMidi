@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>airmidi</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="band">
+  <span id="name" class="label">airmidi</span>
+  <nav id="tabs">
+    <a data-page="status" class="label">status</a>
+    <a data-page="settings" class="label">settings</a>
+    <a data-page="wifi" class="label">wifi</a>
+    <a data-page="update" class="label">update</a>
+  </nav>
+  <span id="activity" class="dot"></span>
+</header>
+
+<main>
+  <section id="status" class="page">
+    <div id="meters" class="hero"></div>
+    <div class="row">
+      <div id="t-batt" class="tile" data-hue="fir"></div>
+      <div id="t-signal" class="tile" data-hue="slate"></div>
+      <div class="picker" id="mode" data-hue="heather">
+        <div class="options"><a data-v="play">play</a><a data-v="network">network</a><a data-v="setup">setup</a></div>
+        <div class="label name">mode</div>
+      </div>
+    </div>
+    <dl id="facts" class="facts"></dl>
+  </section>
+
+  <section id="settings" class="page">
+    <div class="row">
+      <div id="w-name" class="wide text" data-hue="fir" data-key="name"></div>
+      <div id="w-sysex" class="wide amount" data-hue="slate" data-key="sysex_timeout_ms"></div>
+    </div>
+    <p id="settings-msg" class="small note"></p>
+  </section>
+
+  <section id="wifi" class="page">
+    <ul id="networks" class="list"></ul>
+    <div class="row">
+      <div id="w-ssid" class="wide text" data-hue="heather"></div>
+      <div id="w-pass" class="wide text secret" data-hue="heather"></div>
+      <a id="add-net" class="glyph" title="add"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18"/></svg></a>
+    </div>
+    <p id="wifi-msg" class="small note"></p>
+  </section>
+
+  <section id="update" class="page">
+    <dl id="image" class="facts"></dl>
+    <div class="row">
+      <div id="w-upload" class="wide progress" data-hue="salmon"></div>
+      <label class="glyph" title="choose firmware"><input id="file" type="file" accept=".bin" hidden><svg viewBox="0 0 24 24"><path d="M12 21V4M5 11l7-7 7 7"/></svg></label>
+    </div>
+    <p id="update-msg" class="small note"></p>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+/* forslike, cascade palette. Sizes in reference units (--u = window width / 1600), clamped for phones and wide
+   screens; no borders, no rounded corners, no shadows: colour, alignment and space separate things. */
+@font-face { font-family: Geist; src: url(/geist-medium.woff2) format("woff2"); font-weight: 500; }
+:root {
+  --bg: #090c0f; --surface: #0a1014; --n: #a5b0b6; --ac: #e9c944;
+  --fir: #5c8e67; --fir-h: #71a37b; --fir-d: #86b990;
+  --slate: #5187ab; --slate-h: #669cc2; --slate-d: #7bb2d9;
+  --heather: #96719e; --heather-h: #ab85b4; --heather-d: #c29bcb;
+  --salmon: #ab6d6c; --salmon-h: #c28181; --salmon-d: #d99796;
+  --u: clamp(0.42px, calc(100vw / 1600), 0.6px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--bg); color: var(--n); font-family: Geist, system-ui, sans-serif; font-weight: 500; }
+body { min-height: 100vh; }
+.label { font-size: calc(40 * var(--u)); }
+.value { font-size: calc(48 * var(--u)); }
+.small { font-size: calc(30 * var(--u)); }
+a { cursor: pointer; color: inherit; text-decoration: none; }
+
+/* top band: the one second surface */
+.band { background: var(--surface); height: calc(120 * var(--u)); display: flex; align-items: center;
+        gap: calc(80 * var(--u)); padding: 0 calc(120 * var(--u)); }
+#tabs { display: flex; gap: calc(60 * var(--u)); flex: 1; }
+#tabs a { opacity: .45; padding-bottom: calc(12 * var(--u)); border-bottom: calc(3 * var(--u)) solid transparent; }
+#tabs a.on { opacity: 1; border-bottom-color: var(--ac); }  /* accent job: active navigation tab */
+.dot { width: calc(20 * var(--u)); height: calc(20 * var(--u)); background: var(--ac); opacity: 0; transition: opacity .15s; }
+.dot.on { opacity: 1; }  /* accent job: activity indicator */
+
+main { padding: calc(60 * var(--u)) calc(120 * var(--u)) calc(60 * var(--u)); max-width: calc(1600 * var(--u)); }
+.page { display: none; }
+.page.on { display: block; }
+.row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: calc(60 * var(--u)) calc(80 * var(--u));
+       margin-bottom: calc(60 * var(--u)); }
+
+/* hero: one meter pair (in, out) per port, in the port's identity hue */
+.hero { height: calc(300 * var(--u)); display: flex; align-items: flex-end; gap: calc(100 * var(--u));
+        margin-bottom: calc(120 * var(--u)); }
+.port { display: flex; flex-direction: column; align-items: center; gap: calc(20 * var(--u)); }
+.bars { display: flex; gap: calc(12 * var(--u)); height: calc(240 * var(--u)); align-items: flex-end; }
+.bar { width: calc(24 * var(--u)); height: 100%; position: relative; }
+.bar::before { content: ""; position: absolute; inset: 0; background: var(--hue); opacity: .18; }
+.bar i { position: absolute; left: 0; right: 0; bottom: 0; background: var(--hue); height: calc(3 * var(--u)); }
+.port .label { height: calc(40 * var(--u)); line-height: 1; }
+.port.down { opacity: .45; }
+
+/* tall tile: fills from the bottom; text inverts to the background where the fill crosses it */
+.tile { width: calc(120 * var(--u)); height: calc(220 * var(--u)); position: relative; cursor: default; }
+.tile .fill, .wide .fill { position: absolute; background: var(--hue); }
+.tile .fill { left: 0; right: 0; bottom: 0; }
+.tile .t { position: absolute; inset: 0; }
+.tile .t span { position: absolute; left: 0; right: 0; text-align: center; transform: translateY(-50%); line-height: 1; }
+.tile .t .v { top: 36%; }
+.tile .t .nm { top: 84.5%; }
+.t.inv { color: var(--bg); }
+
+/* wide tile: fills from the left; name left, value right */
+.wide { width: calc(560 * var(--u)); height: calc(60 * var(--u)); position: relative; }
+.wide::before { content: ""; position: absolute; inset: 0; outline: calc(3 * var(--u)) solid var(--hue); outline-offset: calc(-3 * var(--u)); opacity: .3; }
+.wide .fill { left: 0; top: 0; bottom: 0; }
+.wide .t { position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between;
+           padding: 0 5% 0 6%; line-height: 1; }
+.wide.text, .wide.amount { cursor: text; }
+.wide input { all: unset; position: absolute; inset: 0; padding: 0 5% 0 40%; text-align: right; color: var(--ac);
+              font: inherit; font-size: calc(40 * var(--u)); caret-color: var(--ac); }
+
+/* option picker: selected = hue + underline, never a box and never the accent */
+/* same geometry as a tall tile: options where a tile's value sits (36%), name on the row's label baseline */
+.picker { height: calc(220 * var(--u)); position: relative; min-width: calc(400 * var(--u)); }
+.picker .options { position: absolute; top: 36%; transform: translateY(-50%); display: flex; gap: calc(60 * var(--u)); }
+.picker .name { position: absolute; left: 0; right: 0; top: 84.5%; transform: translateY(-50%); line-height: 1; }
+.picker a { font-size: calc(40 * var(--u)); opacity: .45; padding-bottom: calc(12 * var(--u));
+            border-bottom: calc(3 * var(--u)) solid transparent; }
+.picker a.on { opacity: 1; color: var(--hue); border-bottom-color: var(--hue); }
+.picker .name { text-align: center; }
+.picker a { line-height: 1; }
+
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: calc(16 * var(--u)) calc(60 * var(--u));
+         margin-bottom: calc(80 * var(--u)); }
+.facts dt { font-size: calc(30 * var(--u)); opacity: .45; }
+.facts dd { font-size: calc(30 * var(--u)); }
+.list { list-style: none; margin-bottom: calc(80 * var(--u)); }
+.list li { font-size: calc(40 * var(--u)); opacity: .7; display: flex; align-items: center; gap: calc(40 * var(--u));
+           height: calc(80 * var(--u)); }
+.list li.on { opacity: 1; color: var(--heather); }
+.glyph { width: calc(60 * var(--u)); height: calc(60 * var(--u)); display: inline-flex; align-items: center;
+         justify-content: center; opacity: .55; cursor: pointer; }
+.glyph:hover { opacity: 1; }
+.glyph svg { width: calc(24 * var(--u)); height: calc(24 * var(--u)); fill: none; stroke: var(--n);
+             stroke-width: 3; stroke-linecap: butt; stroke-linejoin: miter; overflow: visible; }
+.note { opacity: .7; min-height: calc(40 * var(--u)); }
+
+[data-hue=fir] { --hue: var(--fir); --hue-h: var(--fir-h); --hue-d: var(--fir-d); }
+[data-hue=slate] { --hue: var(--slate); --hue-h: var(--slate-h); --hue-d: var(--slate-d); }
+[data-hue=heather] { --hue: var(--heather); --hue-h: var(--heather-h); --hue-d: var(--heather-d); }
+[data-hue=salmon] { --hue: var(--salmon); --hue-h: var(--salmon-h); --hue-d: var(--salmon-d); }
+.tile:hover .fill, .wide:hover .fill { background: var(--hue-h); }

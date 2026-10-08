@@ -18,6 +18,8 @@ net_state_t net_state(void);
 const char *net_state_name(net_state_t s);
 // IPv4 address as text ("" while there is none) and the signal strength of the joined network (0 if none).
 void net_ip(char out[16]);
+// SSID of the joined network ("" if none).
+void net_ssid(char out[33]);
 int net_rssi(void);
 
 // Stored networks (NVS namespace "wifi", up to NET_MAX_NETWORKS, newest first). Passwords never leave the box.

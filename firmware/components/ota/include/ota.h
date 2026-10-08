@@ -3,7 +3,10 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
+
+#include "esp_err.h"
 
 // Log the running slot, its OTA state, and a summary of any core dump. Call early at boot.
 void ota_boot_report(void);
@@ -23,3 +26,21 @@ typedef struct {
 } ota_coredump_t;
 
 void ota_coredump_info(ota_coredump_t *out);
+// Stream the core dump out in chunks (the web UI's download); returns false if there is none.
+bool ota_coredump_read(bool (*sink)(void *ctx, const void *data, size_t len), void *ctx);
+
+typedef struct {
+    char running[17];      // partition label
+    const char *state;     // "valid", "pending verify", ...
+    char rolled_back[17];  // label of a slot whose image failed, "" if none
+} ota_info_t;
+
+void ota_get_info(ota_info_t *out);
+const char *ota_reset_reason(void);
+
+// Receiving an update: begin, write the image in pieces as it arrives, end. ota_end() checks the image (and its
+// signature, when signed images are required) and makes it the next boot; the caller then restarts.
+esp_err_t ota_begin(void);
+esp_err_t ota_write(const void *data, size_t len);
+esp_err_t ota_end(void);
+void ota_abort(void);

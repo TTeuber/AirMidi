@@ -220,6 +220,13 @@ const char *net_state_name(net_state_t s) {
 
 void net_ip(char out[16]) { memcpy(out, ip_text, 16); }
 
+void net_ssid(char out[33]) {
+    wifi_ap_record_t ap;
+    out[0] = 0;
+    if (state == NET_CONNECTED && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) memcpy(out, ap.ssid, 33);
+    out[32] = 0;
+}
+
 int net_rssi(void) {
     wifi_ap_record_t ap;
     return state == NET_CONNECTED && esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.rssi : 0;

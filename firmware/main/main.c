@@ -17,37 +17,9 @@
 #include "power.h"
 #include "uart_midi.h"
 #include "ui_io.h"
+#include "webui.h"
 
 static const char *TAG = "airmidi";
-
-static const char *reset_reason(esp_reset_reason_t r) {
-    switch (r) {
-        case ESP_RST_POWERON:
-            return "power on";
-        case ESP_RST_EXT:
-            return "external pin";
-        case ESP_RST_SW:
-            return "software restart";
-        case ESP_RST_PANIC:
-            return "panic";
-        case ESP_RST_INT_WDT:
-            return "interrupt watchdog";
-        case ESP_RST_TASK_WDT:
-            return "task watchdog";
-        case ESP_RST_WDT:
-            return "other watchdog";
-        case ESP_RST_DEEPSLEEP:
-            return "deep sleep wake";
-        case ESP_RST_BROWNOUT:
-            return "brownout";
-        case ESP_RST_USB:
-            return "USB";
-        case ESP_RST_JTAG:
-            return "JTAG";
-        default:
-            return "unknown";
-    }
-}
 
 // All notes off on every output: sustain off, all sound off, all notes off, on all 16 channels.
 static void panic(void) {
@@ -75,7 +47,7 @@ static volatile button_event_t pending_event;
 static bool settings_ok;
 
 // The self-test for a new image (ota_confirm_after).
-static bool healthy(void) { return settings_ok && ble_midi_ready() && bus_queue_dropped() == 0; }
+static bool healthy(void) { return settings_ok && ble_midi_ready() && webui_running() && bus_queue_dropped() == 0; }
 
 // esp_timer task: hand the event to the main loop.
 static void on_button(button_event_t ev) { pending_event = ev; }
@@ -159,7 +131,7 @@ void app_main(void) {
     const board_t *b = board();
     ESP_LOGI(TAG, "airmidi %s, built %s %s with ESP-IDF %s", app->version, app->date, app->time, app->idf_ver);
     ESP_LOGI(TAG, "board: %s", b->name);
-    ESP_LOGI(TAG, "reset reason: %s", reset_reason(esp_reset_reason()));
+    ESP_LOGI(TAG, "reset reason: %s", ota_reset_reason());
 
     ota_boot_report();
     board_init();
@@ -171,6 +143,7 @@ void app_main(void) {
     uart_midi_start();
     ble_midi_start(s.name);
     net_start(s.mode, s.name);
+    webui_start(&(webui_hooks_t){.set_mode = set_mode});
     power_start();
     ui_start(on_button);
     // A freshly updated image proves itself before it is kept: radio stack up, settings readable, still running
