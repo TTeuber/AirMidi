@@ -244,6 +244,24 @@ static void test_invitation_after_a_resume_is_a_new_session(void) {
     TEST_ASSERT_EQUAL_HEX32(note(2), delivered[n_delivered - 1]);
 }
 
+static void test_client_is_heard_once_it_speaks_after_the_invitation(void) {
+    reset();
+    invite(&A, 0);
+    TEST_ASSERT_FALSE(host.s[0].heard);
+    invite(&A, 5);  // a repeated invitation says nothing about the client's side
+    TEST_ASSERT_FALSE(host.s[0].heard);
+    dgram_t d;
+    start(&d);
+    uint32_t id = 1;
+    cmd(&d, 0x20, 0, &id, 1);
+    deliver_to_host(&A, &d, 10);
+    TEST_ASSERT_TRUE(host.s[0].heard);
+    nm2_host_resume(&host, &B, "Mac", 20);
+    TEST_ASSERT_FALSE(host.s[1].heard);
+    reset_reply(&B, 30);
+    TEST_ASSERT_TRUE(host.s[1].heard);
+}
+
 static void test_no_free_slot_still_gets_bye(void) {
     reset();
     invite(&A, 0), invite(&B, 0);
@@ -620,6 +638,7 @@ int main(void) {
     RUN_TEST(test_unanswered_reset_ends_the_session_quietly);
     RUN_TEST(test_bye_in_answer_to_a_reset_ends_it);
     RUN_TEST(test_invitation_after_a_resume_is_a_new_session);
+    RUN_TEST(test_client_is_heard_once_it_speaks_after_the_invitation);
     RUN_TEST(test_no_free_slot_still_gets_bye);
     RUN_TEST(test_unknown_and_authenticated_commands_are_naked);
     RUN_TEST(test_bye_ends_the_session);

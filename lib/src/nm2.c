@@ -393,6 +393,7 @@ void nm2_host_receive(nm2_host_t *h, const nm2_addr_t *from, const uint8_t *pkt,
             if (i >= 0 && last_data_seq(pkt, len, &newest)) h->s[i].rx_next = newest;
         }
         if (i >= 0) {
+            if (code != CMD_INVITATION) h->s[i].heard = true;
             h->s[i].last_rx_ms = now;
             h->s[i].missed_pings = 0;
             h->s[i].ping_sent_ms = 0;

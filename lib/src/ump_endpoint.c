@@ -87,8 +87,9 @@ int ump_endpoint_handle(ump_endpoint_t *ep, const ump_t *req, ump_t out[UMP_ENDP
             if (block != 0 && block != 0xFF) return 0;
             if (filter & 0x01) {
                 // active, block 0, UI hint sender+receiver (0b11), not a MIDI 1.0 port, bidirectional (0b11);
-                // first group 0, 1 group, no MIDI-CI yet (phase 5), no SysEx8 streams
-                ump_t u = {{head(0, ST_FB_INFO) | 1u << 15 | 0x3u << 4 | 0x3u, 0x00010000}};
+                // first group 0, 1 group, the MIDI-CI version, no SysEx8 streams
+                ump_t u = {{head(0, ST_FB_INFO) | 1u << 15 | 0x3u << 4 | 0x3u,
+                            0x00010000 | (uint32_t)(ep->ci_version & 0x7F) << 8}};
                 out[n++] = u;
             }
             if (filter & 0x02) n += text(out + n, UMP_ENDPOINT_MAX_REPLY - n, ST_FB_NAME, 1, 0, ep->block_name, 91);
@@ -97,4 +98,9 @@ int ump_endpoint_handle(ump_endpoint_t *ep, const ump_t *req, ump_t out[UMP_ENDP
         default:
             return 0;  // notifications from the other side, or requests we do not implement
     }
+}
+
+int ump_endpoint_announce(ump_endpoint_t *ep, ump_t out[UMP_ENDPOINT_MAX_REPLY]) {
+    ump_t all = {{head(0, ST_ENDPOINT_DISCOVERY) | 0x0101, 0x1F}};  // UMP 1.1, every filter bit
+    return ump_endpoint_handle(ep, &all, out);
 }

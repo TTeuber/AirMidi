@@ -74,6 +74,7 @@ typedef struct {
 
 typedef struct {
     bool active;
+    bool heard;  // the client has sent something since the session started, so its side is up
     nm2_addr_t peer;
     char peer_name[64];
     // sending

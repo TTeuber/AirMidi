@@ -18,6 +18,7 @@ static void reset(void) {
                           .version = {0, 4, 0, 0},
                           .block_name = "airmidi",
                           .midi2_capable = true,
+                          .ci_version = 2,
                           .protocol = 1};
 }
 
@@ -107,13 +108,24 @@ static void test_function_block_discovery(void) {
     TEST_ASSERT_EQUAL(2, n);
     TEST_ASSERT_EQUAL(0x011, status_of(&out[0]));
     TEST_ASSERT_EQUAL_HEX32(0xF0118033, out[0].w[0]);  // active, block 0, hint 0b11, bidirectional
-    TEST_ASSERT_EQUAL_HEX32(0x00010000, out[0].w[1]);  // group 0, 1 group
+    TEST_ASSERT_EQUAL_HEX32(0x00010200, out[0].w[1]);  // group 0, 1 group, MIDI-CI 1.2
     TEST_ASSERT_EQUAL(0x012, status_of(&out[1]));
     char s[100];
     text_of(&out[1], 1, 1, s);
     TEST_ASSERT_EQUAL_STRING("airmidi", s);
     TEST_ASSERT_EQUAL_HEX32(0x00, (out[1].w[0] >> 8) & 0xFF);     // block number
     TEST_ASSERT_EQUAL(0, ump_endpoint_handle(&ep, &other, out));  // there is no block 3
+}
+
+static void test_announcement_is_the_full_discovery_reply(void) {
+    reset();
+    ump_t asked[UMP_ENDPOINT_MAX_REPLY];
+    ump_t req = discovery(0x1F);
+    int n = ump_endpoint_handle(&ep, &req, asked);
+    TEST_ASSERT_EQUAL(n, ump_endpoint_announce(&ep, out));
+    TEST_ASSERT_EQUAL_MEMORY(asked, out, n * sizeof(ump_t));
+    TEST_ASSERT_EQUAL(0x001, status_of(&out[0]));      // Endpoint Info first
+    TEST_ASSERT_EQUAL(0x006, status_of(&out[n - 1]));  // Stream Configuration last
 }
 
 static void test_ignores_everything_else(void) {
@@ -130,6 +142,7 @@ int main(void) {
     RUN_TEST(test_name_of_exactly_14_bytes_is_one_packet);
     RUN_TEST(test_stream_configuration);
     RUN_TEST(test_function_block_discovery);
+    RUN_TEST(test_announcement_is_the_full_discovery_reply);
     RUN_TEST(test_ignores_everything_else);
     return UNITY_END();
 }
