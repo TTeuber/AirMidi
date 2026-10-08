@@ -22,6 +22,7 @@ enum {
     PORT_WEB,     // the web UI's control surface
     PORT_USB,     // S3 only
     PORT_ESPNOW,  // box-to-box
+    PORT_CI,      // the box's own MIDI-CI initiator: SysEx to and from TRS only
     PORT_COUNT
 };
 
@@ -52,7 +53,8 @@ typedef struct {
     route_t r[PORT_COUNT][PORT_COUNT];  // [source][destination]
 } router_t;
 
-// Everything to everything, never back to the port it came from, all channels and types, no remap.
+// Everything to everything, never back to the port it came from, all channels and types, no remap. PORT_CI is
+// the exception: it only exchanges SysEx with PORT_TRS (the box asks the device on its jacks, nobody else).
 void router_init(router_t *rt);
 
 // The MSG_* class of a message; 0 for messages that are never routed: utility (JR timestamps, NOOP) and UMP

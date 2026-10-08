@@ -12,11 +12,26 @@ static void test_default_is_everything_to_everything_else(void) {
     router_init(&rt);
     ump_t u = ump_m1_cv(0, 0x90, 60, 100);
     int n = router_route(&rt, PORT_TRS, &u, dst, out);
-    TEST_ASSERT_EQUAL(PORT_COUNT - 1, n);
+    TEST_ASSERT_EQUAL(PORT_COUNT - 2, n);  // not back to TRS, not to the CI initiator
     for (int i = 0; i < n; i++) {
         TEST_ASSERT_NOT_EQUAL(PORT_TRS, dst[i]);
+        TEST_ASSERT_NOT_EQUAL(PORT_CI, dst[i]);
         TEST_ASSERT_TRUE(ump_equal(&u, &out[i]));
     }
+}
+
+// The device's MIDI-CI replies reach the initiator and every other port (so a CI host behind the box can talk
+// to the device too); the initiator's own messages go to TRS only.
+static void test_ci_port_talks_only_sysex_with_trs(void) {
+    router_init(&rt);
+    uint8_t b[6] = {0x7E, 0x7F, 0x0D, 0x71, 2, 0};
+    ump_t sx = ump_sysex7(0, UMP_SYSEX_START, b, 6), note = ump_m1_cv(0, 0x90, 60, 100);
+    TEST_ASSERT_EQUAL(PORT_COUNT - 1, router_route(&rt, PORT_TRS, &sx, dst, out));
+    TEST_ASSERT_EQUAL(1, router_route(&rt, PORT_CI, &sx, dst, out));
+    TEST_ASSERT_EQUAL(PORT_TRS, dst[0]);
+    TEST_ASSERT_EQUAL(0, router_route(&rt, PORT_CI, &note, dst, out));
+    TEST_ASSERT_EQUAL(PORT_COUNT - 2, router_route(&rt, PORT_BLE_0, &sx, dst, out));  // not BLE_0, not CI
+    for (int i = 0; i < PORT_COUNT - 2; i++) TEST_ASSERT_NOT_EQUAL(PORT_CI, dst[i]);
 }
 
 static void test_stream_and_utility_messages_are_never_routed(void) {
@@ -103,6 +118,7 @@ static void test_classes(void) {
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_default_is_everything_to_everything_else);
+    RUN_TEST(test_ci_port_talks_only_sysex_with_trs);
     RUN_TEST(test_stream_and_utility_messages_are_never_routed);
     RUN_TEST(test_bad_source_routes_nothing);
     RUN_TEST(test_disabled_route);

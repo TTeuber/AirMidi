@@ -9,6 +9,7 @@
 #include "board.h"
 #include "bus.h"
 #include "cJSON.h"
+#include "ci.h"
 #include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -191,6 +192,14 @@ static esp_err_t get_status(httpd_req_t *req) {
         cJSON_AddNumberToObject(c, "retransmitted", ni.stats.tx_retransmitted);
         cJSON_AddItemToArray(net, c);
     }
+
+    ci_status_t cs;
+    ci_get_status(&cs);
+    cJSON *ci = cJSON_AddObjectToObject(r, "ci");
+    cJSON_AddBoolToObject(ci, "scanning", cs.scanning);
+    cJSON_AddStringToObject(ci, "result", cs.result);
+    cJSON_AddStringToObject(ci, "device", cs.device);
+    cJSON_AddStringToObject(ci, "source", cs.source);
 
     ota_info_t oi;
     ota_get_info(&oi);
@@ -388,6 +397,68 @@ static esp_err_t delete_coredump(httpd_req_t *req) {
     return httpd_resp_sendstr(req, "{}");
 }
 
+// ---- /api/ci: MIDI-CI ----------------------------------------------------------------------------------------
+
+static esp_err_t get_ci(httpd_req_t *req) {
+    ci_status_t cs;
+    ci_get_status(&cs);
+    cJSON *r = cJSON_CreateObject();
+    char muid[8];
+    cJSON_AddBoolToObject(r, "scanning", cs.scanning);
+    cJSON_AddStringToObject(r, "result", cs.result);
+    cJSON_AddNumberToObject(r, "scan_ms", cs.scan_ms);
+    snprintf(muid, sizeof muid, "%07lX", (unsigned long)cs.muid);
+    cJSON_AddStringToObject(r, "muid", muid);
+    snprintf(muid, sizeof muid, "%07lX", (unsigned long)cs.device_muid);
+    cJSON_AddStringToObject(r, "device_muid", cs.device[0] ? muid : "");
+    cJSON_AddStringToObject(r, "device", cs.device);
+    cJSON_AddStringToObject(r, "source", cs.source);
+    cJSON_AddNumberToObject(r, "dropped", cs.dropped);
+    return send_json(req, r);
+}
+
+static bool send_sink(void *ctx, const char *text, size_t len) { return httpd_resp_send(ctx, text, len) == ESP_OK; }
+
+// {"info": DeviceInfo, "controls": AllCtrlList, "maps": {id: CtrlMapList}, "profile": the uploaded profile}
+static esp_err_t get_ci_device(httpd_req_t *req) {
+    httpd_resp_set_type(req, "application/json");
+    if (!ci_write_device(send_sink, req)) return send_error(req, "500 Internal Server Error", "out of memory");
+    return ESP_OK;
+}
+
+static esp_err_t post_ci_scan(httpd_req_t *req) {
+    cJSON *in = read_json(req);
+    ci_scan(cJSON_IsTrue(cJSON_GetObjectItem(in, "force")));
+    cJSON_Delete(in);
+    httpd_resp_set_status(req, "202 Accepted");
+    return httpd_resp_sendstr(req, "{}");
+}
+
+static esp_err_t post_ci_profile(httpd_req_t *req) {
+    if (req->content_len <= 0 || req->content_len > 16384)
+        return send_error(req, "413 Payload Too Large", "16 KB at most");
+    char *buf = malloc(req->content_len);
+    if (!buf) return send_error(req, "500 Internal Server Error", "out of memory");
+    int got = 0;
+    while (got < req->content_len) {
+        int n = httpd_req_recv(req, buf + got, req->content_len - got);
+        if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        if (n <= 0) break;
+        got += n;
+    }
+    esp_err_t e = got == req->content_len ? ci_set_profile(buf, got) : ESP_FAIL;
+    free(buf);
+    if (e == ESP_ERR_INVALID_ARG)
+        return send_error(req, "400 Bad Request", "expected a control list: [...] or {\"controls\": [...]}");
+    if (e) return send_error(req, "500 Internal Server Error", esp_err_to_name(e));
+    return httpd_resp_sendstr(req, "{}");
+}
+
+static esp_err_t delete_ci_profile(httpd_req_t *req) {
+    ci_set_profile(NULL, 0);
+    return httpd_resp_sendstr(req, "{}");
+}
+
 // ---- /ws: the control surface's MIDI, as UMP ----------------------------------------------------------------
 // Binary frames, each a run of UMP words, big-endian. From the browser they go on the bus as PORT_WEB; what the
 // bus routes to PORT_WEB goes to every connected page, one frame per bus batch.
@@ -493,7 +564,7 @@ static const bus_output_ops_t web_ops = {.write = web_write, .flush = web_flush}
 void webui_start(const webui_hooks_t *h) {
     hooks = *h;
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 28;
     cfg.stack_size = 6144;
     cfg.lru_purge_enable = true;  // a phone that left without closing must not lock others out
     cfg.recv_wait_timeout = 10;
@@ -520,6 +591,11 @@ void webui_start(const webui_hooks_t *h) {
         {.uri = "/api/coredump", .method = HTTP_DELETE, .handler = delete_coredump},
         {.uri = "/api/update/check", .method = HTTP_POST, .handler = post_update_check},
         {.uri = "/api/update/install", .method = HTTP_POST, .handler = post_update_install},
+        {.uri = "/api/ci", .method = HTTP_GET, .handler = get_ci},
+        {.uri = "/api/ci/device", .method = HTTP_GET, .handler = get_ci_device},
+        {.uri = "/api/ci/scan", .method = HTTP_POST, .handler = post_ci_scan},
+        {.uri = "/api/ci/profile", .method = HTTP_POST, .handler = post_ci_profile},
+        {.uri = "/api/ci/profile", .method = HTTP_DELETE, .handler = delete_ci_profile},
     };
     for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
     httpd_uri_t ws = {.uri = "/ws",

@@ -1,5 +1,6 @@
-// airmidi firmware entry point: bring the board up, start the bus and the transports (TRS, BLE MIDI), the button
-// and LED, and the battery watch; then keep the LED state current and answer console commands.
+// airmidi firmware entry point: bring the board up, start the bus, the transports (TRS, BLE MIDI, network), MIDI-CI,
+// the web UI, the button and LED, and the battery watch; then keep the LED state current and answer console
+// commands.
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -7,6 +8,7 @@
 #include "ble_midi.h"
 #include "board.h"
 #include "bus.h"
+#include "ci.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -102,7 +104,8 @@ static void handle_button(button_event_t ev) {
             panic();
             break;
         case BUTTON_SHORT:
-            ESP_LOGI(TAG, "button: short press (MIDI-CI rescan arrives in phase 5)");
+            ESP_LOGI(TAG, "button: short press, MIDI-CI scan");
+            ci_scan(false);
             break;
         case BUTTON_LONG:  // Play <-> Network; from Setup back to Play
             set_mode(current_mode() == AIRMIDI_MODE_PLAY ? AIRMIDI_MODE_NETWORK : AIRMIDI_MODE_PLAY);
@@ -130,7 +133,7 @@ static void print_status(void) {
                s.interval_x125 * 1.25, s.mtu, (unsigned long)s.rx_packets, (unsigned long)s.rx_bad,
                (unsigned long)s.tx_packets, (unsigned long)s.tx_failed);
     }
-    static const char *names[PORT_COUNT] = {"trs", "ble0", "ble1", "net0", "net1", "web", "usb", "espnow"};
+    static const char *names[PORT_COUNT] = {"trs", "ble0", "ble1", "net0", "net1", "web", "usb", "espnow", "ci"};
     for (int p = 0; p < PORT_COUNT; p++) {
         bus_port_stats_t s;
         bus_get_stats(p, &s);
@@ -166,6 +169,7 @@ void app_main(void) {
 
     bus_start(s.sysex_timeout_ms);
     uart_midi_start();
+    ci_start();
     ble_running = ble_wanted(&s);
     if (ble_running) ble_midi_start(s.name);
     net_start(s.mode, s.name);
@@ -207,6 +211,8 @@ void app_main(void) {
         if (c == 'P') set_mode(AIRMIDI_MODE_PLAY);
         if (c == 'N') set_mode(AIRMIDI_MODE_NETWORK);
         if (c == 'S') set_mode(AIRMIDI_MODE_SETUP);
+        if (c == 'd') ci_scan(false);  // MIDI-CI scan ('D': read everything again)
+        if (c == 'D') ci_scan(true);
         if (c == 'm') xTaskCreate(inject_task, "inject", 2048, NULL, 5, NULL);
         if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
         vTaskDelay(pdMS_TO_TICKS(50));

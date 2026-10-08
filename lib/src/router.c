@@ -8,6 +8,10 @@ void router_init(router_t *rt) {
             r->channels = 0xFFFF;
             r->types = MSG_ALL;
             for (int c = 0; c < 16; c++) r->channel_map[c] = c;
+            if (s == PORT_CI || d == PORT_CI) {
+                r->enabled = s != d && (s == PORT_TRS || d == PORT_TRS);
+                r->types = MSG_SYSEX;
+            }
         }
     }
 }
