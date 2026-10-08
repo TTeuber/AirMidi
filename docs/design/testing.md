@@ -42,6 +42,9 @@ round. One-way latency, no round trip to halve.
 - `ci_test.py`: the phase 5 acceptance test against `devices/mac_standin` (a MIDI-CI device on the AudioFuse
   ports, `lib/midici_responder` on CoreMIDI); see [midi-ci.md](midi-ci.md).
 - `ws_test.py`: the web page's WebSocket both ways through the AudioFuse.
+- `resume_test.py`: connect Network MIDI once, reset the box 3 times, MIDI must come back both ways each time with
+  nobody touching Audio MIDI Setup (see [network-midi.md](network-midi.md)).
+- `nm2connect.swift`: connects or disconnects (`--remove`) macOS's Network MIDI 2.0 session to the box.
 
 CoreMIDI's Bluetooth driver turned out fragile under test automation: after a few `MIDIBluetoothDriverDisconnect`
 calls and with Audio MIDI Setup open for a while, it stopped promoting this peripheral at all (`bluetoothd` lists

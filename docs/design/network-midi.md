@@ -40,12 +40,35 @@ The tests drive the host with a simulated channel that drops, duplicates and reo
 what is delivered is always in order and never twice, everything up to the last delivered command is accounted
 for as delivered or lost, and answering retransmit requests recovers most of what FEC alone cannot.
 
-## Liveness: macOS does not answer pings
+## Liveness, and surviving a restart
 
-The first version dropped a client after three unanswered pings and lost every macOS session after 19 s:
-macOS 26.5 never answers a host's Ping, and sends nothing at all while idle (found on the rig with a datagram
-log). Now a client is pinged while silent (the spec asks for it) but never dropped for not answering; a client
-silent for 60 s gives its slot to a new one when both are taken. A Bye from the client ends a session at once.
+What macOS 26.5 does (found with a session-command log on the box and macOS's own session property):
+
+- It pings a host every 60 s and answers the host's pings. (Phase 4 concluded the opposite: macOS never answered
+  and sent nothing while idle. That was the test tool's fault: `nm2connect` added the host without the
+  `authentication-data` entry Audio MIDI Setup writes, and macOS dropped such an entry ~5 s after connecting.)
+- **It never invites a host again once a session has ended**, however it ended: a `Bye` from the host, or its own
+  ping timeout (11 pings a second apart, then `Bye 0x04`). The host disappears from its list and the user has
+  to reconnect in Audio MIDI Setup.
+
+So a box that restarts (power cycle, update, crash, a mode switch) must not let the session end:
+
+- After a restart the Mac still believes in its session; the spec's answer to its next ping or data, `Bye 0x05`
+  (Session Not Established), makes it forget the box. Answering the ping as if nothing happened (phase 4) is no
+  better: the Mac keeps sending into a session the box no longer has.
+- Instead the box **takes the session back** (`lib/nm2`, "Resuming"): a client that pings or sends data without a
+  session gets `Session Reset`, both sides number their commands from 0 on the reply, the box sends no data until
+  then, and of the datagram that triggered it only the newest command is delivered (the FEC repeats in front may
+  be minutes old). Five unanswered resets end the session quietly; an Invitation starts a fresh one. This
+  deviates from M2-124 on purpose.
+- The box keeps the last client that invited it in NVS and sends it `Session Reset` the moment it joins Wi-Fi,
+  so MIDI from TRS reaches the Mac at once rather than after the Mac's next packet. A Mac that has forgotten the
+  box (it rebooted, the user disconnected) answers `Bye` or nothing, and that is the end of it.
+- The host still never drops a client for unanswered pings, now because ending a session loses macOS for good; a
+  client silent for 60 s gives its slot to a new one when both are taken.
+
+Measured (`tools/hil/resume_test.py`, 3 resets): the session is back 4.7-5.3 s after the reset (the Wi-Fi join
+time), 20/20 messages each way, and macOS still lists the box.
 
 ## BLE and Wi-Fi share the radio
 
@@ -60,8 +83,13 @@ arrives in clumps ~100 ms apart.
 ## Tools
 
 `tools/hil/nm2connect` connects macOS to the box without Audio MIDI Setup, by adding the box to the `peers` of
-the `midi2.udp.session` property on CoreMIDI's "UMP Network" device (format read back from a session made by hand
-in spike S1). `tools/hil/latency.py "Network MIDI 2.0 Session"` then measures through it.
+the `midi2.udp.session` property on CoreMIDI's "UMP Network" device, in the form Audio MIDI Setup writes
+(`address`, `name`, `authentication-data`; macOS adds `state = running` while connected). Writing the property
+rebuilds macOS's session and forgets live connections, and writing an unchanged list does nothing, so a fresh
+invitation is `--remove` and then add. `tools/hil/latency.py "Network MIDI 2.0 Session"` measures through it.
+
+Also seen while debugging: every rebuild of macOS's session sent an empty SysEx (F0 F7) out of the AudioFuse, which
+the box forwarded. Harmless, and only caused by the tool.
 
 ## Measured (C6, phase 4 firmware, BLE off)
 
