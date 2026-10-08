@@ -42,6 +42,29 @@ pass-through, and it costs no code: CI receivers ignore messages addressed to an
 also how the initiator ignores the replies meant for that host and the Discovery macOS sends on hardware ports by
 itself (spike S3).
 
+macOS does this by itself over Network MIDI 2.0 once the box has announced its endpoint (network-midi.md, "Telling
+the client who we are"): it runs Discovery and PE Capabilities through the box, and `MIDICIDeviceManager` lists the
+device on TRS with Property Exchange. macOS has no Property Exchange API of its own; an app reads the resources
+over the session port.
+
+## Loops (`lib/ci_guard`)
+
+macOS also passes a Discovery that arrives on one of its MIDI ports on to its other MIDI-CI endpoints, and only
+Discovery (a plain SysEx is not passed on). On the test rig the box's TRS output is cabled into the same Mac, so the
+box's own Discovery went TRS -> AudioFuse -> macOS -> network session -> box -> TRS, and round again: 120 000
+messages from macOS within a minute, the TRS line full, the box's scan timing out. One Discovery injected from the
+page did the same, 4 551 messages in 2 s. M2-101 calls MIDI-CI through thru ports and mergers undefined (Appendix
+C); the box is such a merger, so it breaks the loop itself.
+
+Each MIDI 1.0 output (TRS, BLE) has a guard in front of its merge. A Discovery from another port less than a second
+after the last Discovery written to that output is dropped, whole (the rest of its packets too). The box's own
+initiator is never held back, and its Discovery counts as the last one. An initiator sends Discovery once, seconds
+apart; a copy that went round the loop is back within ~100 ms. After the fix, a forced scan with macOS connected
+brings 40 messages back from macOS in 4 s, and the scan succeeds. Plain MIDI loops (a CoreMIDI thru connection
+back to the box, say) are the user's wiring and are not guarded.
+
+## Into the CI task
+
 The bus task reassembles SysEx7 packets into whole messages (`sysex7_rx`) and hands MIDI-CI ones to the CI task
 through a 4 KB FreeRTOS message buffer, without blocking; drops are counted (`dropped` in `/api/ci`). The CI task
 sends by splitting into packets and `bus_send(PORT_CI, ...)`; the TRS merge keeps each SysEx whole.
@@ -94,6 +117,13 @@ rescan at boot is then silent for the device, not because the scan is slow.
   Invalidate MUID, a reply larger than the buffer, repeated scans, the responder's 404/NAK and 128-byte chunking,
   and 20000 fuzzed messages under ASan/UBSan. Mutation check: 7 of 8 mutants killed; the survivor (appending
   SysEx data while no message is open) cannot change the output.
+- Host (`test/test_ci_guard.c`, 7 tests): a copy back within the second is dropped whole, a second later passes,
+  the box's own Discovery always passes and counts, other MIDI-CI messages and plain SysEx are untouched, one
+  source's drop leaves the others alone, a SysEx cut short ends the drop, the clock wrapping. Mutation check: 6 of
+  6 killed (one only after the test tried several other MIDI-CI messages, not just a PE Get).
+- Hardware (`tools/hil/mac_ci_test.py`, 12 checks): macOS runs Discovery through the box, `MIDICIDeviceManager`
+  lists the stand-in with PE, MIDI both ways, a forced box scan with macOS connected works and does not loop, and
+  after a box reset macOS asks again.
 - Hardware (`tools/hil/ci_test.py`, 21 checks): scan, the served JSON equal to what the stand-in holds, the cached
   rescan sends no Get, page fader -> device CC at 0/64/127, a MIDI-CI host on the WebSocket reads the 989-byte
   AllCtrlList through the box, profiles, "no device" when the stand-in is gone.
@@ -116,9 +146,9 @@ rescan at boot is then silent for the device, not because the scan is slow.
   path. The S3 has the same pin and needs the same fuse (or rev B moves MIDI OUT to another GPIO).
 - One boot scan out of five found no device although the stand-in answered it (its log shows the reply to the
   box's MUID). Not reproduced in the next five resets; the next manual or button scan works. Left as observed.
-- macOS's `MIDICIDeviceManager` discovered nothing during this phase, not even the stand-in on the AudioFuse
-  directly, and sent no Discovery on its own; in spike S3 it did. So pass-through is tested with a host on the
-  WebSocket instead of macOS.
+- macOS's `MIDICIDeviceManager` discovered nothing during phase 5, because macOS never asked the box anything
+  over Network MIDI 2.0 (and the stand-in on the AudioFuse is not a device behind the AudioFuse to macOS, it is
+  another client of the same Mac). Fixed by announcing the endpoint; that in turn exposed the loop above.
 
 ## Not done
 

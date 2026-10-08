@@ -26,20 +26,20 @@ log has every measured result; [docs/measurements.md](docs/measurements.md) the 
   second at 31250 baud, ~50 ms for a known device from the flash cache). The play page draws the device's own
   faders, pickers and toggles from its control list (M2-117) and sends MIDI 2.0 values the box scales for the
   jack; synths without MIDI-CI get the same from an uploaded JSON profile. A CI host behind the box reaches the
-  device through it.
+  device through it: macOS finds the synth on the jacks over Network MIDI 2.0 by itself.
 - **Updates**: upload in the browser or fetch the latest GitHub release; images must be signed, a new image proves
   itself with a self-test or the box rolls back; a crash leaves a downloadable core dump.
 - **Battery**: gauge on A0, low warning, notes off and deep sleep when empty.
 
 ## How it is tested
 
-- `lib/`: 12 suites of host unit tests under AddressSanitizer + UndefinedBehaviorSanitizer, including randomized
+- `lib/`: 13 suites of host unit tests under AddressSanitizer + UndefinedBehaviorSanitizer, including randomized
   round trips. The CI workflow runs them, the format check and both firmware builds on every push (it has not
   run on GitHub yet: the repo is not published; `tools/check.sh` runs the same steps locally).
 - On the hardware, with an Arturia AudioFuse cabled to the box so both ends of every test sit on the Mac's clock:
   `tools/hil/bridge_test.py` (15 checks), `ota_test.py` (13: refused, accepted, rolled back), `release_test.py`
   (8), `web_test.py` (14), `ws_test.py`, `ci_test.py` (21, against `devices/mac_standin`, a MIDI-CI device on the
-  Mac built from the same library), `sleep_test.py`, `latency.py`. Their first runs found real bugs; each is in
+  Mac built from the same library), `mac_ci_test.py` (12), `resume_test.py` (14), `sleep_test.py`, `latency.py`. Their first runs found real bugs; each is in
   [docs/design](docs/design).
 
 ## Layout

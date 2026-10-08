@@ -8,9 +8,11 @@ appears as a CoreMIDI port (spike S1).
 ## Layers
 
 - `lib/nm2`: the session protocol as pure logic. Datagrams and the time go in; datagrams to send, UMPs to deliver
-  and session changes come out through callbacks. Host-tested (26 tests, below).
-- `lib/ump_endpoint`: answers the UMP Stream messages a client sends after connecting (Endpoint Discovery, Stream
-  Configuration Request, Function Block Discovery). One bidirectional function block for now.
+  and session changes come out through callbacks. Host-tested (32 tests, below).
+- `lib/ump_endpoint`: answers the UMP Stream messages a client sends (Endpoint Discovery, Stream Configuration
+  Request, Function Block Discovery) and builds the announcement the box sends when a session starts (below). One
+  bidirectional function block for now; it declares MIDI-CI (message version 2), which passes through it to and
+  from the device on TRS.
 - `net_midi`: the socket, a task that receives with a 10 ms timeout (so `nm2_host_tick` runs at least every
   10 ms), the bridge to the bus, and per-session protocol translation: a client that asks for the MIDI 2.0
   protocol gets MIDI 1.0 sources upscaled (`m1_to_m2`); MIDI 2.0 from a client is scaled down by the MIDI 1.0
@@ -70,6 +72,33 @@ So a box that restarts (power cycle, update, crash, a mode switch) must not let 
 Measured (`tools/hil/resume_test.py`, 3 resets): the session is back 4.7-5.3 s after the reset (the Wi-Fi join
 time), 20/20 messages each way, and macOS still lists the box.
 
+## Telling the client who we are
+
+macOS 26.5 never sends Endpoint Discovery or Function Block Discovery over a Network MIDI 2.0 session (every
+datagram logged on the box: not one UMP Stream message). Its session port, "Network MIDI 2.0 Session 1", is a
+CoreMIDI endpoint that exists whether or not a host is connected, and macOS seems to ask an endpoint only when it
+appears. So through phase 5 macOS knew nothing about the box: sessions stayed in the MIDI 1.0 protocol, and macOS
+ran no MIDI-CI over them (`MIDICIDeviceManager` found nothing, docs/design/midi-ci.md).
+
+When a session starts, the box now sends unasked what a full Endpoint Discovery would get (`ump_endpoint_announce`:
+Endpoint Info, Device Identity, name, Product Instance Id, Stream Configuration). M2-104 allows this: an endpoint
+should send Endpoint Info when it changes (to the client, a new session is a new endpoint at the other end), and
+may send the others at any time. macOS answers within ~100 ms:
+
+1. Function Block Discovery (the first time only; it remembers the block after that);
+2. a Stream Configuration Request for the MIDI 2.0 protocol, which the box grants;
+3. MIDI-CI Discovery and PE Capabilities on the block, which reach the device on TRS.
+
+The announcement waits until the client has sent something on the session (`heard` in `nm2`; macOS pings at once)
+and, for a resumed session, until the Session Reset is answered. Sent 1 ms after Invitation Accepted, it made macOS
+answer its own ping with `Bye 0x05` (Session Not Established) in 1 of 4 connects: the UMP Data apparently overtook
+macOS's own setup of the session. With the wait: 8 connects out of 8.
+
+Sessions with macOS now run in the MIDI 2.0 protocol, so MIDI 1.0 from TRS is translated up (M2-104). Eight
+controllers no longer arrive as plain CCs: Bank Select (0, 32) travels with the next Program Change, and RPN/NRPN
+selection (98-101) and Data Entry (6, 38) become one RPN/NRPN message. `latency.py` used to encode its sequence
+numbers in every controller number and showed this as 32 of 300 lost; it now skips those eight.
+
 ## BLE and Wi-Fi share the radio
 
 On the C6, Wi-Fi and BLE take turns on one radio. With the BLE stack running (even idle, advertising once a
@@ -102,6 +131,9 @@ the box forwarded. Harmless, and only caused by the tool.
 
 The tail is the Mac's own Wi-Fi: a ping from the Mac to the router alone had a maximum of 89 ms at the same time
 (macOS's AWDL channel hopping is the usual cause).
+
+Again after the announcement, in the MIDI 2.0 protocol (2026-10-08): 7.2 / 4.9 ms median at 20 ms spacing (0/300
+lost each way), 7.6 / 5.4 ms at 5 ms (0/600). The translation costs nothing measurable.
 
 ## The web UI's control surface (`/ws`, `PORT_WEB`)
 
