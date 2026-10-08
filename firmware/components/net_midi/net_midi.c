@@ -15,6 +15,7 @@
 #include "lwip/sockets.h"
 #include "mdns.h"
 #include "net.h"
+#include "nvs.h"
 
 static const char *TAG = "netmidi";
 
@@ -32,6 +33,16 @@ static session_ctx_t ctx[NM2_SESSIONS];
 static SemaphoreHandle_t lock;  // the UDP task and the bus task both drive `host`
 static int sock = -1;
 static char name_buf[99], piid[13];
+
+// The last client that invited us, kept in NVS: after a restart the box takes its session back at once (nm2.h,
+// "Resuming"), instead of waiting for the client to send something.
+typedef struct {
+    uint32_t ip;
+    uint16_t port;
+    char name[64];
+} remembered_t;
+static remembered_t last_client;
+static bool have_last_client, save_last_client;
 
 static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static int port_of(int session) { return session == 0 ? PORT_NET_0 : PORT_NET_1; }
@@ -63,12 +74,39 @@ static void cb_deliver(void *c, int session, const ump_t *u) {
 static int8_t pending_up[NM2_SESSIONS] = {-1, -1};
 
 static void cb_session(void *c, int session, bool up, const char *peer) {
-    ESP_LOGI(TAG, "session %d %s (\"%s\")", session, up ? "up" : "down", peer);
+    nm2_session_t *s = &host.s[session];
+    if (up && s->resumed && !peer[0] && have_last_client && s->peer.ip == last_client.ip &&
+        s->peer.port == last_client.port)
+        snprintf(s->peer_name, sizeof s->peer_name, "%s", last_client.name);  // resumed without a name: we know it
+    ESP_LOGI(TAG, "session %d %s (\"%s\")%s", session, up ? "up" : "down", s->peer_name,
+             up && s->resumed ? ", resumed" : "");
     if (up) {
         ctx[session].ep.protocol = 1;
         m1_to_m2_init(&ctx[session].up);
+        if (!s->resumed && (s->peer.ip != last_client.ip || s->peer.port != last_client.port ||
+                            strcmp(s->peer_name, last_client.name))) {
+            last_client = (remembered_t){.ip = s->peer.ip, .port = s->peer.port};
+            snprintf(last_client.name, sizeof last_client.name, "%s", s->peer_name);
+            have_last_client = save_last_client = true;  // written by the UDP task, outside the lock
+        }
     }
     pending_up[session] = up;
+}
+
+static void load_last_client(void) {
+    nvs_handle_t h;
+    size_t len = sizeof last_client;
+    if (nvs_open("netmidi", NVS_READONLY, &h) != ESP_OK) return;
+    have_last_client = nvs_get_blob(h, "client", &last_client, &len) == ESP_OK && len == sizeof last_client;
+    nvs_close(h);
+}
+
+static void store_last_client(void) {
+    nvs_handle_t h;
+    if (nvs_open("netmidi", NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_blob(h, "client", &last_client, sizeof last_client);
+    nvs_commit(h);
+    nvs_close(h);
 }
 
 // ---- bus output (bus task) -----------------------------------------------------------------------------------
@@ -106,7 +144,19 @@ static void udp_task(void *arg) {
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
     static uint8_t buf[1500];
     uint32_t last_tick = 0;
+    bool was_connected = false;
     for (;;) {
+        // Joined (again): take back the session with the last client, if it still has one with us.
+        bool connected = net_state() == NET_CONNECTED;
+        if (connected && !was_connected && have_last_client) {
+            nm2_addr_t a = {.ip = last_client.ip, .port = last_client.port};
+            xSemaphoreTake(lock, portMAX_DELAY);
+            nm2_host_resume(&host, &a, last_client.name, now_ms());
+            xSemaphoreGive(lock);
+        }
+        was_connected = connected;
+        if (save_last_client) save_last_client = false, store_last_client();
+
         struct sockaddr_in from;
         socklen_t fl = sizeof from;
         int n = recvfrom(sock, buf, sizeof buf, 0, (struct sockaddr *)&from, &fl);
@@ -137,6 +187,7 @@ void net_midi_start(const char *name) {
     snprintf(piid, sizeof piid, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     snprintf(name_buf, sizeof name_buf, "%s", name);
     lock = xSemaphoreCreateMutex();
+    load_last_client();
     for (int i = 0; i < NM2_SESSIONS; i++) {
         ctx[i].ep = (ump_endpoint_t){.name = name_buf,
                                      .product_instance_id = piid,
