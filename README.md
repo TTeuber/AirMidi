@@ -16,7 +16,7 @@ decision log has every measured result; [docs/measurements.md](docs/measurements
 - **Wi-Fi modes**: Play (Wi-Fi off), Network (joins stored networks, `<name>.local`), Setup (own access point).
   Long press switches, 8 s press opens Setup, double press sends all notes off.
 - **Web UI** at `http://<name>.local`: live traffic per port, battery, signal, mode, settings, Wi-Fi networks,
-  firmware update. Plain JS in the [forslike](docs/design/core.md) house style, 18 KB, built into the firmware.
+  firmware update. Plain JS, no framework, a flat borderless style; 18 KB, built into the firmware.
 - **Updates**: upload in the browser or fetch the latest GitHub release; images must be signed, a new image proves
   itself with a self-test or the box rolls back; a crash leaves a downloadable core dump.
 - **Battery**: gauge on A0, low warning, notes off and deep sleep when empty.
@@ -24,7 +24,8 @@ decision log has every measured result; [docs/measurements.md](docs/measurements
 ## How it is tested
 
 - `lib/`: 9 suites of host unit tests under AddressSanitizer + UndefinedBehaviorSanitizer, including randomized
-  round trips; CI on every push.
+  round trips. The CI workflow runs them, the format check and both firmware builds on every push (it has not
+  run on GitHub yet: the repo is not published; `tools/check.sh` runs the same steps locally).
 - On the hardware, with an Arturia AudioFuse cabled to the box so both ends of every test sit on the Mac's clock:
   `tools/hil/bridge_test.py` (15 checks), `ota_test.py` (13: refused, accepted, rolled back), `release_test.py`
   (8), `web_test.py` (14), `sleep_test.py`, `latency.py`. Their first runs found 7 real bugs; each is in
