@@ -6,6 +6,7 @@
 //   swiftc -O tools/hil/nm2connect.swift -o tools/hil/build/nm2connect
 //   tools/hil/build/nm2connect <service name>      e.g. airmidi-7530 (the mDNS instance name)
 //   tools/hil/build/nm2connect --show
+//   tools/hil/build/nm2connect --remove <service name>     macOS ends the session (Bye) and forgets the host
 import CoreMIDI
 import Foundation
 
@@ -40,10 +41,19 @@ if args.count < 2 || args[1] == "--show" {
     print(session)
     exit(0)
 }
-let service = args[1]
+let remove = args[1] == "--remove" && args.count > 2
+let service = remove ? args[2] : args[1]
 var peers = (session["peers"] as? [NSDictionary]) ?? []
 peers.removeAll { ($0["name"] as? String) == service }
-peers.append(["address": "\t\(service)\tlocal.", "name": service])
+if remove {
+    session["peers"] = peers
+    let r = MIDIObjectSetDictionaryProperty(ent, "midi2.udp.session" as CFString, session as CFDictionary)
+    print(r == noErr ? "asked macOS to disconnect from \(service)" : "MIDIObjectSetDictionaryProperty: \(r)")
+    exit(r == noErr ? 0 : 1)
+}
+// Audio MIDI Setup also writes the authentication method; without it macOS connects once and then drops the
+// entry, so it never reconnects after a lost session (found in phase 5).
+peers.append(["address": "\t\(service)\tlocal.", "name": service, "authentication-data": ["authentication-method": 0]])
 session["peers"] = peers
 let r = MIDIObjectSetDictionaryProperty(ent, "midi2.udp.session" as CFString, session as CFDictionary)
 print(r == noErr ? "asked macOS to connect to \(service)" : "MIDIObjectSetDictionaryProperty: \(r)")
