@@ -1,0 +1,14 @@
+# clang-format 18.1.8 (CI pins this version: uvx --from clang-format==18.1.8 clang-format)
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 120
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortLoopsOnASingleLine: true
+IndentCaseLabels: true
+DerivePointerAlignment: false
+PointerAlignment: Right
+SpacesBeforeTrailingComments: 2
+IncludeBlocks: Regroup
+SortIncludes: CaseSensitive
