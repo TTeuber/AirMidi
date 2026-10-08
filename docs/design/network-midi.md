@@ -74,3 +74,16 @@ in spike S1). `tools/hil/latency.py "Network MIDI 2.0 Session"` then measures th
 
 The tail is the Mac's own Wi-Fi: a ping from the Mac to the router alone had a maximum of 89 ms at the same time
 (macOS's AWDL channel hopping is the usual cause).
+
+## The web UI's control surface (`/ws`, `PORT_WEB`)
+
+The play page (faders for common CCs, one octave of pads, channel and octave steppers, a short monitor) talks to
+the box over a WebSocket: binary frames, each a run of UMP words, big-endian. Frames from a page go on the bus as
+`PORT_WEB`; what the bus routes to `PORT_WEB` goes to every connected page (up to 4), one frame per bus batch, so
+CCs coming in from a device move the faders. The async send keeps the frame header but not the payload, so each
+frame gets its own copy, freed in the completion callback. In ESP-IDF 5.5 a WebSocket URI handler is not called for
+the handshake; `ws_post_handshake_cb` registers the page (found when the page never became a destination).
+
+This page is the fallback; phase 5 draws a device's own controls from its MIDI-CI control list.
+
+Measured (`tools/hil/ws_test.py`, 100 CCs each way at 20 ms): page -> TRS 3.9 ms median, TRS -> page 10.1 ms.

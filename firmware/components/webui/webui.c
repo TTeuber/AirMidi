@@ -2,6 +2,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "ble_midi.h"
 #include "board.h"
@@ -386,15 +388,116 @@ static esp_err_t delete_coredump(httpd_req_t *req) {
     return httpd_resp_sendstr(req, "{}");
 }
 
+// ---- /ws: the control surface's MIDI, as UMP ----------------------------------------------------------------
+// Binary frames, each a run of UMP words, big-endian. From the browser they go on the bus as PORT_WEB; what the
+// bus routes to PORT_WEB goes to every connected page, one frame per bus batch.
+
+#define WS_CLIENTS 4
+static int ws_fds[WS_CLIENTS];
+static int n_ws;
+static portMUX_TYPE ws_lock = portMUX_INITIALIZER_UNLOCKED;  // httpd task adds/removes, bus task reads
+static uint32_t ws_out[256];                                 // bus task only
+static int n_ws_out;
+
+static void ws_add(int fd) {
+    bool first = false, known = false;
+    taskENTER_CRITICAL(&ws_lock);
+    for (int i = 0; i < n_ws; i++) known |= ws_fds[i] == fd;
+    if (!known && n_ws < WS_CLIENTS) first = n_ws == 0, ws_fds[n_ws++] = fd;
+    taskEXIT_CRITICAL(&ws_lock);
+    if (first) bus_set_up(PORT_WEB, true);
+}
+
+// ESP-IDF 5.5 does not call the URI handler for the handshake itself; this callback runs right after it.
+static esp_err_t ws_on_connect(httpd_req_t *req) {
+    ws_add(httpd_req_to_sockfd(req));
+    return ESP_OK;
+}
+
+static void ws_remove(int fd) {
+    bool last = false;
+    taskENTER_CRITICAL(&ws_lock);
+    for (int i = 0; i < n_ws; i++) {
+        if (ws_fds[i] == fd) {
+            ws_fds[i] = ws_fds[--n_ws];
+            last = n_ws == 0;
+            break;
+        }
+    }
+    taskEXIT_CRITICAL(&ws_lock);
+    if (last) bus_set_up(PORT_WEB, false);
+}
+
+static void on_close(httpd_handle_t hd, int fd) {
+    ws_remove(fd);
+    close(fd);
+}
+
+static esp_err_t ws_handler(httpd_req_t *req) {
+    ws_add(httpd_req_to_sockfd(req));  // normally already known from ws_on_connect
+    httpd_ws_frame_t f = {0};
+    if (httpd_ws_recv_frame(req, &f, 0) != ESP_OK) return ESP_FAIL;
+    if (f.type != HTTPD_WS_TYPE_BINARY || f.len == 0 || f.len > 512 || f.len % 4) {
+        uint8_t skip[64];  // anything else: read and drop it
+        f.payload = skip;
+        return f.len <= sizeof skip ? httpd_ws_recv_frame(req, &f, f.len) : ESP_OK;
+    }
+    uint8_t buf[512];
+    f.payload = buf;
+    if (httpd_ws_recv_frame(req, &f, f.len) != ESP_OK) return ESP_FAIL;
+    int words = f.len / 4;
+    for (int k = 0; k < words;) {
+        ump_t u = {{0}};
+        int nw = ump_words_for_mt(buf[4 * k] >> 4);
+        if (k + nw > words) break;
+        for (int j = 0; j < nw; j++)
+            u.w[j] = (uint32_t)buf[4 * (k + j)] << 24 | (uint32_t)buf[4 * (k + j) + 1] << 16 |
+                     (uint32_t)buf[4 * (k + j) + 2] << 8 | buf[4 * (k + j) + 3];
+        bus_send(PORT_WEB, &u);
+        k += nw;
+    }
+    return ESP_OK;
+}
+
+static void web_write(void *ctx, const ump_t *u) {
+    int nw = ump_words(u);
+    if (n_ws_out + nw > (int)(sizeof ws_out / sizeof ws_out[0])) return;  // a page cannot keep up: drop
+    for (int j = 0; j < nw; j++) ws_out[n_ws_out++] = u->w[j];
+}
+
+static void free_payload(esp_err_t err, int socket, void *arg) { free(arg); }
+
+static void web_flush(void *ctx) {
+    if (!n_ws_out) return;
+    int fds[WS_CLIENTS], n;
+    taskENTER_CRITICAL(&ws_lock);
+    n = n_ws;
+    memcpy(fds, ws_fds, sizeof fds);
+    taskEXIT_CRITICAL(&ws_lock);
+    for (int i = 0; i < n; i++) {
+        uint8_t *p = malloc(4 * n_ws_out);  // the async send keeps the frame, not the payload: one copy per page
+        if (!p) break;
+        for (int k = 0; k < n_ws_out; k++)
+            p[4 * k] = ws_out[k] >> 24, p[4 * k + 1] = ws_out[k] >> 16, p[4 * k + 2] = ws_out[k] >> 8,
+                  p[4 * k + 3] = ws_out[k];
+        httpd_ws_frame_t f = {.type = HTTPD_WS_TYPE_BINARY, .payload = p, .len = 4 * n_ws_out, .final = true};
+        if (httpd_ws_send_data_async(server, fds[i], &f, free_payload, p) != ESP_OK) free(p);
+    }
+    n_ws_out = 0;
+}
+
+static const bus_output_ops_t web_ops = {.write = web_write, .flush = web_flush};
+
 // ---- server --------------------------------------------------------------------------------------------------
 
 void webui_start(const webui_hooks_t *h) {
     hooks = *h;
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 20;
     cfg.stack_size = 6144;
     cfg.lru_purge_enable = true;  // a phone that left without closing must not lock others out
     cfg.recv_wait_timeout = 10;
+    cfg.close_fn = on_close;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "HTTP server did not start");
         return;
@@ -419,6 +522,13 @@ void webui_start(const webui_hooks_t *h) {
         {.uri = "/api/update/install", .method = HTTP_POST, .handler = post_update_install},
     };
     for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
+    httpd_uri_t ws = {.uri = "/ws",
+                      .method = HTTP_GET,
+                      .handler = ws_handler,
+                      .is_websocket = true,
+                      .ws_post_handshake_cb = ws_on_connect};
+    httpd_register_uri_handler(server, &ws);
+    bus_register_output(PORT_WEB, &web_ops, NULL);
     net_add_service("_http", "_tcp", 80);
     ESP_LOGI(TAG, "web UI on port 80");
 }

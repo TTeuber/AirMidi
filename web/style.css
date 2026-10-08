@@ -74,6 +74,25 @@ main { padding: calc(60 * var(--u)) calc(120 * var(--u)) calc(60 * var(--u)); ma
 .picker .name { text-align: center; }
 .picker a { line-height: 1; }
 
+/* stepper: two filled triangles with the value between, name below */
+.stepper { display: flex; flex-direction: column; align-items: center; gap: calc(20 * var(--u)); }
+.stepper .ctl { display: flex; align-items: center; gap: calc(30 * var(--u)); }
+.stepper svg { width: calc(28 * var(--u)); height: calc(36 * var(--u)); fill: var(--hue); cursor: pointer; }
+.stepper .value { min-width: calc(80 * var(--u)); text-align: center; }
+#faders { column-gap: calc(40 * var(--u)); }  /* 8 tiles in one row: 8 x 120 + 7 x 40 = 1240 of 1360 */
+#pads { column-gap: calc(20 * var(--u)); }    /* 12 pads: 12 x 90 + 11 x 20 = 1300 */
+.tile.drag { cursor: ns-resize; touch-action: none; }
+.tile.drag:active .fill { background: var(--hue-d); }
+/* pads: squares that fill while held (outline = playable, fill = sounding) */
+.pad { width: calc(90 * var(--u)); height: calc(120 * var(--u)); position: relative; cursor: pointer; touch-action: none; }
+.pad::before { content: ""; position: absolute; inset: 0; outline: calc(3 * var(--u)) solid var(--hue);
+               outline-offset: calc(-3 * var(--u)); opacity: .3; }
+.pad.on { background: var(--hue); }
+.pad span { position: absolute; left: 0; right: 0; bottom: calc(12 * var(--u)); text-align: center; line-height: 1; }
+.pad.on span { color: var(--bg); }
+.monitor { list-style: none; opacity: .7; font-variant-numeric: tabular-nums; }
+.monitor li { height: calc(40 * var(--u)); }
+
 /* toggle: a 40-unit square, outline off, fill on, name to its right */
 .toggle { display: flex; align-items: center; gap: calc(30 * var(--u)); cursor: pointer; }
 .toggle .box { width: calc(40 * var(--u)); height: calc(40 * var(--u)); outline: calc(3 * var(--u)) solid var(--hue);

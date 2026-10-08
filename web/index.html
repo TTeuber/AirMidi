@@ -11,6 +11,7 @@
   <span id="name" class="label">airmidi</span>
   <nav id="tabs">
     <a data-page="status" class="label">status</a>
+    <a data-page="play" class="label">play</a>
     <a data-page="settings" class="label">settings</a>
     <a data-page="wifi" class="label">wifi</a>
     <a data-page="update" class="label">update</a>
@@ -30,6 +31,16 @@
       </div>
     </div>
     <dl id="facts" class="facts"></dl>
+  </section>
+
+  <section id="play" class="page">
+    <div class="row">
+      <div class="stepper" id="s-ch" data-hue="salmon"></div>
+      <div class="stepper" id="s-oct" data-hue="salmon"></div>
+    </div>
+    <div class="row" id="faders"></div>
+    <div class="row" id="pads"></div>
+    <ul id="monitor" class="monitor small"></ul>
   </section>
 
   <section id="settings" class="page">

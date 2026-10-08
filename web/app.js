@@ -23,6 +23,7 @@ function show(page) {
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("on", p.id === page));
   document.querySelectorAll("#tabs a").forEach((a) => a.classList.toggle("on", a.dataset.page === page));
   if (page === "wifi") loadNetworks();
+  if (page === "play") wsConnect();
   if (page === "settings") loadSettings();
 }
 document.querySelectorAll("#tabs a").forEach((a) => (a.onclick = () => (location.hash = a.dataset.page)));
@@ -138,6 +139,121 @@ document.querySelectorAll("#mode a").forEach((a) => (a.onclick = async () => {
   await post("/api/mode", { mode: a.dataset.v });
   poll();
 }));
+
+// ---- play page: a generic control surface over the WebSocket (phase 5 draws a device's own controls) ----------
+
+const FADERS = [["mod", 1], ["vol", 7], ["expr", 11], ["cut", 74], ["res", 71], ["atk", 73], ["rel", 72], ["fx", 91]];
+const DEFAULTS = { 7: 100, 11: 127, 74: 64 };
+const NAMES = ["c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"];
+const play = { ch: 0, oct: 4, cc: {}, held: new Set(), log: [] };
+let ws = null;
+
+function wsConnect() {
+  if (ws && ws.readyState <= 1) return;
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (e) => {
+    const v = new DataView(e.data);
+    for (let i = 0; i + 4 <= v.byteLength; ) {
+      const w = v.getUint32(i);
+      const mt = w >>> 28, words = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4][mt];
+      if (mt === 2) received((w >> 16) & 0xff, (w >> 8) & 0x7f, w & 0x7f);
+      i += 4 * words;
+    }
+  };
+  ws.onclose = () => setTimeout(() => location.hash === "#play" && wsConnect(), 1000);
+}
+
+function sendMidi(st, d1, d2) {
+  if (!ws || ws.readyState !== 1) return;
+  const b = new DataView(new ArrayBuffer(4));
+  b.setUint32(0, (0x20000000 | (st << 16) | (d1 << 8) | d2) >>> 0);
+  ws.send(b.buffer);
+  logMidi("out", st, d1, d2);
+}
+
+function received(st, d1, d2) {
+  logMidi("in", st, d1, d2);
+  if ((st & 0x0f) !== play.ch) return;
+  if ((st & 0xf0) === 0xb0) play.cc[d1] = d2, renderFaders();
+  const note = d1 - 12 * play.oct;
+  if (((st & 0xf0) === 0x90 || (st & 0xf0) === 0x80) && note >= 0 && note < 12) {
+    $(`#pads .pad[data-n="${note}"]`)?.classList.toggle("on", (st & 0xf0) === 0x90 && d2 > 0);
+  }
+}
+
+function logMidi(dir, st, d1, d2) {
+  const kind = { 0x80: "off", 0x90: "on", 0xa0: "poly", 0xb0: "cc", 0xc0: "pgm", 0xd0: "press", 0xe0: "bend" }[st & 0xf0];
+  play.log.unshift(`${dir}  ch ${(st & 0x0f) + 1}  ${kind} ${d1} ${d2}`);
+  play.log.length = Math.min(play.log.length, 8);
+  if (!logQueued) (logQueued = true), requestAnimationFrame(() => {
+    logQueued = false;
+    $("#monitor").innerHTML = play.log.map((l) => `<li>${l}</li>`).join("");
+  });
+}
+let logQueued = false;
+
+const TRI_L = `<svg viewBox="0 0 28 36"><path d="M28 0v36L0 18z"/></svg>`;
+const TRI_R = `<svg viewBox="0 0 28 36"><path d="M0 0v36l28-18z"/></svg>`;
+
+function stepper(el, name, get, set, min, max) {
+  el.innerHTML = `<div class="ctl"><a class="dn">${TRI_L}</a><span class="value"></span><a class="up">${TRI_R}</a></div>
+    <span class="label">${name}</span>`;
+  const show = () => (el.querySelector(".value").textContent = get());
+  el.querySelector(".dn").onclick = () => (set(Math.max(min, get() - 1)), show());
+  el.querySelector(".up").onclick = () => (set(Math.min(max, get() + 1)), show());
+  show();
+}
+
+function renderFaders() {
+  document.querySelectorAll("#faders .tile").forEach((t) => {
+    const cc = +t.dataset.cc, v = play.cc[cc] ?? 0;
+    tile(t, t.dataset.name, v, v / 127);
+  });
+}
+
+function buildPlay() {
+  stepper($("#s-ch"), "ch", () => play.ch + 1, (v) => (play.ch = v - 1), 1, 16);
+  stepper($("#s-oct"), "oct", () => play.oct - 1, (v) => (play.oct = v + 1), -1, 8);
+  $("#faders").innerHTML = FADERS.map(([n, cc]) => `<div class="tile drag" data-hue="salmon" data-cc="${cc}" data-name="${n}"></div>`).join("");
+  document.querySelectorAll("#faders .tile").forEach((t) => {
+    const cc = +t.dataset.cc;
+    play.cc[cc] = DEFAULTS[cc] ?? 0;
+    let startY = 0, startV = 0;
+    t.onpointerdown = (e) => {
+      t.setPointerCapture(e.pointerId);
+      startY = e.clientY, startV = play.cc[cc];
+    };
+    t.onpointermove = (e) => {
+      if (!t.hasPointerCapture(e.pointerId)) return;
+      const h = t.getBoundingClientRect().height, fine = e.shiftKey ? 4 : 1;
+      const v = Math.max(0, Math.min(127, Math.round(startV + ((startY - e.clientY) / h) * 127 / fine)));
+      if (v !== play.cc[cc]) play.cc[cc] = v, sendMidi(0xb0 | play.ch, cc, v), renderFaders();
+    };
+    t.ondblclick = () => {
+      play.cc[cc] = DEFAULTS[cc] ?? 0;
+      sendMidi(0xb0 | play.ch, cc, play.cc[cc]);
+      renderFaders();
+    };
+  });
+  renderFaders();
+  $("#pads").innerHTML = NAMES.map((n, i) => `<div class="pad" data-hue="salmon" data-n="${i}"><span class="small">${n}</span></div>`).join("");
+  document.querySelectorAll("#pads .pad").forEach((p) => {
+    const note = () => 12 * play.oct + +p.dataset.n;
+    p.onpointerdown = (e) => {
+      p.setPointerCapture(e.pointerId);
+      p.classList.add("on");
+      sendMidi(0x90 | play.ch, note(), 100);
+    };
+    const up = () => {
+      if (!p.classList.contains("on")) return;
+      p.classList.remove("on");
+      sendMidi(0x80 | play.ch, note(), 0);
+    };
+    p.onpointerup = up;
+    p.onpointercancel = up;
+  });
+}
 
 // ---- settings page -----------------------------------------------------------------------------------------------
 
@@ -310,6 +426,7 @@ async function poll() {
   }
 }
 
+buildPlay();
 show(location.hash.slice(1) || "status");
 poll();
 setInterval(poll, 1000);
