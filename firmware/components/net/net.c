@@ -138,6 +138,10 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
         snprintf(ip_text, sizeof ip_text, IPSTR, IP2STR(&e->ip_info.ip));
         attempts = 0;
         state = NET_CONNECTED;
+        // Modem sleep makes the router hold frames until the next beacon wake-up: network MIDI then arrives in
+        // clumps ~100 ms apart (measured). Network mode is for playing over Wi-Fi, so the radio stays awake.
+        esp_err_t ps = esp_wifi_set_ps(WIFI_PS_NONE);
+        if (ps) ESP_LOGW(TAG, "could not turn Wi-Fi power save off: %s", esp_err_to_name(ps));
         ESP_LOGI(TAG, "joined, %s.local at %s", host, ip_text);
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_START) {
         strcpy(ip_text, "192.168.4.1");

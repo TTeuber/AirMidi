@@ -185,18 +185,28 @@ static void test_bye_ends_the_session(void) {
     TEST_ASSERT_EQUAL_HEX8(0xF1, code_of(&sent[1], 0));
 }
 
-static void test_silent_client_is_pinged_then_dropped(void) {
+static void test_silent_client_is_pinged_but_kept(void) {
     reset();
     invite(&A, 0);
-    for (uint32_t t = 0; t < 18990; t += 10) nm2_host_tick(&host, t);
-    TEST_ASSERT_EQUAL(0, downs);
+    for (uint32_t t = 0; t < 100000; t += 10) nm2_host_tick(&host, t);
+    TEST_ASSERT_EQUAL(0, downs);  // unanswered pings are not a reason to drop (macOS does not answer them)
     int pings = 0;
     for (int i = 0; i < n_sent; i++) pings += code_of(&sent[i], 0) == 0x20;
-    TEST_ASSERT_EQUAL(3, pings);  // at 10, 13 and 16 s, unanswered ... so at 19 s it is over
-    for (uint32_t t = 18990; t < 20000; t += 10) nm2_host_tick(&host, t);
+    TEST_ASSERT_EQUAL(9, pings);  // 10, 20, ... 90 s
+}
+
+static void test_silent_client_gives_way_to_a_new_one(void) {
+    reset();
+    invite(&A, 0), invite(&B, 0);
+    invite(&C, 30000);  // both slots busy, nobody silent for a minute yet
+    TEST_ASSERT_EQUAL(2, ups);
+    TEST_ASSERT_EQUAL_HEX8(0x40, sent[n_sent - 1].b[6]);
+    data(&B, 0, 0, 50000);  // B keeps talking; A has been silent since 0
+    invite(&C, 61000);
+    TEST_ASSERT_EQUAL(3, ups);
     TEST_ASSERT_EQUAL(1, downs);
-    TEST_ASSERT_EQUAL_HEX8(0xF0, code_of(&sent[n_sent - 1], 0));
-    TEST_ASSERT_EQUAL_HEX8(0x04, sent[n_sent - 1].b[6]);  // timeout
+    TEST_ASSERT_TRUE(host.s[0].active);
+    TEST_ASSERT_EQUAL(C.ip, host.s[0].peer.ip);  // A's slot
 }
 
 static void test_ping_reply_keeps_the_session(void) {
@@ -272,16 +282,18 @@ static void test_gap_is_held_then_filled_by_retransmit(void) {
     TEST_ASSERT_EQUAL(0, host.s[0].stats.rx_lost);
 }
 
-static void test_gap_given_up_after_60_ms(void) {
+static void test_gap_given_up_after_150_ms(void) {
     reset();
     invite(&A, 0);
     data(&A, 0, 0, 0);
     data(&A, 2, 2, 1);
-    for (uint32_t t = 2; t <= 61; t++) nm2_host_tick(&host, t);
+    for (uint32_t t = 2; t <= 150; t++) nm2_host_tick(&host, t);
+    TEST_ASSERT_EQUAL(1, n_delivered);  // still waiting
+    nm2_host_tick(&host, 151);
     TEST_ASSERT_EQUAL(2, n_delivered);
     TEST_ASSERT_EQUAL_HEX32(note(2), delivered[1]);
     TEST_ASSERT_EQUAL(1, host.s[0].stats.rx_lost);
-    data(&A, 1, 1, 70);  // too late: delivering it now would put it after 2
+    data(&A, 1, 1, 170);  // too late: delivering it now would put it after 2
     TEST_ASSERT_EQUAL(2, n_delivered);
 }
 
@@ -331,6 +343,19 @@ static void test_session_reset_restarts_sequences(void) {
     TEST_ASSERT_EQUAL_HEX8(0x83, code_of(&sent[n_sent - 1], 0));
     data(&A, 0, 1, 2);  // a duplicate without the reset
     TEST_ASSERT_EQUAL(2, n_delivered);
+}
+
+static void test_long_command_in_order_is_delivered_whole(void) {
+    reset();
+    invite(&A, 0);
+    dgram_t d;
+    start(&d);
+    uint32_t w[64];
+    for (int i = 0; i < 64; i++) w[i] = 0x20B00000u | (uint32_t)i << 8;  // 64 one-word UMPs
+    cmd(&d, 0xFF, 0, w, 64);
+    deliver_to_host(&A, &d, 0);
+    TEST_ASSERT_EQUAL(64, n_delivered);
+    TEST_ASSERT_EQUAL_HEX32(0x20B03F00, delivered[63]);
 }
 
 static void test_multiword_umps_are_split_correctly(void) {
@@ -497,16 +522,18 @@ int main(void) {
     RUN_TEST(test_data_without_a_session_gets_bye);
     RUN_TEST(test_unknown_and_authenticated_commands_are_naked);
     RUN_TEST(test_bye_ends_the_session);
-    RUN_TEST(test_silent_client_is_pinged_then_dropped);
+    RUN_TEST(test_silent_client_is_pinged_but_kept);
+    RUN_TEST(test_silent_client_gives_way_to_a_new_one);
     RUN_TEST(test_ping_reply_keeps_the_session);
     RUN_TEST(test_in_order_and_fec_duplicates);
     RUN_TEST(test_fec_fills_a_lost_datagram);
     RUN_TEST(test_gap_is_held_then_filled_by_retransmit);
-    RUN_TEST(test_gap_given_up_after_60_ms);
+    RUN_TEST(test_gap_given_up_after_150_ms);
     RUN_TEST(test_retransmit_error_ends_the_wait);
     RUN_TEST(test_hold_overflow_gives_up);
     RUN_TEST(test_sequence_wraps);
     RUN_TEST(test_session_reset_restarts_sequences);
+    RUN_TEST(test_long_command_in_order_is_delivered_whole);
     RUN_TEST(test_multiword_umps_are_split_correctly);
     RUN_TEST(test_send_carries_two_fec_repeats);
     RUN_TEST(test_many_umps_split_into_commands);

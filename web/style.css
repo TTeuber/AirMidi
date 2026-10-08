@@ -74,6 +74,12 @@ main { padding: calc(60 * var(--u)) calc(120 * var(--u)) calc(60 * var(--u)); ma
 .picker .name { text-align: center; }
 .picker a { line-height: 1; }
 
+/* toggle: a 40-unit square, outline off, fill on, name to its right */
+.toggle { display: flex; align-items: center; gap: calc(30 * var(--u)); cursor: pointer; }
+.toggle .box { width: calc(40 * var(--u)); height: calc(40 * var(--u)); outline: calc(3 * var(--u)) solid var(--hue);
+               outline-offset: calc(-3 * var(--u)); }
+.toggle.on .box { background: var(--hue); }
+
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: calc(16 * var(--u)) calc(60 * var(--u));
          margin-bottom: calc(80 * var(--u)); }
 .facts dt { font-size: calc(30 * var(--u)); opacity: .45; }

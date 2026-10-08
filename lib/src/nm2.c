@@ -25,10 +25,12 @@ enum { NAK_NOT_SUPPORTED = 0x01 };
 
 #define RETRANSMIT_AFTER_MS 10  // M2-124 7.2.3 suggests a short delay, so reordered packets can arrive first
 #define RETRANSMIT_EVERY_MS 20
-#define GIVE_UP_MS 60
+#define GIVE_UP_MS 150
 #define PING_IDLE_MS 10000  // ping a client we have not heard from for this long
-#define PING_EVERY_MS 3000
-#define PINGS_MISSED_MAX 3
+#define PING_EVERY_MS 10000
+// A silent client is not dropped: macOS 26.5 does not answer pings (found on the rig), so unanswered pings say
+// nothing. Instead, a client silent for this long gives its slot to a new one when all slots are taken.
+#define EVICT_SILENT_MS 60000
 
 // Zero-length UMP Data commands after the last data: two quick ones carry the last real command twice more (FEC),
 // then the gaps grow, then they stop (M2-124 7.2.1).
@@ -131,9 +133,16 @@ static void invitation(nm2_host_t *h, const nm2_addr_t *from, const uint8_t *c, 
     if (fresh) {
         for (i = 0; i < NM2_SESSIONS && h->s[i].active; i++) {
         }
-        if (i == NM2_SESSIONS) {
-            send_one(h, from, CMD_BYE, (uint16_t)BYE_TOO_MANY << 8, NULL, 0);
-            return;
+        if (i == NM2_SESSIONS) {  // all taken: the longest-silent one goes, if silent long enough
+            int oldest = 0;
+            for (int k = 1; k < NM2_SESSIONS; k++)
+                if (now - h->s[k].last_rx_ms > now - h->s[oldest].last_rx_ms) oldest = k;
+            if (now - h->s[oldest].last_rx_ms < EVICT_SILENT_MS) {
+                send_one(h, from, CMD_BYE, (uint16_t)BYE_TOO_MANY << 8, NULL, 0);
+                return;
+            }
+            end_session(h, oldest, BYE_TIMEOUT, true);
+            i = oldest;
         }
         nm2_session_t *s = &h->s[i];
         memset(s, 0, sizeof *s);
@@ -187,14 +196,23 @@ static void give_up(nm2_host_t *h, int i) {
     }
 }
 
+static void deliver_words(nm2_host_t *h, int i, const uint8_t *pl, int words) {
+    for (int k = 0; k < words;) {
+        ump_t u = {{0}};
+        int nw = ump_words_for_mt(get32(pl + 4 * k) >> 28);
+        if (k + nw > words) break;  // a UMP cut short: malformed, drop the rest
+        for (int j = 0; j < nw; j++) u.w[j] = get32(pl + 4 * (k + j));
+        h->cb.deliver(h->ctx, i, &u);
+        k += nw;
+    }
+}
+
 static void receive_data(nm2_host_t *h, int i, uint16_t seq, const uint8_t *pl, int words, uint32_t now) {
     nm2_session_t *s = &h->s[i];
     if ((int16_t)(seq - s->rx_next) < 0) {  // already delivered: an FEC repeat or a duplicate datagram
         s->stats.rx_dups++;
         return;
     }
-    nm2_rxcmd_t c = {.seq = seq, .n = (uint8_t)(words < NM2_RX_WORDS ? words : NM2_RX_WORDS)};
-    for (int k = 0; k < c.n; k++) c.w[k] = get32(pl + 4 * k);
     for (int k = 0; k < s->n_hold; k++) {
         if (s->hold[k].seq == seq) {
             s->stats.rx_dups++;
@@ -202,21 +220,22 @@ static void receive_data(nm2_host_t *h, int i, uint16_t seq, const uint8_t *pl, 
         }
     }
     s->stats.rx_cmds++;
-    if (seq == s->rx_next) {
+    if (seq == s->rx_next) {  // in order: straight from the datagram, whatever its length
         bool had_gap = s->n_hold > 0;
-        deliver(h, i, &c);
+        deliver_words(h, i, pl, words);
         s->rx_next++;
         drain_hold(h, i);
         if (had_gap) s->stats.rx_recovered++;
         return;
     }
+    if (words > NM2_RX_WORDS) return;  // too long to hold: it stays missing, and counts as lost if not resent
     // ahead of a gap
     if (s->n_hold == NM2_HOLD) {
         give_up(h, i);  // waited for too much: stop waiting
         int16_t d = (int16_t)(seq - s->rx_next);
         if (d < 0) return;  // it belonged in a gap just given up on: delivering it now would reorder
         if (d == 0) {
-            deliver(h, i, &c);
+            deliver_words(h, i, pl, words);
             s->rx_next++;
             return;
         }
@@ -225,7 +244,10 @@ static void receive_data(nm2_host_t *h, int i, uint16_t seq, const uint8_t *pl, 
     int at = 0;
     while (at < s->n_hold && (int16_t)(s->hold[at].seq - seq) < 0) at++;
     memmove(s->hold + at + 1, s->hold + at, (s->n_hold - at) * sizeof s->hold[0]);
-    s->hold[at] = c;
+    nm2_rxcmd_t *c = &s->hold[at];
+    c->seq = seq;
+    c->n = (uint8_t)words;
+    for (int k = 0; k < words; k++) c->w[k] = get32(pl + 4 * k);
     s->n_hold++;
 }
 
@@ -387,10 +409,6 @@ void nm2_host_tick(nm2_host_t *h, uint32_t now) {
         }
 
         if (now - s->last_rx_ms >= PING_IDLE_MS && (!s->ping_sent_ms || now - s->ping_sent_ms >= PING_EVERY_MS)) {
-            if (s->missed_pings >= PINGS_MISSED_MAX) {
-                end_session(h, i, BYE_TIMEOUT, true);
-                continue;
-            }
             uint8_t pl[4];
             put32(pl, ++s->ping_id);
             send_one(h, &s->peer, CMD_PING, 0, pl, 1);

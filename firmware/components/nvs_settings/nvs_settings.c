@@ -12,7 +12,7 @@
 static const char *TAG = "settings";
 
 #define NAMESPACE "airmidi"
-#define SCHEMA 1  // bump when a field changes meaning; add a step to migrate()
+#define SCHEMA 2  // bump when a field is added or changes meaning; add a step to migrate()
 
 static settings_t current;
 static SemaphoreHandle_t lock;
@@ -21,15 +21,18 @@ static esp_err_t write_all(nvs_handle_t h, const settings_t *s) {
     esp_err_t e = nvs_set_str(h, "name", s->name);
     if (!e) e = nvs_set_u8(h, "mode", (uint8_t)s->mode);
     if (!e) e = nvs_set_u16(h, "sysex_to", s->sysex_timeout_ms);
+    if (!e) e = nvs_set_u8(h, "ble_net", s->ble_in_network);
     if (!e) e = nvs_set_u8(h, "schema", SCHEMA);
     if (!e) e = nvs_commit(h);
     return e;
 }
 
-// Bring a store written by an older firmware up to SCHEMA, one step at a time. Schema 1 is the first, so there is
-// nothing to do yet; a future change looks like `case 1: <convert>; /* fall through */ case 2: ...`.
+// Bring a store written by an older firmware up to SCHEMA, one step at a time (each case falls through to the next).
 static void migrate(nvs_handle_t h, uint8_t from) {
     switch (from) {
+        case 1:  // schema 2 added ble_in_network; schema 1 boxes kept BLE on in Network mode, so they still do
+            nvs_set_u8(h, "ble_net", 1);
+            /* fall through */
         default:
             break;
     }
@@ -72,6 +75,9 @@ esp_err_t nvs_settings_init(void) {
         nvs_get_u8(h, "mode", &mode);
         s.mode = (airmidi_mode_t)mode;
         nvs_get_u16(h, "sysex_to", &s.sysex_timeout_ms);
+        uint8_t ble_net = s.ble_in_network;
+        nvs_get_u8(h, "ble_net", &ble_net);
+        s.ble_in_network = ble_net;
         const char *why = settings_check(&s);
         if (why) {
             ESP_LOGW(TAG, "stored settings invalid (%s), using defaults", why);
@@ -80,7 +86,8 @@ esp_err_t nvs_settings_init(void) {
     }
     nvs_close(h);
     current = s;
-    ESP_LOGI(TAG, "name %s, mode %s, SysEx timeout %u ms", s.name, airmidi_mode_name(s.mode), s.sysex_timeout_ms);
+    ESP_LOGI(TAG, "name %s, mode %s, SysEx timeout %u ms, BLE in network mode %s", s.name, airmidi_mode_name(s.mode),
+             s.sysex_timeout_ms, s.ble_in_network ? "on" : "off");
     return e;
 }
 

@@ -31,6 +31,10 @@ own USB MIDI path and the TRS wire time (3 bytes at 31250 baud = 0.96 ms).
 | TRS -> Network MIDI 2.0 | spike S1 | 7.1 ms | 78.3 ms | 109.4 ms | 0/300 |
 | BLE -> TRS, phase 2 bridge, bleak central, 7.5 ms interval | phase 2 | 8.4 ms | 12.0-12.7 ms | 29-31 ms | 0/300 |
 | TRS -> BLE, same | phase 2 | 9.4-9.5 ms | 14.7-16.1 ms | 22-26 ms | 0/300 |
+| Network MIDI 2.0 -> TRS, phase 4 (FEC, retransmit), BLE off | phase 4 | 6.7 ms | 73-75 ms | 98 ms | 0/300 |
+| TRS -> Network MIDI 2.0, same | phase 4 | 4.2 ms | 69-70 ms | 94 ms | 0/300 |
+| Network MIDI 2.0 -> TRS at 5 ms spacing | phase 4 | 7.1 ms | 85 ms | 109 ms | 0/600 |
+| Network MIDI 2.0 -> TRS, BLE stack running | phase 4 | 23.0 ms | 102 ms | 156 ms | 0/300 |
 
 The phase 2 rows come from two runs of `tools/hil/bridge_test.py --bleak`. They are lower than the spike's CoreMIDI
 rows for BLE -> TRS: the bleak central writes as soon as it is asked, while CoreMIDI's driver schedules its sends.

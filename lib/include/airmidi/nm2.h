@@ -2,13 +2,16 @@
 // passes in every received datagram with the sender's address and the time, and gets datagrams to send and UMPs
 // to deliver through callbacks. Time is milliseconds from any monotonic clock (wraps after 49 days, handled).
 //
+// Liveness: a client we have not heard from for 10 s is pinged every 10 s, but never dropped for not answering
+// (macOS 26.5 does not answer pings); a client silent for 60 s gives its slot to a new one when all are taken.
+//
 // Data integrity:
 //   - sending: every UMP Data command goes out with the two previous ones in front (FEC, M2-124 7.2.2); when data
 //     stops, zero-length commands follow at 20 and 40 ms (so the last real command is repeated twice more), then
 //     at growing intervals; sent commands are kept for Retransmit Requests;
 //   - receiving: duplicates (FEC repeats) are skipped; a gap holds the commands after it (up to NM2_HOLD of them)
 //     instead of delivering them out of order, asks for a retransmit after 10 ms (then every 20), and gives up after
-//     60 ms or when NM2_HOLD commands are waiting,
+//     150 ms (Wi-Fi links stall for ~100 ms, measured) or when NM2_HOLD commands are waiting,
 //     delivering what it holds and counting the loss. Out-of-order MIDI is worse than late MIDI: a note off ahead
 //     of its note on leaves a note hanging.
 #pragma once
@@ -26,8 +29,8 @@ extern "C" {
 #define NM2_SESSIONS 2
 #define NM2_HISTORY 32    // sent UMP Data commands kept for FEC and retransmit
 #define NM2_CMD_WORDS 16  // UMP words per data command we build (a 128-bit UMP is 4)
-#define NM2_RX_WORDS 64   // the most a client may put in one (M2-124 7.1)
-#define NM2_HOLD 24       // received commands held behind a gap: 60 ms at 400 commands/s (6 KB per session)
+#define NM2_RX_WORDS 32   // a command held behind a gap; longer ones are only taken in order (clients may send 64)
+#define NM2_HOLD 48       // commands held behind a gap: 150 ms at 320 commands/s (6.3 KB per session)
 #define NM2_FEC 2
 #define NM2_MAX_PACKET 1400  // M2-124 5.1.1: stay under typical MTUs
 

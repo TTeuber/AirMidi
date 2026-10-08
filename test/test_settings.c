@@ -14,6 +14,7 @@ static void test_defaults_are_valid(void) {
     TEST_ASSERT_EQUAL_STRING("airmidi-7530", s.name);
     TEST_ASSERT_EQUAL(AIRMIDI_MODE_PLAY, s.mode);
     TEST_ASSERT_EQUAL(500, s.sysex_timeout_ms);
+    TEST_ASSERT_FALSE(s.ble_in_network);
     TEST_ASSERT_NULL(settings_check(&s));
 }
 

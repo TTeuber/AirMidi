@@ -16,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net.h"
+#include "net_midi.h"
 #include "nvs_settings.h"
 #include "ota.h"
 #include "power.h"
@@ -157,7 +158,8 @@ static esp_err_t get_status(httpd_req_t *req) {
     static const struct {
         int port;
         const char *name;
-    } shown[] = {{PORT_TRS, "trs"}, {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"}, {PORT_WEB, "web"}};
+    } shown[] = {{PORT_TRS, "trs"},    {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"},
+                 {PORT_NET_0, "net1"}, {PORT_NET_1, "net2"}, {PORT_WEB, "web"}};
     cJSON *ports = cJSON_AddArrayToObject(r, "ports");
     for (size_t i = 0; i < sizeof shown / sizeof shown[0]; i++) {
         bus_port_stats_t ps;
@@ -169,6 +171,23 @@ static esp_err_t get_status(httpd_req_t *req) {
         cJSON_AddNumberToObject(p, "dropped", ps.dropped);
         cJSON_AddBoolToObject(p, "up", bus_is_up(shown[i].port));
         cJSON_AddItemToArray(ports, p);
+    }
+
+    cJSON *net = cJSON_AddArrayToObject(r, "net");
+    for (int i = 0; i < NM2_SESSIONS; i++) {
+        net_midi_session_info_t ni;
+        net_midi_get_info(i, &ni);
+        cJSON *c = cJSON_CreateObject();
+        cJSON_AddBoolToObject(c, "active", ni.active);
+        cJSON_AddStringToObject(c, "peer", ni.peer);
+        cJSON_AddStringToObject(c, "ip", ni.ip);
+        cJSON_AddNumberToObject(c, "protocol", ni.protocol);
+        cJSON_AddNumberToObject(c, "rx", ni.stats.rx_cmds);
+        cJSON_AddNumberToObject(c, "lost", ni.stats.rx_lost);
+        cJSON_AddNumberToObject(c, "recovered", ni.stats.rx_recovered);
+        cJSON_AddNumberToObject(c, "tx", ni.stats.tx_cmds);
+        cJSON_AddNumberToObject(c, "retransmitted", ni.stats.tx_retransmitted);
+        cJSON_AddItemToArray(net, c);
     }
 
     ota_info_t oi;
@@ -199,6 +218,7 @@ static cJSON *settings_json(const settings_t *s) {
     cJSON_AddStringToObject(r, "name", s->name);
     cJSON_AddStringToObject(r, "mode", airmidi_mode_name(s->mode));
     cJSON_AddNumberToObject(r, "sysex_timeout_ms", s->sysex_timeout_ms);
+    cJSON_AddBoolToObject(r, "ble_in_network", s->ble_in_network);
     return r;
 }
 
@@ -223,11 +243,14 @@ static esp_err_t post_settings(httpd_req_t *req) {
         if (strlen(name->valuestring) > SETTINGS_NAME_MAX) s.name[0] = 0;  // fails the check below
     }
     if (cJSON_IsNumber(timeout)) s.sysex_timeout_ms = timeout->valuedouble > 65535 ? 0 : timeout->valueint;
+    const cJSON *ble_net = cJSON_GetObjectItem(in, "ble_in_network");
+    if (cJSON_IsBool(ble_net)) s.ble_in_network = cJSON_IsTrue(ble_net);
     cJSON_Delete(in);
     const char *why = settings_check(&s);
     if (why) return send_error(req, "400 Bad Request", why);
     if (nvs_settings_set(&s) != ESP_OK) return send_error(req, "500 Internal Server Error", "could not store");
-    bool restart = strcmp(s.name, old.name) != 0 || s.sysex_timeout_ms != old.sysex_timeout_ms;
+    bool restart = strcmp(s.name, old.name) != 0 || s.sysex_timeout_ms != old.sysex_timeout_ms ||
+                   (s.mode == AIRMIDI_MODE_NETWORK && s.ble_in_network != old.ble_in_network);
     cJSON *r = cJSON_CreateObject();
     cJSON_AddItemToObject(r, "settings", settings_json(&s));
     cJSON_AddBoolToObject(r, "restart", restart);

@@ -120,6 +120,8 @@ function renderStatus() {
     ["reset", s.reset_reason],
     ["wifi", s.wifi.state + (s.wifi.ip ? " " + s.wifi.ip : "")],
     ["ble", s.ble.map((c, i) => `${i + 1} ${c.state}${c.interval_ms ? " " + c.interval_ms + " ms" : ""}`).join(", ")],
+    ["net", s.net.map((c, i) => c.active
+      ? `${i + 1} ${c.peer} (midi ${c.protocol}.0), lost ${c.lost}, recovered ${c.recovered}` : `${i + 1} idle`).join(", ")],
     ["trs", `in ${s.trs.rx} bytes, out ${s.trs.tx} bytes, dropped ${s.trs.rx_dropped + s.trs.tx_dropped}`],
     ["heap", `${Math.round(s.heap / 1024)} kb free`],
   ];
@@ -151,13 +153,16 @@ function renderSettings() {
   wide($("#w-name"), "name", settings.name, 0);
   const t = settings.sysex_timeout_ms;
   wide($("#w-sysex"), "sysex wait", `${t} ms`, Math.log(t / 50) / Math.log(100));
+  $("#t-blenet").classList.toggle("on", settings.ble_in_network);
 }
+
+$("#t-blenet").onclick = () => saveSetting("ble_in_network", !settings.ble_in_network);
 
 async function saveSetting(key, value) {
   try {
     const r = await post("/api/settings", { ...settings, [key]: value });
     settings = r.settings;
-    $("#settings-msg").textContent = r.restart ? "restarting with the new name" : "saved";
+    $("#settings-msg").textContent = r.restart ? "saved: restarting to apply it" : "saved";
   } catch (e) {
     $("#settings-msg").textContent = e.message;
   }

@@ -44,6 +44,7 @@ static slot_t slots[SLOTS];
 static uint16_t midi_handle;
 static uint8_t own_addr_type;
 static char dev_name[32];
+static volatile bool slow_adv;  // Wi-Fi is on: advertise rarely, the radio is shared
 static volatile bool synced;
 
 static int port_of(int slot) { return slot == 0 ? PORT_BLE_0 : PORT_BLE_1; }
@@ -254,8 +255,8 @@ static void advertise(void) {
     ble_gap_adv_rsp_set_fields(&rsp);
     struct ble_gap_adv_params p = {.conn_mode = BLE_GAP_CONN_MODE_UND,
                                    .disc_mode = BLE_GAP_DISC_MODE_GEN,
-                                   .itvl_min = BLE_GAP_ADV_ITVL_MS(100),
-                                   .itvl_max = BLE_GAP_ADV_ITVL_MS(150)};
+                                   .itvl_min = slow_adv ? BLE_GAP_ADV_ITVL_MS(1000) : BLE_GAP_ADV_ITVL_MS(100),
+                                   .itvl_max = slow_adv ? BLE_GAP_ADV_ITVL_MS(1100) : BLE_GAP_ADV_ITVL_MS(150)};
     int rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &p, gap_event, NULL);
     if (rc) ESP_LOGW(TAG, "advertising failed: %d", rc);
 }
@@ -294,6 +295,18 @@ void ble_midi_start(const char *name) {
 void ble_midi_get_stats(int slot, ble_midi_slot_stats_t *out) { *out = slots[slot].stats; }
 
 bool ble_midi_ready(void) { return synced; }
+
+// Advertising every 100-150 ms costs Wi-Fi airtime on the shared radio: with it, pings to the box averaged 30 ms,
+// with advertising stopped 14.5 ms (measured). With Wi-Fi on, advertise about once a second instead: a central
+// still finds the box within a second or two.
+void ble_midi_set_slow_advertising(bool slow) {
+    if (slow == slow_adv) return;
+    slow_adv = slow;
+    if (synced && ble_gap_adv_active()) {
+        ble_gap_adv_stop();
+        advertise();
+    }
+}
 
 bool ble_midi_connected(void) {
     for (int i = 0; i < SLOTS; i++)

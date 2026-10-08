@@ -344,3 +344,6 @@ user's own devices (sd_synth) take this role.
 | 2026-10-08 | Signed images with RSA-3072 (Secure Boot V2 format) on both boards, checked on update, no eFuses | the S3 has no ECDSA variant; hardware Secure Boot stays off on the only C6 (docs/design/ota.md) |
 | 2026-10-08 | `ota_end()` erases the sector after the image before verifying | ota_test.py found an unsigned image accepted against a signature left by the previous upload |
 | 2026-10-08 | Web UI in the forslike style, plain JS, polling /api/status at 1 Hz; open AP in Setup mode | no app to install, 18 KB gzipped; the AP only exists after an 8 s press and accepts only signed firmware |
+| 2026-10-08 | Network mode runs without BLE by default (setting `ble_in_network`), Wi-Fi power save off | replaces 2026-10-07 "Network mode keeps BLE on": S2 measured BLE's side only; with the BLE stack running network MIDI took 22 ms median, without it 6.7 / 4.2 ms (docs/design/network-midi.md) |
+| 2026-10-08 | Network MIDI: FEC 2, retransmit, hold-don't-reorder with a 150 ms give-up; never drop a client for unanswered pings | 0/600 lost at 5 ms spacing (spike: 45); macOS 26.5 does not answer pings and sends nothing while idle |
+| 2026-10-08 | One function block for the whole box (per-port blocks later) | per-port blocks need group-aware routing; macOS works with one |

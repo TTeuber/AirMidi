@@ -24,6 +24,7 @@ typedef struct {
     char name[SETTINGS_NAME_MAX + 1];
     airmidi_mode_t mode;
     uint16_t sysex_timeout_ms;  // how long a SysEx in progress may hold other sources off a merged output
+    bool ble_in_network;        // keep BLE on in Network mode (costs network MIDI ~16 ms: the radio is shared)
 } settings_t;
 
 // Defaults; the name ends in the last two bytes of the MAC address so two boxes in one room differ.

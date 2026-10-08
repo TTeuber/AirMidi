@@ -8,6 +8,7 @@ void settings_defaults(settings_t *s, const uint8_t mac[6]) {
     snprintf(s->name, sizeof s->name, "airmidi-%02x%02x", mac[4], mac[5]);
     s->mode = AIRMIDI_MODE_PLAY;
     s->sysex_timeout_ms = 500;
+    s->ble_in_network = false;
 }
 
 const char *settings_check(const settings_t *s) {

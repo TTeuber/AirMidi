@@ -20,5 +20,8 @@ void ble_midi_get_stats(int slot, ble_midi_slot_stats_t *out);
 // True once the NimBLE host has synced with the controller and advertising started (self-test).
 bool ble_midi_ready(void);
 
+// Advertise about once a second instead of every 100-150 ms (while Wi-Fi shares the radio).
+void ble_midi_set_slow_advertising(bool slow);
+
 // True while at least one central is connected (for the LED).
 bool ble_midi_connected(void);

@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net.h"
+#include "net_midi.h"
 #include "nvs_settings.h"
 #include "ota.h"
 #include "power.h"
@@ -47,13 +48,14 @@ static void inject_task(void *arg) {
 
 static volatile button_event_t pending_event;
 static bool settings_ok;
+static bool ble_running;  // the BLE stack was started at boot
 
 // The self-test for a new image (ota_confirm_after).
 static bool healthy(void) {
 #if CONFIG_AIRMIDI_TEST_SELFTEST_FAIL
     return false;  // test image (ota_test.py): must roll back
 #endif
-    return settings_ok && ble_midi_ready() && webui_running() && bus_queue_dropped() == 0;
+    return settings_ok && (!ble_running || ble_midi_ready()) && webui_running() && bus_queue_dropped() == 0;
 }
 
 #if CONFIG_AIRMIDI_TEST_CRASH
@@ -63,7 +65,12 @@ static void crash(void *arg) { abort(); }  // test image (ota_test.py): must rol
 // esp_timer task: hand the event to the main loop.
 static void on_button(button_event_t ev) { pending_event = ev; }
 
-// Switch mode now and remember it for the next boot.
+// BLE shares the radio with Wi-Fi and costs network MIDI ~16 ms of latency (measured), so Network mode runs
+// without it unless the setting asks for it.
+static bool ble_wanted(const settings_t *s) { return s->mode != AIRMIDI_MODE_NETWORK || s->ble_in_network; }
+
+// Switch mode now and remember it for the next boot. Starting or stopping BLE needs a restart (NimBLE does not
+// come back cleanly after a deinit), so a switch that changes it saves and restarts.
 static void set_mode(airmidi_mode_t mode) {
     settings_t s;
     nvs_settings_get(&s);
@@ -72,7 +79,14 @@ static void set_mode(airmidi_mode_t mode) {
         nvs_settings_set(&s);
     }
     ESP_LOGI(TAG, "mode: %s", airmidi_mode_name(mode));
+    if (ble_wanted(&s) != ble_running) {
+        ESP_LOGI(TAG, "BLE %s: restarting", ble_running ? "off" : "on");
+        panic();
+        vTaskDelay(pdMS_TO_TICKS(300));
+        esp_restart();
+    }
     net_set_mode(mode);
+    if (ble_running) ble_midi_set_slow_advertising(mode != AIRMIDI_MODE_PLAY);
 }
 
 static airmidi_mode_t current_mode(void) {
@@ -152,8 +166,11 @@ void app_main(void) {
 
     bus_start(s.sysex_timeout_ms);
     uart_midi_start();
-    ble_midi_start(s.name);
+    ble_running = ble_wanted(&s);
+    if (ble_running) ble_midi_start(s.name);
     net_start(s.mode, s.name);
+    if (ble_running) ble_midi_set_slow_advertising(s.mode != AIRMIDI_MODE_PLAY);
+    net_midi_start(s.name);
     webui_start(&(webui_hooks_t){.set_mode = set_mode});
     power_start();
     ui_start(on_button);
