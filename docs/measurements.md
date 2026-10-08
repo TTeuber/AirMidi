@@ -42,5 +42,24 @@ maximum of 104 ms.
 
 ## Power
 
-To do: phase 2 firmware in each state, USB power meter on the receiver's USB input (switch off, so the board runs
-from USB and the charger is idle).
+Phase 2 firmware, receiver on USB with the power switch off (the board runs from USB, the cell is out of the
+circuit), a USB power meter in the receiver's cable. The meter is coarse: it reads in steps and shows 0.000 A for
+currents under its threshold, so these are ranges read by eye, not averages. A shunt and an oscilloscope (or a
+Nordic PPK2) would give real averages; until then these only rank the modes.
+
+| State | Meter reading |
+|---|---|
+| A: CPU fixed 160 MHz, BLE advertising, not connected | 0 or 23-40 mA |
+| B: CPU fixed 160 MHz, BLE connected (30 ms interval), idle | 0 or 23-50 mA |
+| C: frequency scaling 40-160 MHz, connected, idle | 0 or 23-40 mA |
+| D: frequency scaling + automatic light sleep, connected, idle | mostly 0, peaks 23-35 mA |
+
+Light sleep is the only change the meter clearly shows, and it cannot be used while a TRS device may send: with
+`tools/hil/sleep_test.py`, single messages after 1.5 s of silence arrived 15/15 both ways in modes 0 and 1, but in
+light sleep only 9/15 TRS -> BLE (and some were lost inside a 20 ms stream), even with the UART clocked from the
+crystal. BLE -> TRS survived light sleep (the radio wakes the chip). Light sleep also silences the C6's USB
+serial/JTAG, including the reset the Mac uses, until the RESET button is pressed.
+
+Decision: boot in mode C (frequency scaling: free, no loss). Light sleep only where no TRS input is lost: a future
+"standby" (nothing connected for minutes) or rev B hardware with MIDI IN on the C6's LP UART pins (GPIO4/5, back
+pads on the XIAO), which can receive while the main core sleeps.

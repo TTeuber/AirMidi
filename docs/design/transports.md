@@ -95,3 +95,11 @@ drops were not even counted). After the fixes above: 15/15, twice in a row, with
 Console commands on the USB port: `s` prints every counter (TRS bytes and drops, per-slot BLE state, interval,
 MTU, packets, per-port in/out/dropped, battery, free heap); `m` injects 60 notes from the web UI's (otherwise unused)
 port, so `tools/hil/bridge_test.py` can put two sources on the TRS output and check the merge on the real wire.
+
+## Power modes
+
+`power_set_mode()` picks one of three esp_pm configurations: fixed 160 MHz, frequency scaling 40-160 MHz, or
+scaling plus automatic light sleep. The firmware boots with scaling. Light sleep is a test mode only: the HP UART
+loses the bytes that wake it (confirmed on the rig with `tools/hil/sleep_test.py`, even with the UART on the
+crystal clock), and the C6's USB serial/JTAG stops answering, reset included. Numbers and the reasoning are in
+[measurements.md](../measurements.md#power).

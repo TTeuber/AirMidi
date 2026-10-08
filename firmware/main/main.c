@@ -156,9 +156,10 @@ void app_main(void) {
         }
         ui_set_led(power_low() ? LED_LOW_BATTERY : ble_midi_connected() ? LED_CONNECTED : LED_ADVERTISING);
 
-        int c = getchar();  // console (USB): 's' prints the counters, 'm' runs the merge test hook
+        int c = getchar();  // console (USB): 's' counters, 'm' merge test hook, '0'-'2' power mode
         if (c == 's') print_status();
         if (c == 'm') xTaskCreate(inject_task, "inject", 2048, NULL, 5, NULL);
+        if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

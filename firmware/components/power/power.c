@@ -6,6 +6,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
+#include "esp_pm.h"
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -60,8 +61,21 @@ void power_start(void) {
         .unit_id = b->batt_adc_unit, .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT};
     ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&lf, &cali));
 #endif
+    power_set_mode(1);  // frequency scaling: no MIDI lost (tools/hil/sleep_test.py), see docs/measurements.md
     xTaskCreate(sample_task, "battery", 3072, NULL, 3, NULL);
 }
+
+static int pm_mode;
+
+void power_set_mode(int mode) {
+    esp_pm_config_t c = {.max_freq_mhz = 160, .min_freq_mhz = mode >= 1 ? 40 : 160, .light_sleep_enable = mode >= 2};
+    esp_err_t e = esp_pm_configure(&c);
+    if (e == ESP_OK) pm_mode = mode;
+    ESP_LOGI(TAG, "power mode %d: %d-%d MHz, light sleep %s (%s)", mode, c.min_freq_mhz, c.max_freq_mhz,
+             c.light_sleep_enable ? "on" : "off", esp_err_to_name(e));
+}
+
+int power_mode(void) { return pm_mode; }
 
 uint32_t power_cell_mv(void) { return battery.mv; }
 int power_percent(void) { return battery_percent(battery.mv); }

@@ -5,6 +5,7 @@
 #include "bus.h"
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -80,13 +81,18 @@ void uart_midi_start(void) {
                         .parity = UART_PARITY_DISABLE,
                         .stop_bits = UART_STOP_BITS_1,
                         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-                        .source_clk = UART_SCLK_DEFAULT};
+                        // The crystal: unaffected by frequency scaling, and with the BLE low-power clock on the
+                        // main crystal it keeps running in light sleep.
+                        .source_clk = UART_SCLK_XTAL};
     ESP_ERROR_CHECK(uart_driver_install(MIDI_UART, RX_BUF, TX_BUF, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(MIDI_UART, &uc));
     ESP_ERROR_CHECK(uart_set_pin(MIDI_UART, b->midi_tx, b->midi_rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     // Hand received bytes to the driver after 1 byte-time of silence (default: 10), so a message is routed as
     // soon as it ends, not when the line has been quiet for 3 ms.
     uart_set_rx_timeout(MIDI_UART, 1);
+    // In automatic light sleep, a few edges on RX wake the chip (3 is the minimum threshold).
+    ESP_ERROR_CHECK(uart_set_wakeup_threshold(MIDI_UART, 3));
+    ESP_ERROR_CHECK(esp_sleep_enable_uart_wakeup(MIDI_UART));
     midi1_in_init(&parser, 0);
     midi1_out_init(&encoder, true);
     bus_register_output(PORT_TRS, &ops, NULL);
