@@ -34,6 +34,16 @@
   </section>
 
   <section id="play" class="page">
+    <div class="devbar">
+      <span id="dev-name" class="label">no device</span>
+      <span id="dev-src" class="small note"></span>
+      <a id="dev-scan" class="glyph" title="ask the device again"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg></a>
+      <label class="glyph" title="upload a profile (.json)"><input id="dev-file" type="file" accept=".json,application/json" hidden><svg viewBox="0 0 24 24"><path d="M12 21V4M5 11l7-7 7 7"/></svg></label>
+      <a id="dev-clear" class="glyph" title="remove the profile" hidden><svg viewBox="0 0 24 24"><path d="M5 5l14 14M19 5L5 19"/></svg></a>
+    </div>
+    <div class="row dev" id="dev-faders"></div>
+    <div class="row dev" id="dev-switches"></div>
+    <p id="dev-msg" class="small note"></p>
     <div class="row">
       <div class="stepper" id="s-ch" data-hue="salmon"></div>
       <div class="stepper" id="s-oct" data-hue="salmon"></div>

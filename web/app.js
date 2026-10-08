@@ -23,7 +23,7 @@ function show(page) {
   document.querySelectorAll(".page").forEach((p) => p.classList.toggle("on", p.id === page));
   document.querySelectorAll("#tabs a").forEach((a) => a.classList.toggle("on", a.dataset.page === page));
   if (page === "wifi") loadNetworks();
-  if (page === "play") wsConnect();
+  if (page === "play") wsConnect(), loadDevice();
   if (page === "settings") loadSettings();
 }
 document.querySelectorAll("#tabs a").forEach((a) => (a.onclick = () => (location.hash = a.dataset.page)));
@@ -124,6 +124,7 @@ function renderStatus() {
     ["net", s.net.map((c, i) => c.active
       ? `${i + 1} ${c.peer} (midi ${c.protocol}.0), lost ${c.lost}, recovered ${c.recovered}` : `${i + 1} idle`).join(", ")],
     ["trs", `in ${s.trs.rx} bytes, out ${s.trs.tx} bytes, dropped ${s.trs.rx_dropped + s.trs.tx_dropped}`],
+    ["midi-ci", s.ci.scanning ? "asking…" : s.ci.device ? `${s.ci.device} (${s.ci.result})` : s.ci.result || "not asked yet"],
     ["heap", `${Math.round(s.heap / 1024)} kb free`],
   ];
   $("#facts").innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -140,7 +141,7 @@ document.querySelectorAll("#mode a").forEach((a) => (a.onclick = async () => {
   poll();
 }));
 
-// ---- play page: a generic control surface over the WebSocket (phase 5 draws a device's own controls) ----------
+// ---- play page: a generic control surface over the WebSocket, under the device's own controls ------------------
 
 const FADERS = [["mod", 1], ["vol", 7], ["expr", 11], ["cut", 74], ["res", 71], ["atk", 73], ["rel", 72], ["fx", 91]];
 const DEFAULTS = { 7: 100, 11: 127, 74: 64 };
@@ -158,18 +159,24 @@ function wsConnect() {
       const w = v.getUint32(i);
       const mt = w >>> 28, words = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4][mt];
       if (mt === 2) received((w >> 16) & 0xff, (w >> 8) & 0x7f, w & 0x7f);
+      if (mt === 2 || (mt === 4 && i + 8 <= v.byteLength))
+        deviceReceived(mt, (w >> 16) & 0xff, (w >> 8) & 0x7f, w & 0x7f, mt === 4 ? v.getUint32(i + 4) : 0);
       i += 4 * words;
     }
   };
   ws.onclose = () => setTimeout(() => location.hash === "#play" && wsConnect(), 1000);
 }
 
-function sendMidi(st, d1, d2) {
+function sendUmp(words, text) {
   if (!ws || ws.readyState !== 1) return;
-  const b = new DataView(new ArrayBuffer(4));
-  b.setUint32(0, (0x20000000 | (st << 16) | (d1 << 8) | d2) >>> 0);
+  const b = new DataView(new ArrayBuffer(4 * words.length));
+  words.forEach((w, k) => b.setUint32(4 * k, w));
   ws.send(b.buffer);
-  logMidi("out", st, d1, d2);
+  logText(text);
+}
+
+function sendMidi(st, d1, d2) {
+  sendUmp([(0x20000000 | (st << 16) | (d1 << 8) | d2) >>> 0], midiText("out", st, d1, d2));
 }
 
 function received(st, d1, d2) {
@@ -182,9 +189,17 @@ function received(st, d1, d2) {
   }
 }
 
-function logMidi(dir, st, d1, d2) {
+function midiText(dir, st, d1, d2) {
   const kind = { 0x80: "off", 0x90: "on", 0xa0: "poly", 0xb0: "cc", 0xc0: "pgm", 0xd0: "press", 0xe0: "bend" }[st & 0xf0];
-  play.log.unshift(`${dir}  ch ${(st & 0x0f) + 1}  ${kind} ${d1} ${d2}`);
+  return `${dir}  ch ${(st & 0x0f) + 1}  ${kind} ${d1} ${d2}`;
+}
+
+function logMidi(dir, st, d1, d2) {
+  logText(midiText(dir, st, d1, d2));
+}
+
+function logText(text) {
+  play.log.unshift(esc(text));
   play.log.length = Math.min(play.log.length, 8);
   if (!logQueued) (logQueued = true), requestAnimationFrame(() => {
     logQueued = false;
@@ -253,6 +268,200 @@ function buildPlay() {
     p.onpointerup = up;
     p.onpointercancel = up;
   });
+}
+
+// ---- play page: the device's own controls, from its MIDI-CI control list (M2-117 AllCtrlList) or a profile -------
+
+const MAX32 = 0xffffffff;
+// ctrlType -> MIDI 2.0 channel voice opcode; per-note types need a note and are not drawn
+const OPCODES = { cc: 0xb, chPress: 0xd, pBend: 0xe, rpn: 0x2, nrpn: 0x3 };
+const dev = { ctrls: [], vals: [], maps: {}, key: "" };
+
+async function loadDevice() {
+  let d;
+  try {
+    d = await api("/api/ci/device");
+  } catch (e) {
+    $("#dev-msg").textContent = e.message;
+    return;
+  }
+  // a profile is either a bare AllCtrlList or {"info", "controls", "maps"}
+  const p = Array.isArray(d.profile) ? { controls: d.profile } : d.profile || {};
+  const fromCi = Array.isArray(d.controls);
+  const info = (fromCi ? d.info : p.info) || d.info;
+  dev.maps = (fromCi ? d.maps : p.maps) || {};
+  const all = (fromCi ? d.controls : p.controls) || [];
+  dev.ctrls = all
+    .filter((c) => c && c.title && OPCODES[c.ctrlType] !== undefined && (c.priority ?? 3) < 5 && c.recognize !== "none")
+    .sort((a, b) => (a.priority ?? 3) - (b.priority ?? 3));
+  dev.vals = dev.ctrls.map((c) => c.default ?? (c.ctrlType === "pBend" ? 0x80000000 : 0));
+  $("#dev-name").textContent = info ? [info.manufacturer, info.model].filter(Boolean).join(" ") || "device" : "no device";
+  $("#dev-clear").hidden = !d.profile;
+  const skipped = all.length - dev.ctrls.length;
+  $("#dev-msg").textContent = skipped > 0 ? `${skipped} controls not shown (hidden, per-note or not recognized)` : "";
+  buildDevice();
+}
+
+// What a control looks like: a fader, a picker over named values, or a toggle.
+function kind(c) {
+  if (c.typeHint === "toggle" || c.typeHint === "momentary") return "toggle";
+  if (dev.maps[c.ctrlMapId] && c.typeHint === "valueSelect") return "select";
+  if (c.stepCount > 1 && c.stepCount <= 8) return "select";
+  return "fader";
+}
+
+function options(c) {
+  const m = dev.maps[c.ctrlMapId];
+  if (Array.isArray(m) && kind(c) === "select") return m.map((o) => [o.title, o.value]);
+  // stepped values without names: step k at k * 2^32 / n (the same spacing the stand-in's map uses)
+  return Array.from({ length: c.stepCount }, (_, k) => [String(k + 1), Math.floor((k * 2 ** 32) / c.stepCount)]);
+}
+
+function range(c) {
+  return Array.isArray(c.minMax) ? c.minMax : [0, MAX32];
+}
+
+function shown(c, v) {
+  const m = dev.maps[c.ctrlMapId];
+  if (Array.isArray(m) && m.length) {
+    // the named value at or below v (a cutoff map names points along the range)
+    const below = m.filter((o) => o.value <= v).sort((a, b) => b.value - a.value)[0];
+    if (below) return below.title;
+  }
+  if (c.ctrlType === "pBend") return Math.round(((v - 0x80000000) / 0x80000000) * 100);
+  const [lo, hi] = range(c);
+  return Math.round(((v - lo) / (hi - lo || 1)) * 100);
+}
+
+function sendCtrl(i) {
+  const c = dev.ctrls[i], v = dev.vals[i] >>> 0;
+  const ch = (c.channel ?? 1) - 1, idx = c.ctrlIndex || [];
+  const op = OPCODES[c.ctrlType];
+  const i1 = op === 0xb || op === 0x2 || op === 0x3 ? idx[0] ?? 0 : 0;
+  const i2 = op === 0x2 || op === 0x3 ? idx[1] ?? 0 : 0;
+  // MIDI 2.0 channel voice (MT 0x4): the 32-bit value goes out as it is; the box scales it for MIDI 1.0 outputs
+  sendUmp([(0x40000000 | ((ch >> 4) & 15) << 24 | (op << 4 | (ch & 15)) << 16 | (i1 & 0x7f) << 8 | (i2 & 0x7f)) >>> 0, v],
+    `out  ch ${(ch & 15) + 1}  ${c.title} ${shown(c, v)}`);
+}
+
+function renderDevice() {
+  dev.ctrls.forEach((c, i) => {
+    const el = document.querySelector(`.dev [data-i="${i}"]`);
+    if (!el) return;
+    const v = dev.vals[i], k = kind(c);
+    if (k === "fader") {
+      const [lo, hi] = range(c);
+      tile(el, c.title, shown(c, v), (v - lo) / (hi - lo || 1));
+    } else if (k === "select") {
+      const opts = options(c);
+      // the option nearest to the value (a value from the device need not be one of the listed ones)
+      let best = 0;
+      opts.forEach(([, ov], j) => Math.abs(ov - v) < Math.abs(opts[best][1] - v) && (best = j));
+      el.querySelectorAll(".options a").forEach((a, j) => a.classList.toggle("on", j === best));
+    } else {
+      el.classList.toggle("on", v >= 0x80000000);
+    }
+  });
+}
+
+function buildDevice() {
+  const faders = [], switches = [];
+  dev.ctrls.forEach((c, i) => {
+    const k = kind(c);
+    if (k === "fader") faders.push(`<div class="tile drag" data-hue="fir" data-i="${i}"></div>`);
+    else if (k === "select")
+      switches.push(`<div class="picker" data-hue="heather" data-i="${i}"><div class="options">${options(c)
+        .map(([t]) => `<a>${esc(t)}</a>`).join("")}</div><div class="label name">${esc(c.title)}</div></div>`);
+    else switches.push(`<div class="toggle" data-hue="slate" data-i="${i}"><a class="box"></a><span class="label">${esc(c.title)}</span></div>`);
+  });
+  $("#dev-faders").innerHTML = faders.join("");
+  $("#dev-switches").innerHTML = switches.join("");
+  document.querySelectorAll(".dev [data-i]").forEach((el) => {
+    const i = +el.dataset.i, c = dev.ctrls[i], k = kind(c);
+    const set = (v) => {
+      v = Math.max(0, Math.min(MAX32, Math.round(v)));
+      if (v === dev.vals[i]) return;
+      dev.vals[i] = v;
+      sendCtrl(i);
+      renderDevice();
+    };
+    if (k === "fader") {
+      const [lo, hi] = range(c);
+      let startY = 0, startV = 0;
+      el.onpointerdown = (e) => (el.setPointerCapture(e.pointerId), (startY = e.clientY), (startV = dev.vals[i]));
+      el.onpointermove = (e) => {
+        if (!el.hasPointerCapture(e.pointerId)) return;
+        const h = el.getBoundingClientRect().height, fine = e.shiftKey ? 4 : 1;
+        set(Math.max(lo, Math.min(hi, startV + (((startY - e.clientY) / h) * (hi - lo)) / fine)));
+      };
+      el.ondblclick = () => set(c.default ?? (c.ctrlType === "pBend" ? 0x80000000 : lo));
+      // a pitch bend springs back to the centre when let go
+      if (c.ctrlType === "pBend") el.onpointerup = () => set(0x80000000);
+    } else if (k === "select") {
+      el.querySelectorAll(".options a").forEach((a, j) => (a.onclick = () => set(options(c)[j][1])));
+    } else if (c.typeHint === "momentary") {
+      el.onpointerdown = () => set(MAX32);
+      el.onpointerup = el.onpointercancel = () => set(0);
+    } else {
+      el.onclick = () => set(dev.vals[i] >= 0x80000000 ? 0 : MAX32);
+    }
+  });
+  renderDevice();
+}
+
+// Incoming messages move the device's controls too (the device sends its CCs when its own knobs turn).
+function deviceReceived(mt, st, i1, i2, data) {
+  const ch = st & 0x0f, type = st & 0xf0;
+  dev.ctrls.forEach((c, i) => {
+    if (((c.channel ?? 1) - 1) % 16 !== ch) return;
+    const t = c.ctrlType, idx = c.ctrlIndex || [];
+    let v = null;
+    if (mt === 2 && t === "cc" && type === 0xb0 && i1 === idx[0]) v = (i2 / 127) * MAX32;
+    else if (mt === 2 && t === "chPress" && type === 0xd0) v = (i1 / 127) * MAX32;
+    else if (mt === 2 && t === "pBend" && type === 0xe0) v = ((i1 | (i2 << 7)) / 16383) * MAX32;
+    else if (mt === 4 && t === "cc" && type === 0xb0 && i1 === idx[0]) v = data;
+    else if (mt === 4 && t === "pBend" && type === 0xe0) v = data;
+    if (v !== null) dev.vals[i] = Math.round(v);
+  });
+  renderDevice();
+}
+
+$("#dev-scan").onclick = async () => {
+  $("#dev-msg").textContent = "asking the device on trs…";
+  await post("/api/ci/scan", { force: true }).catch((e) => ($("#dev-msg").textContent = e.message));
+};
+
+$("#dev-file").onchange = async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  const text = await f.text();
+  try {
+    const j = JSON.parse(text);
+    if (!Array.isArray(j) && !Array.isArray(j.controls)) throw new Error("expected [...] or {\"controls\": [...]}");
+    await api("/api/ci/profile", { method: "POST", headers: { "content-type": "application/json" }, body: text });
+    $("#dev-msg").textContent = `profile ${f.name} stored`;
+    loadDevice();
+  } catch (err) {
+    $("#dev-msg").textContent = `profile not stored: ${err.message}`;
+  }
+};
+
+$("#dev-clear").onclick = async () => {
+  await api("/api/ci/profile", { method: "DELETE" });
+  $("#dev-msg").textContent = "profile removed";
+  loadDevice();
+};
+
+// The device part of the status: reload the controls when it changes (a scan finished, a profile came or went).
+function watchDevice(ci) {
+  const src = { "midi-ci": "midi-ci", cache: "midi-ci, cached", profile: "profile" }[ci.source] ?? "";
+  $("#dev-src").textContent = ci.scanning ? "asking…" : src || (ci.result ? `no control list (${ci.result})` : "");
+  const key = `${ci.source}|${ci.device}|${ci.result}|${ci.scanning}`;
+  if (key !== dev.key) {
+    dev.key = key;
+    if (!ci.scanning) loadDevice();
+  }
 }
 
 // ---- settings page -----------------------------------------------------------------------------------------------
@@ -421,6 +630,7 @@ async function poll() {
     const moved = last && s.ports.some((p, i) => p.in !== last.ports[i].in || p.out !== last.ports[i].out);
     $("#activity").classList.toggle("on", !!moved);
     render();
+    if (s.ci) watchDevice(s.ci);
   } catch (e) {
     $("#activity").classList.remove("on");
   }

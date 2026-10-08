@@ -16,6 +16,7 @@ body { min-height: 100vh; }
 .value { font-size: calc(48 * var(--u)); }
 .small { font-size: calc(30 * var(--u)); }
 a { cursor: pointer; color: inherit; text-decoration: none; }
+[hidden] { display: none !important; }  /* .glyph and friends set display, which would override it */
 
 /* top band: the one second surface */
 .band { background: var(--surface); height: calc(120 * var(--u)); display: flex; align-items: center;
@@ -79,6 +80,15 @@ main { padding: calc(60 * var(--u)) calc(120 * var(--u)) calc(60 * var(--u)); ma
 .stepper .ctl { display: flex; align-items: center; gap: calc(30 * var(--u)); }
 .stepper svg { width: calc(28 * var(--u)); height: calc(36 * var(--u)); fill: var(--hue); cursor: pointer; }
 .stepper .value { min-width: calc(80 * var(--u)); text-align: center; }
+/* the device's own controls (MIDI-CI or a profile): wider tiles, the device's titles in the small size */
+.devbar { display: flex; align-items: center; gap: calc(40 * var(--u)); margin-bottom: calc(40 * var(--u)); }
+.dev { column-gap: calc(40 * var(--u)); }
+.dev:empty { display: none; }
+.dev .tile { width: calc(160 * var(--u)); }
+.dev .tile .nm { font-size: calc(30 * var(--u)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* a picker here is as wide as its options (the status page's picker has a fixed slot): options, then its name */
+.dev .picker { height: auto; min-width: 0; display: flex; flex-direction: column; gap: calc(30 * var(--u)); }
+.dev .picker .options, .dev .picker .name { position: static; transform: none; text-align: left; }
 #faders { column-gap: calc(40 * var(--u)); }  /* 8 tiles in one row: 8 x 120 + 7 x 40 = 1240 of 1360 */
 #pads { column-gap: calc(20 * var(--u)); }    /* 12 pads: 12 x 90 + 11 x 20 = 1300 */
 .tile.drag { cursor: ns-resize; touch-action: none; }
