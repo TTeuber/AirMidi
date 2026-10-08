@@ -2,8 +2,17 @@
 // passes in every received datagram with the sender's address and the time, and gets datagrams to send and UMPs
 // to deliver through callbacks. Time is milliseconds from any monotonic clock (wraps after 49 days, handled).
 //
-// Liveness: a client we have not heard from for 10 s is pinged every 10 s, but never dropped for not answering
-// (macOS 26.5 does not answer pings); a client silent for 60 s gives its slot to a new one when all are taken.
+// Liveness: a client we have not heard from for 10 s is pinged every 10 s, but never dropped for not answering:
+// ending a session makes macOS forget the host for good (below), so the host never ends one on its own. A client
+// silent for 60 s gives its slot to a new one when all are taken. (macOS 26.5 answers pings and pings every 60 s;
+// it only looked silent in phase 4 because the test tool had added the host in a form macOS discards.)
+//
+// Resuming after a restart: macOS never invites a host again once a session has ended, however it ended (a Bye
+// from either side, or its own ping timeout), so a box that restarts must not end the session. A client that pings
+// or sends data without a session (it still believes in the one from before the restart) is taken back: the host
+// sends Session Reset, both sides restart their sequence numbers at 0 on the reply, and MIDI carries on. The
+// spec's answer would be Bye 0x05 (Session Not Established), after which macOS needs a manual reconnect.
+// nm2_host_resume() does the same for a client remembered from before the restart, so the host can send at once.
 //
 // Data integrity:
 //   - sending: every UMP Data command goes out with the two previous ones in front (FEC, M2-124 7.2.2); when data
@@ -60,6 +69,7 @@ typedef struct {  // a command received ahead of a gap
 typedef struct {
     uint32_t rx_cmds, rx_dups, rx_lost, rx_recovered;  // recovered: gaps filled by a retransmit
     uint32_t tx_cmds, tx_retransmitted, retransmit_requests;
+    uint32_t tx_dropped;  // sends refused while a Session Reset was pending
 } nm2_stats_t;
 
 typedef struct {
@@ -81,6 +91,11 @@ typedef struct {
     uint32_t last_rx_ms, ping_sent_ms;
     uint32_t ping_id;
     int missed_pings;
+    // resuming (see the top of this file)
+    bool resumed;        // taken back without an Invitation
+    bool reset_pending;  // Session Reset sent, waiting for the reply; no UMP Data goes out meanwhile
+    uint32_t reset_sent_ms;
+    int reset_tries;
     nm2_stats_t stats;
 } nm2_session_t;
 
@@ -102,6 +117,10 @@ bool nm2_host_send(nm2_host_t *h, int session, const ump_t *u, int count, uint32
 
 // Call every few ms (10 is right): retransmit requests and give-ups, idle zero-length commands, pings, timeouts.
 void nm2_host_tick(nm2_host_t *h, uint32_t now);
+
+// Take back a session with a client from before a restart (its address and name kept by the caller): sends
+// Session Reset. If the client does not answer, the session ends quietly.
+void nm2_host_resume(nm2_host_t *h, const nm2_addr_t *peer, const char *name, uint32_t now);
 
 // End a session (Bye, reason "power down" / user), e.g. when Wi-Fi goes away.
 void nm2_host_end(nm2_host_t *h, int session, uint8_t reason);

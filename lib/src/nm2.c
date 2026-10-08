@@ -28,9 +28,11 @@ enum { NAK_NOT_SUPPORTED = 0x01 };
 #define GIVE_UP_MS 150
 #define PING_IDLE_MS 10000  // ping a client we have not heard from for this long
 #define PING_EVERY_MS 10000
-// A silent client is not dropped: macOS 26.5 does not answer pings (found on the rig), so unanswered pings say
-// nothing. Instead, a client silent for this long gives its slot to a new one when all slots are taken.
+// A silent client is not dropped: macOS forgets a host whose session ended and never invites it again (nm2.h).
+// Instead, a client silent for this long gives its slot to a new one when all slots are taken.
 #define EVICT_SILENT_MS 60000
+#define RESET_EVERY_MS 200  // Session Reset repeated until the reply (M2-124 6.11)
+#define RESET_TRIES 5
 
 // Zero-length UMP Data commands after the last data: two quick ones carry the last real command twice more (FEC),
 // then the gaps grow, then they stop (M2-124 7.2.1).
@@ -126,34 +128,68 @@ static void end_session(nm2_host_t *h, int i, uint8_t reason, bool send_bye) {
 
 void nm2_host_end(nm2_host_t *h, int session, uint8_t reason) { end_session(h, session, reason, true); }
 
+// A free slot for a new session, or the longest-silent one if silent long enough; -1 if none.
+static int claim_slot(nm2_host_t *h, const nm2_addr_t *from, uint32_t now) {
+    int i;
+    for (i = 0; i < NM2_SESSIONS && h->s[i].active; i++) {
+    }
+    if (i == NM2_SESSIONS) {
+        int oldest = 0;
+        for (int k = 1; k < NM2_SESSIONS; k++)
+            if (now - h->s[k].last_rx_ms > now - h->s[oldest].last_rx_ms) oldest = k;
+        if (now - h->s[oldest].last_rx_ms < EVICT_SILENT_MS) return -1;
+        end_session(h, oldest, BYE_TIMEOUT, true);
+        i = oldest;
+    }
+    nm2_session_t *s = &h->s[i];
+    memset(s, 0, sizeof *s);
+    s->active = true;
+    s->peer = *from;
+    reset_streams(s, now);
+    return i;
+}
+
+static void send_reset(nm2_host_t *h, nm2_session_t *s, uint32_t now) {
+    send_one(h, &s->peer, CMD_SESSION_RESET, 0, NULL, 0);
+    s->reset_sent_ms = now;
+    s->reset_tries++;
+}
+
+// Take back a session the client still believes in (see nm2.h). Returns the session, or -1 if no slot is free.
+static int resume(nm2_host_t *h, const nm2_addr_t *from, const char *name, uint32_t now) {
+    int i = claim_slot(h, from, now);
+    if (i < 0) return -1;
+    nm2_session_t *s = &h->s[i];
+    snprintf(s->peer_name, sizeof s->peer_name, "%s", name);
+    s->resumed = true;
+    s->reset_pending = true;
+    send_reset(h, s, now);
+    if (h->cb.session_changed) h->cb.session_changed(h->ctx, i, true, s->peer_name);
+    return i;
+}
+
+void nm2_host_resume(nm2_host_t *h, const nm2_addr_t *peer, const char *name, uint32_t now) {
+    if (find_session(h, peer) < 0) resume(h, peer, name, now);
+}
+
 static void invitation(nm2_host_t *h, const nm2_addr_t *from, const uint8_t *c, const uint8_t *pl, int words,
                        uint32_t now) {
     int i = find_session(h, from);
+    // A resumed session that gets an Invitation is a client starting over: a new session.
+    if (i >= 0 && h->s[i].resumed) end_session(h, i, 0, false), i = -1;
     bool fresh = i < 0;
     if (fresh) {
-        for (i = 0; i < NM2_SESSIONS && h->s[i].active; i++) {
-        }
-        if (i == NM2_SESSIONS) {  // all taken: the longest-silent one goes, if silent long enough
-            int oldest = 0;
-            for (int k = 1; k < NM2_SESSIONS; k++)
-                if (now - h->s[k].last_rx_ms > now - h->s[oldest].last_rx_ms) oldest = k;
-            if (now - h->s[oldest].last_rx_ms < EVICT_SILENT_MS) {
-                send_one(h, from, CMD_BYE, (uint16_t)BYE_TOO_MANY << 8, NULL, 0);
-                return;
-            }
-            end_session(h, oldest, BYE_TIMEOUT, true);
-            i = oldest;
+        i = claim_slot(h, from, now);
+        if (i < 0) {  // all taken by clients heard from recently
+            send_one(h, from, CMD_BYE, (uint16_t)BYE_TOO_MANY << 8, NULL, 0);
+            return;
         }
         nm2_session_t *s = &h->s[i];
-        memset(s, 0, sizeof *s);
-        s->active = true;
-        s->peer = *from;
         int name_words = c[2] <= words ? c[2] : words;
         size_t len =
             4 * (size_t)name_words < sizeof s->peer_name - 1 ? 4 * (size_t)name_words : sizeof s->peer_name - 1;
         memcpy(s->peer_name, pl, len);
         s->peer_name[len] = 0;
-        reset_streams(s, now);
     }
     // Accepted, also for a repeated invitation from a client already in a session (M2-124 6.4).
     uint8_t out[4 * 36];
@@ -277,6 +313,10 @@ static void send_latest(nm2_host_t *h, nm2_session_t *s, int fresh) {
 bool nm2_host_send(nm2_host_t *h, int session, const ump_t *u, int count, uint32_t now) {
     if (session < 0 || session >= NM2_SESSIONS || !h->s[session].active) return false;
     nm2_session_t *s = &h->s[session];
+    if (s->reset_pending) {  // the numbering restarts with the reply; a few ms of MIDI are lost
+        s->stats.tx_dropped += (uint32_t)count;
+        return false;
+    }
     // A datagram holds (FEC + new) commands of at most NM2_CMD_WORDS words each; 16 new ones is well within 1400.
     int fresh = 0;
     nm2_cmd_t *c = NULL;
@@ -320,6 +360,18 @@ static void retransmit(nm2_host_t *h, nm2_session_t *s, uint16_t seq) {
 
 // ---- datagrams in --------------------------------------------------------------------------------------------
 
+// The sequence number of the last UMP Data command in a datagram (the newest; the ones before it are FEC repeats).
+static bool last_data_seq(const uint8_t *pkt, size_t len, uint16_t *seq) {
+    bool found = false;
+    for (size_t at = 4; at + 4 <= len;) {
+        const uint8_t *c = pkt + at;
+        at += 4 + 4 * (size_t)c[1];
+        if (at > len) break;
+        if (c[0] == CMD_UMP_DATA) *seq = (uint16_t)(c[2] << 8 | c[3]), found = true;
+    }
+    return found;
+}
+
 void nm2_host_receive(nm2_host_t *h, const nm2_addr_t *from, const uint8_t *pkt, size_t len, uint32_t now) {
     if (len < 8 || memcmp(pkt, "MIDI", 4)) return;
     bool told_not_established = false;
@@ -333,6 +385,13 @@ void nm2_host_receive(nm2_host_t *h, const nm2_addr_t *from, const uint8_t *pkt,
         at += 4 + 4 * (size_t)words;
 
         int i = find_session(h, from);
+        if (i < 0 && (code == CMD_PING || code == CMD_UMP_DATA)) {
+            // A client that still believes in a session from before a restart: take it back (see nm2.h).
+            i = resume(h, from, "", now);
+            uint16_t newest;
+            // Only the newest command is delivered: the older ones in the datagram are repeats that may be stale.
+            if (i >= 0 && last_data_seq(pkt, len, &newest)) h->s[i].rx_next = newest;
+        }
         if (i >= 0) {
             h->s[i].last_rx_ms = now;
             h->s[i].missed_pings = 0;
@@ -371,8 +430,13 @@ void nm2_host_receive(nm2_host_t *h, const nm2_addr_t *from, const uint8_t *pkt,
                 send_one(h, from, CMD_BYE_REPLY, 0, NULL, 0);  // even with no session: the Bye may be a repeat
                 if (i >= 0) end_session(h, i, 0, false);
                 break;
-            case CMD_BYE_REPLY:
             case CMD_SESSION_RESET_REPLY:
+                if (i >= 0 && h->s[i].reset_pending) {
+                    reset_streams(&h->s[i], now);  // both sides number from 0 again
+                    h->s[i].reset_pending = false;
+                }
+                break;
+            case CMD_BYE_REPLY:
             case CMD_NAK:
                 break;
             default: {  // includes the authenticated invitations: we never ask for authentication
@@ -390,6 +454,14 @@ void nm2_host_tick(nm2_host_t *h, uint32_t now) {
     for (int i = 0; i < NM2_SESSIONS; i++) {
         nm2_session_t *s = &h->s[i];
         if (!s->active) continue;
+
+        if (s->reset_pending && now - s->reset_sent_ms >= RESET_EVERY_MS) {
+            if (s->reset_tries >= RESET_TRIES) {
+                end_session(h, i, 0, false);  // the client did not have a session after all: nothing to say
+                continue;
+            }
+            send_reset(h, s, now);
+        }
 
         if (s->n_hold) {
             if (now - s->gap_since_ms >= GIVE_UP_MS) {

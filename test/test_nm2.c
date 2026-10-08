@@ -138,24 +138,120 @@ static void test_third_client_is_turned_away(void) {
     TEST_ASSERT_EQUAL_HEX8(0x40, sent[2].b[6]);  // too many sessions
 }
 
-static void test_ping_is_answered_without_a_session(void) {
+// ---- resuming after a restart (nm2.h): macOS never invites again, so a client that still believes in a session
+// from before the restart is taken back with Session Reset instead of being told Bye
+
+static int count_code(uint8_t code) {
+    int n = 0;
+    for (int i = 0; i < n_sent; i++)
+        for (int k = 0; k < commands_in(&sent[i]); k++) n += code_of(&sent[i], k) == code;
+    return n;
+}
+
+static void reset_reply(const nm2_addr_t *from, uint32_t now) {
+    dgram_t d;
+    start(&d);
+    cmd(&d, 0x83, 0, NULL, 0);
+    deliver_to_host(from, &d, now);
+}
+
+static void test_ping_without_a_session_resumes_it(void) {
     reset();
     dgram_t d;
     start(&d);
     uint32_t id = 0x12345678;
     cmd(&d, 0x20, 0, &id, 1);
     deliver_to_host(&C, &d, 0);
-    TEST_ASSERT_EQUAL(1, n_sent);
-    TEST_ASSERT_EQUAL_HEX8(0x21, code_of(&sent[0], 0));
-    TEST_ASSERT_EQUAL_HEX8(0x12, sent[0].b[8]);
+    TEST_ASSERT_EQUAL(1, ups);
+    TEST_ASSERT_TRUE(host.s[0].resumed);
+    TEST_ASSERT_EQUAL(2, n_sent);
+    TEST_ASSERT_EQUAL_HEX8(0x82, code_of(&sent[0], 0));  // Session Reset
+    TEST_ASSERT_EQUAL_HEX8(0x21, code_of(&sent[1], 0));  // and the ping is answered
+    TEST_ASSERT_EQUAL_HEX8(0x12, sent[1].b[8]);
+    TEST_ASSERT_EQUAL(0, count_code(0xF0));  // never a Bye
 }
 
-static void test_data_without_a_session_gets_bye(void) {
+static void test_data_without_a_session_resumes_it_with_only_the_newest_command(void) {
     reset();
-    data(&A, 0, 0, 0);
+    dgram_t d;
+    start(&d);
+    uint32_t w1 = note(1), w2 = note(2), w3 = note(3);
+    cmd(&d, 0xFF, 700, &w1, 1);  // FEC repeats from before the restart: may be stale
+    cmd(&d, 0xFF, 701, &w2, 1);
+    cmd(&d, 0xFF, 702, &w3, 1);  // the new one
+    deliver_to_host(&A, &d, 0);
+    TEST_ASSERT_EQUAL(1, ups);
+    TEST_ASSERT_EQUAL(1, n_delivered);
+    TEST_ASSERT_EQUAL_HEX32(note(3), delivered[0]);
+    TEST_ASSERT_EQUAL(1, count_code(0x82));
+    data(&A, 703, 4, 5);  // still the old numbering until the client has seen the reset
+    TEST_ASSERT_EQUAL(2, n_delivered);
+    reset_reply(&A, 10);
+    data(&A, 0, 5, 20);  // both sides start again at 0
+    TEST_ASSERT_EQUAL(3, n_delivered);
+    TEST_ASSERT_EQUAL_HEX32(note(5), delivered[2]);
+    TEST_ASSERT_EQUAL(0, host.s[0].stats.rx_lost);
+}
+
+static void test_nothing_is_sent_until_the_reset_is_answered(void) {
+    reset();
+    nm2_host_resume(&host, &A, "Mac", 0);
+    TEST_ASSERT_EQUAL_STRING("Mac", host.s[0].peer_name);
+    TEST_ASSERT_EQUAL(1, ups);
+    ump_t u = {{note(1)}};
+    TEST_ASSERT_FALSE(nm2_host_send(&host, 0, &u, 1, 5));
+    TEST_ASSERT_EQUAL(1, host.s[0].stats.tx_dropped);
+    TEST_ASSERT_EQUAL(0, count_code(0xFF));
+    reset_reply(&A, 10);
+    TEST_ASSERT_TRUE(nm2_host_send(&host, 0, &u, 1, 15));
+    TEST_ASSERT_EQUAL_HEX8(0xFF, code_of(&sent[n_sent - 1], 0));
+    TEST_ASSERT_EQUAL(0, seq_of(&sent[n_sent - 1], 0));  // numbering from 0
+}
+
+static void test_unanswered_reset_ends_the_session_quietly(void) {
+    reset();
+    nm2_host_resume(&host, &A, "Mac", 0);  // e.g. the Mac rebooted meanwhile and forgot us
+    for (uint32_t t = 0; t <= 2000; t += 10) nm2_host_tick(&host, t);
+    TEST_ASSERT_FALSE(host.s[0].active);
+    TEST_ASSERT_EQUAL(1, downs);
+    TEST_ASSERT_EQUAL(5, count_code(0x82));  // repeated, then given up
+    TEST_ASSERT_EQUAL(0, count_code(0xF0));  // no Bye: it never had the session
+}
+
+static void test_bye_in_answer_to_a_reset_ends_it(void) {
+    reset();
+    nm2_host_resume(&host, &A, "Mac", 0);
+    dgram_t d;
+    start(&d);
+    cmd(&d, 0xF0, 0x05 << 8, NULL, 0);  // Session Not Established
+    deliver_to_host(&A, &d, 10);
+    TEST_ASSERT_FALSE(host.s[0].active);
+    TEST_ASSERT_EQUAL_HEX8(0xF1, code_of(&sent[n_sent - 1], 0));
+}
+
+static void test_invitation_after_a_resume_is_a_new_session(void) {
+    reset();
+    data(&A, 900, 1, 0);
+    TEST_ASSERT_TRUE(host.s[0].resumed);
+    invite(&A, 10);
+    TEST_ASSERT_TRUE(host.s[0].active);
+    TEST_ASSERT_FALSE(host.s[0].resumed);
+    TEST_ASSERT_FALSE(host.s[0].reset_pending);
+    TEST_ASSERT_EQUAL_STRING("Mac", host.s[0].peer_name);
+    TEST_ASSERT_EQUAL(2, ups);
+    TEST_ASSERT_EQUAL(1, downs);
+    data(&A, 0, 2, 20);  // a new session numbers from 0
+    TEST_ASSERT_EQUAL_HEX32(note(2), delivered[n_delivered - 1]);
+}
+
+static void test_no_free_slot_still_gets_bye(void) {
+    reset();
+    invite(&A, 0), invite(&B, 0);
+    data(&C, 0, 0, 10);  // both slots heard from recently: nothing to take back into
+    TEST_ASSERT_EQUAL(2, ups);
     TEST_ASSERT_EQUAL(0, n_delivered);
-    TEST_ASSERT_EQUAL_HEX8(0xF0, code_of(&sent[0], 0));
-    TEST_ASSERT_EQUAL_HEX8(0x05, sent[0].b[6]);
+    TEST_ASSERT_EQUAL_HEX8(0xF0, code_of(&sent[n_sent - 1], 0));
+    TEST_ASSERT_EQUAL_HEX8(0x05, sent[n_sent - 1].b[6]);
 }
 
 static void test_unknown_and_authenticated_commands_are_naked(void) {
@@ -518,8 +614,13 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_invitation_is_accepted_with_name_and_id);
     RUN_TEST(test_third_client_is_turned_away);
-    RUN_TEST(test_ping_is_answered_without_a_session);
-    RUN_TEST(test_data_without_a_session_gets_bye);
+    RUN_TEST(test_ping_without_a_session_resumes_it);
+    RUN_TEST(test_data_without_a_session_resumes_it_with_only_the_newest_command);
+    RUN_TEST(test_nothing_is_sent_until_the_reset_is_answered);
+    RUN_TEST(test_unanswered_reset_ends_the_session_quietly);
+    RUN_TEST(test_bye_in_answer_to_a_reset_ends_it);
+    RUN_TEST(test_invitation_after_a_resume_is_a_new_session);
+    RUN_TEST(test_no_free_slot_still_gets_bye);
     RUN_TEST(test_unknown_and_authenticated_commands_are_naked);
     RUN_TEST(test_bye_ends_the_session);
     RUN_TEST(test_silent_client_is_pinged_but_kept);
