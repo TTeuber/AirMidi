@@ -1,7 +1,8 @@
 """MIDI-CI end to end: the Mac stand-in (devices/mac_standin) plays the device on the AudioFuse ports, cabled to
 the box's TRS jacks. The box (Network mode) scans it, the web API serves exactly what the stand-in holds, a cached
-rescan skips Property Exchange, a control sent from the page arrives at the device as a Control Change, profiles
-can be stored and removed, and a scan with nobody on the jacks ends in "no device".
+rescan skips Property Exchange, a control sent from the page arrives at the device as a Control Change, another
+MIDI-CI host behind the box (here on the WebSocket) can talk to the device through it, profiles can be stored and
+removed, and a scan with nobody on the jacks ends in "no device".
 
     devices/mac_standin/build.sh
     uv run --with websockets python tools/hil/ci_test.py <host>
@@ -11,6 +12,7 @@ import asyncio
 import json
 import pathlib
 import queue
+import random
 import struct
 import subprocess
 import sys
@@ -126,6 +128,91 @@ async def page_to_device():
 
 for line, want in asyncio.run(page_to_device()):
     check(f"page -> device: {want}", line == want, line)
+
+
+def m7(v, n=4):
+    return [(v >> (7 * i)) & 0x7F for i in range(n)]
+
+
+def sysex7_words(sx):
+    """SysEx contents -> UMP SysEx7 packets (two words each)."""
+    chunks = [sx[i:i + 6] for i in range(0, len(sx), 6)] or [[]]
+    words = []
+    for k, c in enumerate(chunks):
+        st = 0 if len(chunks) == 1 else 1 if k == 0 else 3 if k == len(chunks) - 1 else 2
+        b = list(c) + [0] * (6 - len(c))
+        words += [0x30000000 | st << 20 | len(c) << 16 | b[0] << 8 | b[1], b[2] << 24 | b[3] << 16 | b[4] << 8 | b[5]]
+    return struct.pack(f">{len(words)}I", *words)
+
+
+async def host_behind_the_box():
+    """A MIDI-CI initiator on the WebSocket (as macOS would be on BLE or the network): Discovery, then Get
+    AllCtrlList, both answered by the device on TRS through the box. Returns the reassembled control list."""
+    me = random.randrange(0x0FFFFF00)
+    msgs, cur = [], []
+
+    async def recv_until(pred, timeout=5):
+        nonlocal cur
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                data = await asyncio.wait_for(ws.recv(), max(0.05, end - time.time()))
+            except asyncio.TimeoutError:
+                break
+            w = struct.unpack(f">{len(data) // 4}I", data)
+            i = 0
+            while i < len(w):
+                mt = w[i] >> 28
+                n = [1, 1, 1, 2, 2, 4, 1, 1, 2, 2, 2, 3, 3, 4, 4, 4][mt]
+                if mt == 3 and i + 1 < len(w):
+                    st, k = (w[i] >> 20) & 0xF, (w[i] >> 16) & 0xF
+                    b = [(w[i] >> 8) & 0x7F, w[i] & 0x7F, w[i + 1] >> 24 & 0x7F, (w[i + 1] >> 16) & 0x7F,
+                         (w[i + 1] >> 8) & 0x7F, w[i + 1] & 0x7F][:k]
+                    if st in (0, 1):
+                        cur = []
+                    cur += b
+                    if st in (0, 3):
+                        msgs.append(cur)
+                i += n
+            if pred():
+                return True
+        return pred()
+
+    def to_me(sub2):
+        return [m for m in msgs if len(m) > 13 and m[3] == sub2 and sum(m[9 + i] << 7 * i for i in range(4)) == me]
+
+    async with websockets.connect(f"ws://{host}/ws") as ws:
+        await asyncio.sleep(0.3)
+        await ws.send(sysex7_words([0x7E, 0x7F, 0x0D, 0x70, 2] + m7(me) + [0x7F] * 4 +
+                                   [0x7D, 0, 0, 0, 0, 9, 0, 0, 0, 0, 0, 8] + m7(512) + [0]))
+        if not await recv_until(lambda: to_me(0x71)):
+            return None
+        reply = to_me(0x71)[0]
+        dev_muid = sum(reply[5 + i] << 7 * i for i in range(4))
+        hdr = list(b'{"resource":"AllCtrlList"}')
+        await ws.send(sysex7_words([0x7E, 0x7F, 0x0D, 0x34, 2] + m7(me) + m7(dev_muid) + [5] + m7(len(hdr), 2) +
+                                   hdr + [1, 0, 1, 0, 0, 0]))
+
+        def chunks():
+            out = {}
+            for m in to_me(0x35):
+                d = m[13:]
+                hl = d[1] | d[2] << 7
+                p = d[3 + hl:]
+                total, this, n = p[0] | p[1] << 7, p[2] | p[3] << 7, p[4] | p[5] << 7
+                out[this] = (total, bytes(p[6:6 + n]))
+            return out
+
+        await recv_until(lambda: (c := chunks()) and len(c) == next(iter(c.values()))[0], 10)
+        c = chunks()
+        return b"".join(c[k][1] for k in sorted(c)) if c else None
+
+
+body = asyncio.run(host_behind_the_box())
+check("host behind the box reads AllCtrlList through it", body is not None and json.loads(body) == expected["controls"],
+      f"{len(body)} bytes" if body else "no reply")
+_, s = call("GET", "/api/ci")
+check("the box's own initiator stays out of it", not s["scanning"] and s["result"] == "cached", s["result"])
 
 profile = [{"title": "Volume", "channel": 2, "ctrlType": "cc", "ctrlIndex": [7], "default": 0}]
 code, r = call("POST", "/api/ci/profile", raw_body=json.dumps(profile).encode())

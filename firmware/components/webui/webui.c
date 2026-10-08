@@ -108,6 +108,8 @@ static void restart_after(uint32_t ms) {
     if (esp_timer_create(&a, &t) == ESP_OK) esp_timer_start_once(t, (uint64_t)ms * 1000);
 }
 
+static volatile uint32_t ws_dropped;  // words for the pages that did not fit (one that cannot keep up)
+
 // ---- /api/status ---------------------------------------------------------------------------------------------
 
 static esp_err_t get_status(httpd_req_t *req) {
@@ -167,6 +169,7 @@ static esp_err_t get_status(httpd_req_t *req) {
     for (size_t i = 0; i < sizeof shown / sizeof shown[0]; i++) {
         bus_port_stats_t ps;
         bus_get_stats(shown[i].port, &ps);
+        if (shown[i].port == PORT_WEB) ps.dropped += ws_dropped;
         cJSON *p = cJSON_CreateObject();
         cJSON_AddStringToObject(p, "name", shown[i].name);
         cJSON_AddNumberToObject(p, "in", ps.in);
@@ -461,14 +464,18 @@ static esp_err_t delete_ci_profile(httpd_req_t *req) {
 
 // ---- /ws: the control surface's MIDI, as UMP ----------------------------------------------------------------
 // Binary frames, each a run of UMP words, big-endian. From the browser they go on the bus as PORT_WEB; what the
-// bus routes to PORT_WEB goes to every connected page, one frame per bus batch.
+// bus routes to PORT_WEB collects in ws_out and goes to every connected page from the server's task, one frame
+// with everything collected since the last one. At most one send is queued at a time: the server's work queue is
+// a UDP socket with a 6-message mailbox, and queuing a frame per bus batch overflowed it as soon as SysEx came in
+// from TRS (a batch every 2 ms), losing frames.
 
 #define WS_CLIENTS 4
 static int ws_fds[WS_CLIENTS];
 static int n_ws;
-static portMUX_TYPE ws_lock = portMUX_INITIALIZER_UNLOCKED;  // httpd task adds/removes, bus task reads
-static uint32_t ws_out[256];                                 // bus task only
+static portMUX_TYPE ws_lock = portMUX_INITIALIZER_UNLOCKED;  // clients, ws_out, ws_queued: bus and httpd tasks
+static uint32_t ws_out[1024];                                // a 788-byte control list is ~260 words
 static int n_ws_out;
+static bool ws_queued;  // a send is waiting in the server's queue
 
 static void ws_add(int fd) {
     bool first = false, known = false;
@@ -530,31 +537,47 @@ static esp_err_t ws_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// Bus task.
 static void web_write(void *ctx, const ump_t *u) {
     int nw = ump_words(u);
-    if (n_ws_out + nw > (int)(sizeof ws_out / sizeof ws_out[0])) return;  // a page cannot keep up: drop
-    for (int j = 0; j < nw; j++) ws_out[n_ws_out++] = u->w[j];
+    taskENTER_CRITICAL(&ws_lock);
+    if (n_ws_out + nw <= (int)(sizeof ws_out / sizeof ws_out[0])) {
+        for (int j = 0; j < nw; j++) ws_out[n_ws_out++] = u->w[j];
+    } else {
+        ws_dropped += nw;
+    }
+    taskEXIT_CRITICAL(&ws_lock);
 }
 
-static void free_payload(esp_err_t err, int socket, void *arg) { free(arg); }
-
-static void web_flush(void *ctx) {
-    if (!n_ws_out) return;
-    int fds[WS_CLIENTS], n;
+// Server task: send everything collected so far to every page.
+static void ws_send_work(void *arg) {
+    static uint8_t frame[4 * sizeof ws_out / sizeof ws_out[0]];
+    int fds[WS_CLIENTS], n, words;
     taskENTER_CRITICAL(&ws_lock);
+    words = n_ws_out;
+    for (int k = 0; k < words; k++)
+        frame[4 * k] = ws_out[k] >> 24, frame[4 * k + 1] = ws_out[k] >> 16, frame[4 * k + 2] = ws_out[k] >> 8,
+                  frame[4 * k + 3] = ws_out[k];
+    n_ws_out = 0;
+    ws_queued = false;
     n = n_ws;
     memcpy(fds, ws_fds, sizeof fds);
     taskEXIT_CRITICAL(&ws_lock);
-    for (int i = 0; i < n; i++) {
-        uint8_t *p = malloc(4 * n_ws_out);  // the async send keeps the frame, not the payload: one copy per page
-        if (!p) break;
-        for (int k = 0; k < n_ws_out; k++)
-            p[4 * k] = ws_out[k] >> 24, p[4 * k + 1] = ws_out[k] >> 16, p[4 * k + 2] = ws_out[k] >> 8,
-                  p[4 * k + 3] = ws_out[k];
-        httpd_ws_frame_t f = {.type = HTTPD_WS_TYPE_BINARY, .payload = p, .len = 4 * n_ws_out, .final = true};
-        if (httpd_ws_send_data_async(server, fds[i], &f, free_payload, p) != ESP_OK) free(p);
+    httpd_ws_frame_t f = {.type = HTTPD_WS_TYPE_BINARY, .payload = frame, .len = 4 * words, .final = true};
+    for (int i = 0; i < n && words; i++) httpd_ws_send_frame_async(server, fds[i], &f);
+}
+
+// Bus task, after a batch: queue one send unless one is already waiting (it will take these words too).
+static void web_flush(void *ctx) {
+    bool queue = false;
+    taskENTER_CRITICAL(&ws_lock);
+    if (n_ws_out && !ws_queued) queue = ws_queued = true;
+    taskEXIT_CRITICAL(&ws_lock);
+    if (queue && httpd_queue_work(server, ws_send_work, NULL) != ESP_OK) {
+        taskENTER_CRITICAL(&ws_lock);
+        ws_queued = false;  // try again after the next batch or bus tick
+        taskEXIT_CRITICAL(&ws_lock);
     }
-    n_ws_out = 0;
 }
 
 static const bus_output_ops_t web_ops = {.write = web_write, .flush = web_flush};
