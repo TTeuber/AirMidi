@@ -26,6 +26,7 @@ typedef struct {
     m1_to_m2_t up;      // MIDI 1.0 -> 2.0 for a client that asked for MIDI 2.0
     ump_t batch[BATCH];
     int n_batch;
+    bool announce;  // tell the client who we are once the session can carry data
 } session_ctx_t;
 
 static nm2_host_t host;
@@ -82,6 +83,7 @@ static void cb_session(void *c, int session, bool up, const char *peer) {
              up && s->resumed ? ", resumed" : "");
     if (up) {
         ctx[session].ep.protocol = 1;
+        ctx[session].announce = true;
         m1_to_m2_init(&ctx[session].up);
         if (!s->resumed && (s->peer.ip != last_client.ip || s->peer.port != last_client.port ||
                             strcmp(s->peer_name, last_client.name))) {
@@ -174,6 +176,15 @@ static void udp_task(void *arg) {
             nm2_host_tick(&host, now);
             last_tick = now;
         }
+        for (int s = 0; s < NM2_SESSIONS; s++) {
+            // Only once the client has spoken on the session: UMP Data right behind Invitation Accepted made macOS
+            // answer Bye "Session Not Established" in 1 of 4 connects. And not before a resumed session's Session
+            // Reset is answered: nm2 sends no data until then.
+            if (!ctx[s].announce || !host.s[s].active || !host.s[s].heard || host.s[s].reset_pending) continue;
+            ump_t out[UMP_ENDPOINT_MAX_REPLY];
+            nm2_host_send(&host, s, out, ump_endpoint_announce(&ctx[s].ep, out), now);
+            ctx[s].announce = false;
+        }
         xSemaphoreGive(lock);
         for (int s = 0; s < NM2_SESSIONS; s++) {
             if (pending_up[s] >= 0) bus_set_up(port_of(s), pending_up[s]), pending_up[s] = -1;
@@ -196,6 +207,7 @@ void net_midi_start(const char *name) {
                                      .model = 1,
                                      .block_name = name_buf,
                                      .midi2_capable = true,
+                                     .ci_version = 2,  // the TRS device's MIDI-CI passes through the box
                                      .protocol = 1};
         bus_register_output(port_of(i), &ops, &ctx[i]);
     }
