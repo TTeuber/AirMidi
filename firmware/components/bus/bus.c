@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "airmidi/ci_guard.h"
 #include "airmidi/merge.h"
 #include "airmidi/midi1.h"
 #include "esp_log.h"
@@ -31,6 +32,7 @@ typedef struct {
     void *ctx;
     volatile bool up;
     merge_t merge;
+    ci_guard_t guard;
     bus_port_stats_t stats;
 } output_t;
 
@@ -55,6 +57,13 @@ static void deliver(int port, int src, const ump_t *u, uint32_t now) {
     if (!o->ops || !o->up) return;
     if (!o->ops->byte_stream) {
         o->ops->write(o->ctx, u), o->stats.out++;
+        return;
+    }
+    // MIDI-CI Discovery loops (lib/ci_guard): the box's own initiator is never held back.
+    if (!ci_guard_pass(&o->guard, src, src != PORT_CI, u, now)) {
+        if (ump_sysex7_status(u) != UMP_SYSEX_CONTINUE && ump_sysex7_status(u) != UMP_SYSEX_END)
+            ESP_LOGI(TAG, "port %d: Discovery from port %d dropped, it came back within a second", port, src);
+        o->stats.dropped++;
         return;
     }
     uint32_t before = o->merge.dropped;
@@ -105,6 +114,7 @@ static void bus_task(void *arg) {
                     // A port coming up starts with an empty merge; one going down drops what it still held.
                     output_t *o = &outputs[m.port];
                     merge_init(&o->merge, sysex_timeout);
+                    ci_guard_init(&o->guard);
                     o->up = m.kind == ITEM_UP;
                     if (o->up && o->ops && o->ops->on_up) o->ops->on_up(o->ctx);
                     ESP_LOGI(TAG, "port %d %s", m.port, o->up ? "up" : "down");
@@ -121,7 +131,7 @@ static void bus_task(void *arg) {
 void bus_start(uint16_t timeout_ms) {
     sysex_timeout = timeout_ms;
     router_init(&router);
-    for (int p = 0; p < PORT_COUNT; p++) merge_init(&outputs[p].merge, sysex_timeout);
+    for (int p = 0; p < PORT_COUNT; p++) merge_init(&outputs[p].merge, sysex_timeout), ci_guard_init(&outputs[p].guard);
     queue = xQueueCreate(QUEUE_LEN, sizeof(bus_msg_t));
     // Above the transports' own tasks so a burst in is routed before more piles up; 6 KB for the merge's copy.
     xTaskCreate(bus_task, "bus", 6144, NULL, 15, NULL);
