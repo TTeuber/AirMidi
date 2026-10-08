@@ -33,11 +33,15 @@ round. One-way latency, no round trip to halve.
   then picks a 7.5 ms connection interval; straight from CoreBluetooth (bleak) macOS stays at 30 ms. Quirk found
   in spike S2: activation is ignored while another process holds a CoreMIDI client, and the first attempt after
   that fails too, so connect BLE before opening other ports, and retry.
-- `cidevices.swift`: what macOS's `MIDICIDeviceManager` discovered (MIDI-CI over BLE and through the box).
+- `cidevices.swift`: what macOS's `MIDICIDeviceManager` discovered (MIDI-CI over BLE and through the box). In
+  phase 5 it found nothing at all, not even the stand-in on the AudioFuse: macOS did not run Discovery.
 - `bleport.py`: a BLE MIDI connection straight from CoreBluetooth (bleak), shaped like an rtmidi port, for when
   CoreMIDI's driver will not take the receiver. It packs queued messages into MTU-sized packets like a real sender:
   one write per message made macOS drop most of a 300-note burst before it reached the air.
 - `bridge_test.py`: the phase 2 acceptance test (see [transports.md](transports.md)); `--bleak` uses bleport.
+- `ci_test.py`: the phase 5 acceptance test against `devices/mac_standin` (a MIDI-CI device on the AudioFuse
+  ports, `lib/midici_responder` on CoreMIDI); see [midi-ci.md](midi-ci.md).
+- `ws_test.py`: the web page's WebSocket both ways through the AudioFuse.
 
 CoreMIDI's Bluetooth driver turned out fragile under test automation: after a few `MIDIBluetoothDriverDisconnect`
 calls and with Audio MIDI Setup open for a while, it stopped promoting this peripheral at all (`bluetoothd` lists

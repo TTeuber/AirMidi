@@ -303,6 +303,7 @@ user's own devices (sd_synth) take this role.
 - USB MIDI 2.0 class support in TinyUSB on the S3: check before phase 6.
 - ~~A↔B crossover cables or adapters for the AudioFuse (Type B): what does the user have?~~ In place (S0).
 - GitHub: repo created under the user's account when they say so; nothing is pushed until then.
+- ROM boot banner on MIDI OUT at every reset: eFuse `UART_PRINT_CONTROL` or a different TX pin on rev B? (decision log 2026-10-08)
 
 ## Decision log
 
@@ -347,3 +348,11 @@ user's own devices (sd_synth) take this role.
 | 2026-10-08 | Network mode runs without BLE by default (setting `ble_in_network`), Wi-Fi power save off | replaces 2026-10-07 "Network mode keeps BLE on": S2 measured BLE's side only; with the BLE stack running network MIDI took 22 ms median, without it 6.7 / 4.2 ms (docs/design/network-midi.md) |
 | 2026-10-08 | Network MIDI: FEC 2, retransmit, hold-don't-reorder with a 150 ms give-up; never drop a client for unanswered pings | 0/600 lost at 5 ms spacing (spike: 45); macOS 26.5 does not answer pings and sends nothing while idle |
 | 2026-10-08 | One function block for the whole box (per-port blocks later) | per-port blocks need group-aware routing; macOS works with one |
+| 2026-10-08 | The box's MIDI-CI initiator is a bus port (`PORT_CI`) routed to and from TRS only, SysEx only; pass-through is ordinary routing | the box's Discovery stays on the TRS link; a CI host behind the box reaches the device with no extra code (receivers ignore other MUIDs); tested with a host on the WebSocket |
+| 2026-10-08 | Initiator: one request at a time, first device with PE wins, ResourceList decides what else to get (DeviceInfo, AllCtrlList, one CtrlMapList per ctrlMapId) | every responder supports one request; a MIDI 1.0 cable has one device; the page needs the value names of valueSelect controls |
+| 2026-10-08 | No JSON parser on the box: a key scanner for the 4 fields it needs, cJSON only to validate what is stored, the browser parses the rest | small, and the API can splice stored JSON into its answers unchanged |
+| 2026-10-08 | Cache one device in LittleFS keyed by manufacturer/family/model/version; hand-written profile as fallback | a known device rescans in ~50 ms instead of ~0.8 s and hears only a Discovery; one device never fills the partition |
+| 2026-10-08 | The page sends the device's controls as MIDI 2.0 (32-bit) and lets the box scale them for the jack | the control list's values are 32-bit (default, minMax, CtrlMapList values); one translation, already tested |
+| 2026-10-08 | Web UI WebSocket: one queued send at a time | per-batch async sends overflowed the server's 6-slot work queue under SysEx from TRS and lost frames (found by the pass-through test) |
+| 2026-10-08 | Phase 5 done (MIDI-CI over TRS, cache, profile, generated play page, responder library, Mac stand-in): host tests 12/12 suites, `ci_test.py` 21/21, page -> device and device -> page checked in a browser | macOS's MIDICIDeviceManager found nothing this time (no Discovery from macOS), so pass-through is tested from the WebSocket; the Daisy Pod demo device is still optional |
+| 2026-10-08 | OPEN: the chip's ROM boot banner leaves through MIDI OUT (D6 = UART0 TX on both XIAOs) at every reset, ~8 random messages incl. Program Changes | firmware cannot stop it; burn `UART_PRINT_CONTROL` (irreversible, harmless) or move MIDI OUT to another GPIO on rev B: the user decides (docs/design/midi-ci.md) |

@@ -37,6 +37,11 @@ own USB MIDI path and the TRS wire time (3 bytes at 31250 baud = 0.96 ms).
 | Network MIDI 2.0 -> TRS, BLE stack running | phase 4 | 23.0 ms | 102 ms | 156 ms | 0/300 |
 | Web UI (WebSocket) -> TRS, 100 CCs | phase 4 | 3.9 ms | | 90 ms | 0/100 |
 | TRS -> web UI (WebSocket) | phase 4 | 10.1 ms | | 97 ms | 0/100 |
+| TRS -> web UI after the WebSocket send fix | phase 5 | 10.0 ms | | 97 ms | 0/100 |
+
+MIDI-CI over TRS (phase 5, `tools/hil/ci_test.py`): a full scan (Discovery, capabilities, 4 resources, 1.4 KB of
+JSON) takes 720-910 ms, a rescan of a known device 37-74 ms, a scan with nothing on the jacks 3.0 s (the spec's
+timeout).
 
 The phase 2 rows come from two runs of `tools/hil/bridge_test.py --bleak`. They are lower than the spike's CoreMIDI
 rows for BLE -> TRS: the bleak central writes as soon as it is asked, while CoreMIDI's driver schedules its sends.
