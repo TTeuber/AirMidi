@@ -14,11 +14,14 @@ extern "C" {
 
 // Ports. Fixed numbers so routes can be stored in settings and shown in the web UI.
 enum {
-    PORT_TRS,    // J2 OUT / J3 IN
-    PORT_BLE_0,  // BLE MIDI peripheral, first connection
-    PORT_BLE_1,  // second connection
-    PORT_NET_0,  // Network MIDI 2.0 session
+    PORT_TRS,          // J2 OUT / J3 IN
+    PORT_BLE_0,        // BLE MIDI peripheral, first connection
+    PORT_BLE_1,        // second connection
+    PORT_BLE_CENTRAL,  // a BLE MIDI device the box connected to itself (keyboard, controller)
+    PORT_NET_0,        // Network MIDI 2.0 session
     PORT_NET_1,
+    PORT_RTP_0,  // RTP-MIDI (AppleMIDI) session
+    PORT_RTP_1,
     PORT_WEB,     // the web UI's control surface
     PORT_USB,     // S3 only
     PORT_ESPNOW,  // box-to-box

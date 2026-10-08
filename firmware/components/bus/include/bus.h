@@ -34,7 +34,7 @@ typedef struct {
 // Start the bus task. The route matrix starts as router_init()'s default (everything to everything else).
 void bus_start(uint16_t sysex_timeout_ms);
 
-// Register a port's output (once, before it comes up).
+// Register a port's output (once, after bus_start, before it comes up). Byte-stream outputs get their merge queue here.
 void bus_register_output(int port, const bus_output_ops_t *ops, void *ctx);
 
 // Mark an output usable or not (BLE: subscribed; TRS: always). Down outputs are skipped by routing.

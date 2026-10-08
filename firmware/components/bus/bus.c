@@ -1,5 +1,7 @@
 #include "bus.h"
 
+#include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "airmidi/ci_guard.h"
@@ -31,7 +33,7 @@ typedef struct {
     const bus_output_ops_t *ops;
     void *ctx;
     volatile bool up;
-    merge_t merge;
+    merge_t *merge;  // byte-stream outputs only (2.6 KB each), allocated when the output registers
     ci_guard_t guard;
     bus_port_stats_t stats;
 } output_t;
@@ -47,7 +49,7 @@ static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 // Write what an output's merge allows now, as far as the transport has room.
 static void drain_one(output_t *o, uint32_t now) {
     ump_t u;
-    while ((!o->up || !o->ops->room || o->ops->room(o->ctx) >= MIDI1_OUT_MAX) && merge_pop(&o->merge, &u, now)) {
+    while ((!o->up || !o->ops->room || o->ops->room(o->ctx) >= MIDI1_OUT_MAX) && merge_pop(o->merge, &u, now)) {
         if (o->up) o->ops->write(o->ctx, &u), o->stats.out++;
     }
 }
@@ -66,9 +68,9 @@ static void deliver(int port, int src, const ump_t *u, uint32_t now) {
         o->stats.dropped++;
         return;
     }
-    uint32_t before = o->merge.dropped;
-    merge_push(&o->merge, src, u, now);
-    o->stats.dropped += o->merge.dropped - before;
+    uint32_t before = o->merge->dropped;
+    merge_push(o->merge, src, u, now);
+    o->stats.dropped += o->merge->dropped - before;
     // Drain right away rather than after the whole batch: a long SysEx is hundreds of UMPs, more than the merge
     // queue holds. Writes only fill the transport's buffer; the BLE packet still goes out once, at flush time.
     drain_one(o, now);
@@ -80,9 +82,9 @@ static void drain(uint32_t now) {
         output_t *o = &outputs[p];
         if (!o->ops) continue;
         if (o->ops->byte_stream) {
-            uint32_t before = o->merge.dropped;
+            uint32_t before = o->merge->dropped;
             drain_one(o, now);
-            o->stats.dropped += o->merge.dropped - before;
+            o->stats.dropped += o->merge->dropped - before;
         }
         if (o->up && o->ops->flush) o->ops->flush(o->ctx);
     }
@@ -113,7 +115,7 @@ static void bus_task(void *arg) {
                 case ITEM_DOWN: {
                     // A port coming up starts with an empty merge; one going down drops what it still held.
                     output_t *o = &outputs[m.port];
-                    merge_init(&o->merge, sysex_timeout);
+                    if (o->merge) merge_init(o->merge, sysex_timeout);
                     ci_guard_init(&o->guard);
                     o->up = m.kind == ITEM_UP;
                     if (o->up && o->ops && o->ops->on_up) o->ops->on_up(o->ctx);
@@ -131,7 +133,7 @@ static void bus_task(void *arg) {
 void bus_start(uint16_t timeout_ms) {
     sysex_timeout = timeout_ms;
     router_init(&router);
-    for (int p = 0; p < PORT_COUNT; p++) merge_init(&outputs[p].merge, sysex_timeout), ci_guard_init(&outputs[p].guard);
+    for (int p = 0; p < PORT_COUNT; p++) ci_guard_init(&outputs[p].guard);
     queue = xQueueCreate(QUEUE_LEN, sizeof(bus_msg_t));
     // Above the transports' own tasks so a burst in is routed before more piles up; 6 KB for the merge's copy.
     xTaskCreate(bus_task, "bus", 6144, NULL, 15, NULL);
@@ -139,8 +141,14 @@ void bus_start(uint16_t timeout_ms) {
 }
 
 void bus_register_output(int port, const bus_output_ops_t *ops, void *ctx) {
-    outputs[port].ops = ops;
-    outputs[port].ctx = ctx;
+    output_t *o = &outputs[port];
+    if (ops->byte_stream && !o->merge) {
+        o->merge = malloc(sizeof *o->merge);
+        assert(o->merge);
+        merge_init(o->merge, sysex_timeout);
+    }
+    o->ops = ops;
+    o->ctx = ctx;
 }
 
 static bool enqueue(item_kind_t kind, int port, const ump_t *u, TickType_t wait) {
