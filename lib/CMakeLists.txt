@@ -10,5 +10,7 @@ add_library(airmidi_core STATIC
     src/router.c
     src/merge.c
     src/ui.c
+    src/nm2.c
+    src/ump_endpoint.c
 )
 target_include_directories(airmidi_core PUBLIC include)
