@@ -20,12 +20,20 @@ import rtmidi
 AUDIOFUSE = "Audiofuse"
 
 
+# Controllers a MIDI 2.0 protocol session does not pass on as plain CCs (M2-104 translation: Bank Select travels
+# with the next Program Change, RPN/NRPN selection and Data Entry become one RPN/NRPN message), so never used here.
+NOT_PLAIN = {0, 6, 32, 38, 98, 99, 100, 101}
+CONTROLLERS = [c for c in range(120) if c not in NOT_PLAIN]
+
+
 def cc(i):
-    return [0xB0 | (i % 16), (i // 16) % 120, i % 128]
+    return [0xB0 | (i % 16), CONTROLLERS[(i // 16) % len(CONTROLLERS)], i % 128]
 
 
 def seq_of(m):
-    return (m[1] * 16 + (m[0] & 0x0F)) if len(m) == 3 and m[0] & 0xF0 == 0xB0 else None
+    if len(m) != 3 or m[0] & 0xF0 != 0xB0 or m[1] not in CONTROLLERS:
+        return None
+    return CONTROLLERS.index(m[1]) * 16 + (m[0] & 0x0F)
 
 
 def open_pair(name):
