@@ -17,5 +17,7 @@ add_library(airmidi_core STATIC
     src/midici_initiator.c
     src/midici_responder.c
     src/ci_guard.c
+    src/rtp_journal.c
+    src/rtpmidi.c
 )
 target_include_directories(airmidi_core PUBLIC include)
