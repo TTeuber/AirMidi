@@ -4,6 +4,7 @@ Receivable Maximum SysEx Message Size. Asks the receiver (over its USB console) 
 receiver's console so both sides of the conversation show up in one place.
 
     uv run --with python-rtmidi --with pyserial python spikes/s3_midici/mac_responder.py [scans]
+    uv run --with python-rtmidi --with pyserial python spikes/s3_midici/mac_responder.py --serve <seconds>
 """
 
 import glob
@@ -124,11 +125,20 @@ def open_port(cls):
 
 
 def main():
-    scans = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     midi_out, midi_in = open_port(rtmidi.MidiOut), open_port(rtmidi.MidiIn)
     midi_in.ignore_types(sysex=False, timing=True, active_sense=True)
     r = Responder(midi_out)
     midi_in.set_callback(lambda ev, _: r.handle(ev[0]))
+    if sys.argv[1:2] == ["--serve"]:
+        # only answer whoever asks (e.g. macOS through the receiver's BLE bridge), printing each exchange
+        end = time.time() + float(sys.argv[2])
+        print(f"responder MUID {MUID:07X} serving for {sys.argv[2]} s", flush=True)
+        while time.time() < end:
+            while r.log:
+                print("  mac |", r.log.pop(0), flush=True)
+            time.sleep(0.05)
+        return
+    scans = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     con = serial.Serial(glob.glob("/dev/cu.usbmodem*")[0], 115200, timeout=0.2)
     lines = []
 

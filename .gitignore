@@ -24,3 +24,6 @@ __pycache__/
 
 # dev Wi-Fi credentials (SSID, then password), never committed
 .wifi
+
+# HIL tool binaries (swiftc output)
+tools/hil/build/
