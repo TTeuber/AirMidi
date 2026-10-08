@@ -93,6 +93,69 @@ static void test_midi1_data_len(void) {
     TEST_ASSERT_EQUAL(-1, midi1_data_len(0x40));
 }
 
+// sysex7_split / sysex7_rx: collect the packets of a message and get the same bytes back.
+static ump_t packets[128];
+static int npackets;
+static void collect(void *ctx, const ump_t *u) {
+    (void)ctx;
+    packets[npackets++] = *u;
+}
+
+static void test_sysex7_split_and_reassemble(void) {
+    uint8_t msg[500], buf[512];
+    for (int i = 0; i < 500; i++) msg[i] = (uint8_t)(i * 7) & 0x7F;
+    const size_t lengths[] = {0, 1, 6, 7, 12, 13, 500};
+    for (size_t t = 0; t < sizeof lengths / sizeof lengths[0]; t++) {
+        size_t n = lengths[t];
+        npackets = 0;
+        int k = sysex7_split(3, msg, n, collect, NULL);
+        TEST_ASSERT_EQUAL(npackets, k);
+        TEST_ASSERT_EQUAL(n <= 6 ? 1 : (int)((n + 5) / 6), k);
+        TEST_ASSERT_EQUAL(n <= 6 ? UMP_SYSEX_COMPLETE : UMP_SYSEX_START, ump_sysex7_status(&packets[0]));
+        sysex7_rx_t rx;
+        sysex7_rx_init(&rx, buf, sizeof buf);
+        for (int i = 0; i < k; i++) {
+            TEST_ASSERT_EQUAL(3, ump_group(&packets[i]));
+            TEST_ASSERT_EQUAL(i == k - 1, sysex7_rx_push(&rx, &packets[i]));
+        }
+        TEST_ASSERT_EQUAL(n, rx.len);
+        if (n) TEST_ASSERT_EQUAL_MEMORY(msg, buf, n);
+    }
+}
+
+static void test_sysex7_rx_drops_a_message_that_does_not_fit(void) {
+    uint8_t msg[40] = {1, 2, 3}, buf[20];
+    sysex7_rx_t rx;
+    sysex7_rx_init(&rx, buf, sizeof buf);
+    npackets = 0;
+    sysex7_split(0, msg, sizeof msg, collect, NULL);
+    for (int i = 0; i < npackets; i++) TEST_ASSERT_FALSE(sysex7_rx_push(&rx, &packets[i]));
+    TEST_ASSERT_EQUAL(1, rx.overflows);
+    // the next one that fits comes through
+    npackets = 0;
+    sysex7_split(0, msg, 20, collect, NULL);
+    bool got = false;
+    for (int i = 0; i < npackets; i++) got = sysex7_rx_push(&rx, &packets[i]);
+    TEST_ASSERT_TRUE(got);
+    TEST_ASSERT_EQUAL(20, rx.len);
+}
+
+static void test_sysex7_rx_start_abandons_and_stray_packets_are_ignored(void) {
+    uint8_t a[] = {1, 2, 3, 4, 5, 6, 7, 8, 9}, buf[64];
+    sysex7_rx_t rx;
+    sysex7_rx_init(&rx, buf, sizeof buf);
+    ump_t cont = ump_sysex7(0, UMP_SYSEX_CONTINUE, a, 6), end = ump_sysex7(0, UMP_SYSEX_END, a, 3);
+    TEST_ASSERT_FALSE(sysex7_rx_push(&rx, &cont));  // no Start before it
+    TEST_ASSERT_FALSE(sysex7_rx_push(&rx, &end));
+    ump_t start = ump_sysex7(0, UMP_SYSEX_START, a, 6), note = ump_m1_cv(0, 0x90, 60, 1);
+    sysex7_rx_push(&rx, &start);
+    TEST_ASSERT_FALSE(sysex7_rx_push(&rx, &note));  // not SysEx: ignored, the message goes on
+    sysex7_rx_push(&rx, &start);                    // a new Start: the first message is abandoned
+    TEST_ASSERT_TRUE(sysex7_rx_push(&rx, &end));
+    TEST_ASSERT_EQUAL(9, rx.len);
+    TEST_ASSERT_EQUAL_MEMORY(a, buf, 6);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_words_per_message_type);
@@ -105,5 +168,8 @@ int main(void) {
     RUN_TEST(test_m2_cv_layout);
     RUN_TEST(test_equal_compares_only_used_words);
     RUN_TEST(test_midi1_data_len);
+    RUN_TEST(test_sysex7_split_and_reassemble);
+    RUN_TEST(test_sysex7_rx_drops_a_message_that_does_not_fit);
+    RUN_TEST(test_sysex7_rx_start_abandons_and_stray_packets_are_ignored);
     return UNITY_END();
 }

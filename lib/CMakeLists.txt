@@ -12,5 +12,9 @@ add_library(airmidi_core STATIC
     src/ui.c
     src/nm2.c
     src/ump_endpoint.c
+    src/json_scan.c
+    src/midici.c
+    src/midici_initiator.c
+    src/midici_responder.c
 )
 target_include_directories(airmidi_core PUBLIC include)

@@ -77,3 +77,57 @@ int midi1_data_len(uint8_t status) {
             return -1;
     }
 }
+
+void sysex7_rx_init(sysex7_rx_t *r, uint8_t *buf, size_t cap) { *r = (sysex7_rx_t){.buf = buf, .cap = cap}; }
+
+static void rx_append(sysex7_rx_t *r, const ump_t *u) {
+    uint8_t b[6];
+    int n = ump_sysex7_data(u, b);
+    if (r->len + (size_t)n > r->cap) {
+        r->overflow = true;
+        return;
+    }
+    memcpy(r->buf + r->len, b, (size_t)n);
+    r->len += (size_t)n;
+}
+
+bool sysex7_rx_push(sysex7_rx_t *r, const ump_t *u) {
+    if (ump_mt(u) != UMP_MT_SYSEX7) return false;
+    switch (ump_sysex7_status(u)) {
+        case UMP_SYSEX_COMPLETE:
+        case UMP_SYSEX_START:
+            r->len = 0, r->overflow = false, r->active = true;
+            rx_append(r, u);
+            if (ump_sysex7_status(u) == UMP_SYSEX_START) return false;
+            break;
+        case UMP_SYSEX_CONTINUE:
+            if (r->active) rx_append(r, u);
+            return false;
+        case UMP_SYSEX_END:
+            if (!r->active) return false;
+            rx_append(r, u);
+            break;
+        default:
+            return false;
+    }
+    r->active = false;
+    if (r->overflow) r->overflows++;
+    return !r->overflow;
+}
+
+int sysex7_split(uint8_t group, const uint8_t *data, size_t n, void (*emit)(void *ctx, const ump_t *u), void *ctx) {
+    if (n <= 6) {
+        ump_t u = ump_sysex7(group, UMP_SYSEX_COMPLETE, data, (int)n);
+        emit(ctx, &u);
+        return 1;
+    }
+    int count = 0;
+    for (size_t i = 0; i < n; i += 6) {
+        size_t k = n - i < 6 ? n - i : 6;
+        uint8_t st = i == 0 ? UMP_SYSEX_START : i + k == n ? UMP_SYSEX_END : UMP_SYSEX_CONTINUE;
+        ump_t u = ump_sysex7(group, st, data + i, (int)k);
+        emit(ctx, &u);
+        count++;
+    }
+    return count;
+}

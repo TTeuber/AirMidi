@@ -56,6 +56,22 @@ ump_t ump_sysex7(uint8_t group, uint8_t status, const uint8_t *data, int n);
 // Copies the data bytes of a SysEx7 packet into out[6]; returns how many there are.
 int ump_sysex7_data(const ump_t *u, uint8_t out[6]);
 static inline uint8_t ump_sysex7_status(const ump_t *u) { return (u->w[0] >> 20) & 0xF; }
+
+// Reassembles a SysEx7 message from its packets into the caller's buffer: the bytes between F0 and F7. A message
+// that does not fit is dropped whole (counted in `overflows`); a Start in the middle of a message abandons it.
+typedef struct {
+    uint8_t *buf;
+    size_t cap, len;
+    bool active, overflow;
+    uint32_t overflows;
+} sysex7_rx_t;
+
+void sysex7_rx_init(sysex7_rx_t *r, uint8_t *buf, size_t cap);
+// Feed one packet (anything that is not MT 0x3 is ignored). True when a message has just been completed in
+// buf[0..len).
+bool sysex7_rx_push(sysex7_rx_t *r, const ump_t *u);
+// Split a SysEx (contents, no F0/F7) into packets of up to 6 bytes and pass each to emit. Returns how many.
+int sysex7_split(uint8_t group, const uint8_t *data, size_t n, void (*emit)(void *ctx, const ump_t *u), void *ctx);
 // MIDI 2.0 channel voice: opcode (0x0-0xF), channel, the two index bytes of word 0, and the 32-bit data word.
 ump_t ump_m2_cv(uint8_t group, uint8_t opcode, uint8_t channel, uint8_t index1, uint8_t index2, uint32_t data);
 
