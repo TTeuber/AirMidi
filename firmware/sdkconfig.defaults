@@ -45,3 +45,8 @@ CONFIG_ESP_PHY_MAC_BB_PD=y
 # WebSocket for the web UI's control surface (UMP over binary frames).
 CONFIG_HTTPD_WS_SUPPORT=y
 CONFIG_HTTPD_WS_POST_HANDSHAKE_CB_SUPPORT=y
+
+# Sockets: the web server's 7 connections + its listening and control sockets, Network MIDI's UDP socket, an update
+# download. The default 10 ran out with one browser tab open (keep-alive connections + the WebSocket): accept()
+# failed with ENFILE before the server's own limit (and its drop-the-oldest) was ever reached.
+CONFIG_LWIP_MAX_SOCKETS=16

@@ -589,6 +589,7 @@ void webui_start(const webui_hooks_t *h) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.max_uri_handlers = 28;
     cfg.stack_size = 6144;
+    cfg.max_open_sockets = 7;     // + listen + control = 9 of CONFIG_LWIP_MAX_SOCKETS (16, see sdkconfig.defaults)
     cfg.lru_purge_enable = true;  // a phone that left without closing must not lock others out
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = on_close;
