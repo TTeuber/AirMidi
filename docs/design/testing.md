@@ -34,5 +34,15 @@ round. One-way latency, no round trip to halve.
   in spike S2: activation is ignored while another process holds a CoreMIDI client, and the first attempt after
   that fails too, so connect BLE before opening other ports, and retry.
 - `cidevices.swift`: what macOS's `MIDICIDeviceManager` discovered (MIDI-CI over BLE and through the box).
+- `bleport.py`: a BLE MIDI connection straight from CoreBluetooth (bleak), shaped like an rtmidi port, for when
+  CoreMIDI's driver will not take the receiver. It packs queued messages into MTU-sized packets like a real sender:
+  one write per message made macOS drop most of a 300-note burst before it reached the air.
+- `bridge_test.py`: the phase 2 acceptance test (see [transports.md](transports.md)); `--bleak` uses bleport.
+
+CoreMIDI's Bluetooth driver turned out fragile under test automation: after a few `MIDIBluetoothDriverDisconnect`
+calls and with Audio MIDI Setup open for a while, it stopped promoting this peripheral at all (`bluetoothd` lists
+`com.apple.MIDIServer` as a client of the device, the server never acts on the activation), and quitting Audio MIDI
+Setup or deleting the stale device did not bring it back. So correctness tests run over bleak, and CoreMIDI-path
+latency is measured when the driver cooperates.
 
 Spikes S0-S3 (`spikes/`) used these first; their results are in the plan's decision log.

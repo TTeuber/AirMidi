@@ -13,6 +13,7 @@ typedef struct {
     gpio_num_t button;         // D2, to GND, internal pull-up: active low
     adc_unit_t batt_adc_unit;  // A0: half the switched cell voltage (1:1 divider)
     adc_channel_t batt_adc_channel;
+    int batt_offset_mv;  // added to the cell reading, from comparing it with a multimeter on this board
 } board_t;
 
 // The board this firmware was built for (Kconfig AIRMIDI_BOARD).

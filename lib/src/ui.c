@@ -88,6 +88,14 @@ bool led_level(led_state_t s, uint32_t now, uint32_t last_activity) {
 void battery_init(battery_t *b) { memset(b, 0, sizeof *b); }
 
 void battery_update(battery_t *b, uint32_t mv) {
+    if (mv < BATTERY_ABSENT_MV) {  // no cell: forget the average, so a cell switched in later starts fresh
+        b->mv = 0;
+        b->absent = true;
+        b->low = b->empty = false;
+        b->below_empty = 0;
+        return;
+    }
+    b->absent = false;
     // Exponential average over ~8 samples: smooths ADC noise and short sags while radios transmit.
     b->mv = b->mv ? (b->mv * 7 + mv + 4) / 8 : mv;
     if (b->mv < BATTERY_WARN_MV) b->low = true;

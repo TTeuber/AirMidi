@@ -13,6 +13,11 @@ shift || true
 export IDF_PATH=${IDF_PATH:-$HOME/Developer/esp-idf}
 source "$IDF_PATH/export.sh" >/dev/null
 dir=build_$board
+# ESP-IDF only reads sdkconfig.defaults* when it creates sdkconfig; start over when they are newer than it.
+if [ -f "$dir/sdkconfig" ] && [ -n "$(find sdkconfig.defaults* -newer "$dir/sdkconfig")" ]; then
+    echo "sdkconfig.defaults changed: regenerating $dir/sdkconfig"
+    rm "$dir/sdkconfig"
+fi
 # SDKCONFIG per board too, so switching boards never mixes configurations.
 idf=(idf.py -B "$dir" -D SDKCONFIG="$dir/sdkconfig" -D IDF_TARGET=$target)
 "${idf[@]}" build

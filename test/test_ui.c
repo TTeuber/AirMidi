@@ -157,6 +157,19 @@ static void test_empty_needs_a_sustained_low(void) {
     TEST_ASSERT_TRUE(bt.empty);
 }
 
+// Regression: on USB with the power switch off, A0 reads ~0 V. That once shut the box down after 5 s.
+static void test_no_cell_is_absent_not_empty(void) {
+    battery_t bt;
+    battery_init(&bt);
+    for (int i = 0; i < 30; i++) battery_update(&bt, 12);
+    TEST_ASSERT_TRUE(bt.absent);
+    TEST_ASSERT_FALSE(bt.empty);
+    TEST_ASSERT_FALSE(bt.low);
+    battery_update(&bt, 3900);  // switch turned on: fresh average, not dragged down by the zeros
+    TEST_ASSERT_FALSE(bt.absent);
+    TEST_ASSERT_EQUAL(3900, bt.mv);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_short_press_after_double_window);
@@ -171,5 +184,6 @@ int main(void) {
     RUN_TEST(test_percent_curve);
     RUN_TEST(test_low_warning_with_hysteresis);
     RUN_TEST(test_empty_needs_a_sustained_low);
+    RUN_TEST(test_no_cell_is_absent_not_empty);
     return UNITY_END();
 }

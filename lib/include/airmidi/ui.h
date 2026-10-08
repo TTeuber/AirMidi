@@ -60,20 +60,23 @@ bool led_level(led_state_t s, uint32_t now_ms, uint32_t last_activity_ms);
 
 // ---- battery -------------------------------------------------------------------------------------------------
 
-#define BATTERY_WARN_MV 3500   // LED warns
-#define BATTERY_EMPTY_MV 3300  // all notes off, deep sleep (the cell's protection would cut at ~2.5-3.0 V)
+#define BATTERY_ABSENT_MV 2500  // below this there is no cell on A0: power switch off, running from USB
+#define BATTERY_WARN_MV 3500    // LED warns
+#define BATTERY_EMPTY_MV 3300   // all notes off, deep sleep (the cell's protection would cut at ~2.5-3.0 V)
 #define BATTERY_HYSTERESIS_MV 50
 #define BATTERY_EMPTY_SAMPLES 5  // consecutive samples below EMPTY: a radio burst's sag is not a flat cell
 
 typedef struct {
     uint32_t mv;  // filtered cell voltage, 0 until the first sample
+    bool absent;  // no cell (switch off, on USB power): neither low nor empty
     bool low, empty;
     int below_empty;
 } battery_t;
 
 void battery_init(battery_t *b);
 
-// Feed one cell voltage sample (mV, after the 1:2 divider is undone), about once a second.
+// Feed one cell voltage sample (mV, after the 1:2 divider is undone), about once a second. A0 sits after the
+// power switch, so with the switch off and USB plugged in it reads ~0 V: that is "absent", never "empty".
 void battery_update(battery_t *b, uint32_t cell_mv);
 
 // State of charge from a resting Li-ion voltage, 0-100 (a rough curve; under load it reads a little low).
