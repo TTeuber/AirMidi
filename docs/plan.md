@@ -303,7 +303,7 @@ user's own devices (sd_synth) take this role.
 - USB MIDI 2.0 class support in TinyUSB on the S3: check before phase 6.
 - ~~A↔B crossover cables or adapters for the AudioFuse (Type B): what does the user have?~~ In place (S0).
 - GitHub: repo created under the user's account when they say so; nothing is pushed until then.
-- ROM boot banner on MIDI OUT at every reset: eFuse `UART_PRINT_CONTROL` or a different TX pin on rev B? (decision log 2026-10-08)
+- ~~ROM boot banner on MIDI OUT at every reset~~: eFuse burned on the C6 (decision log 2026-10-08); the S3 needs it too.
 
 ## Decision log
 
@@ -356,3 +356,4 @@ user's own devices (sd_synth) take this role.
 | 2026-10-08 | Web UI WebSocket: one queued send at a time | per-batch async sends overflowed the server's 6-slot work queue under SysEx from TRS and lost frames (found by the pass-through test) |
 | 2026-10-08 | Phase 5 done (MIDI-CI over TRS, cache, profile, generated play page, responder library, Mac stand-in): host tests 12/12 suites, `ci_test.py` 21/21, page -> device and device -> page checked in a browser | macOS's MIDICIDeviceManager found nothing this time (no Discovery from macOS), so pass-through is tested from the WebSocket; the Daisy Pod demo device is still optional |
 | 2026-10-08 | OPEN: the chip's ROM boot banner leaves through MIDI OUT (D6 = UART0 TX on both XIAOs) at every reset, ~8 random messages incl. Program Changes | firmware cannot stop it; burn `UART_PRINT_CONTROL` (irreversible, harmless) or move MIDI OUT to another GPIO on rev B: the user decides (docs/design/midi-ci.md) |
+| 2026-10-08 | Burned `UART_PRINT_CONTROL` = 0b11 on board #1's C6 (user's decision) | resets no longer send garbage on MIDI OUT (0 messages in 4 hardware resets, software restarts only all-notes-off); download mode still leaks 3 messages (bench only); the S3 needs the same when it is mounted |

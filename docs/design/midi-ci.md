@@ -105,12 +105,15 @@ rescan at boot is then silent for the device, not because the scan is slow.
   failed queue freed the frame silently. Phase 4's test (CCs 20 ms apart) never got there; pass-through did (3 of
   6 packets of a Discovery reply arrived). Now one send is queued at a time and takes everything collected; what
   does not fit is counted.
-- **The ROM boot log comes out of MIDI OUT** (open): the XIAO's D6 (GPIO16 on the C6, GPIO43 on the S3) is UART0
-  TX, where the chip's ROM prints its boot banner at 115200 baud before any firmware runs. Read at 31250 baud by
-  the device, each reset sends ~8 random messages, among them Program Changes (seen: channels 1, 5, 12) that
-  would switch a connected synth's patch. Firmware cannot stop it. Fixes: burn the `UART_PRINT_CONTROL` eFuse
-  (ROM output on UART0 off for good; the USB console keeps it) or route MIDI OUT to another pin on rev B (UART1 can
-  use any GPIO). Waiting for the user's decision; noted in the plan.
+- **The ROM boot log came out of MIDI OUT** (fixed on board #1 by an eFuse): the XIAO's D6 (GPIO16 on the C6,
+  GPIO43 on the S3) is UART0 TX, where the chip's ROM prints its boot banner at 115200 baud before any firmware
+  runs. Read at 31250 baud by the device, each reset sent ~8 random messages, among them Program Changes (seen:
+  channels 1, 5, 12) that would switch a connected synth's patch. Firmware cannot stop it. On 2026-10-08 the C6's
+  `UART_PRINT_CONTROL` eFuse was burned to `0b11` (ROM output on UART0 off for good; the USB console keeps it,
+  that is `DIS_USB_SERIAL_JTAG_ROM_PRINT`, untouched). Checked with the stand-in on MIDI OUT: hardware resets
+  0 messages (4 of 4 after the first boot following the burn), software restarts only the intended all-notes-off.
+  Entering download mode (esptool, flashing) still sends 3: that is the ROM's download handler, a bench-only
+  path. The S3 has the same pin and needs the same fuse (or rev B moves MIDI OUT to another GPIO).
 - One boot scan out of five found no device although the stand-in answered it (its log shows the reply to the
   box's MUID). Not reproduced in the next five resets; the next manual or button scan works. Left as observed.
 - macOS's `MIDICIDeviceManager` discovered nothing during this phase, not even the stand-in on the AudioFuse
