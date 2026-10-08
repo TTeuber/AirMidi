@@ -1,0 +1,52 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  host-tests:
+    # lib/ on the host with AddressSanitizer + UndefinedBehaviorSanitizer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S test -B test/build
+      - run: cmake --build test/build -j
+      - run: ctest --test-dir test/build --output-on-failure
+
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format 18.1.8 (the version .clang-format names)
+        run: |
+          files=$(git ls-files '*.c' '*.h' | grep -v -e '^test/unity/' -e '^spikes/')
+          pipx run --spec clang-format==18.1.8 clang-format --dry-run --Werror $files
+
+  firmware:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        board: [c6, s3]
+        include:
+          - board: c6
+            target: esp32c6
+          - board: s3
+            target: esp32s3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # git describe needs the tags for the version string
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.5.1
+          target: ${{ matrix.target }}
+          path: firmware
+          command: git config --global --add safe.directory '*' && idf.py -B build_${{ matrix.board }} build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: airmidi-${{ matrix.board }}
+          path: |
+            firmware/build_${{ matrix.board }}/airmidi.bin
+            firmware/build_${{ matrix.board }}/bootloader/bootloader.bin
+            firmware/build_${{ matrix.board }}/partition_table/partition-table.bin
+            firmware/build_${{ matrix.board }}/flash_args
