@@ -298,10 +298,10 @@ user's own devices (sd_synth) take this role.
 
 - License (decide before the repo goes public): MIT or Apache-2.0 for code, CERN-OHL-P for hardware.
 - Which S3 board gets mounted (second rev A board?), and when.
-- Network MIDI 2.0 vs RTP-MIDI first: spike S1.
-- BLE + Wi-Fi together on the C6: spike S2.
+- ~~Network MIDI 2.0 vs RTP-MIDI first: spike S1.~~ Network MIDI 2.0 (decision log 2026-10-07).
+- ~~BLE + Wi-Fi together on the C6: spike S2.~~ Works, BLE stays on in Network mode (decision log 2026-10-07).
 - USB MIDI 2.0 class support in TinyUSB on the S3: check before phase 6.
-- A↔B crossover cables or adapters for the AudioFuse (Type B): what does the user have?
+- ~~A↔B crossover cables or adapters for the AudioFuse (Type B): what does the user have?~~ In place (S0).
 - GitHub: repo created under the user's account when they say so; nothing is pushed until then.
 
 ## Decision log
@@ -324,3 +324,11 @@ user's own devices (sd_synth) take this role.
 | 2026-10-07 | S3 passed (TRS part): Discovery, PE capabilities and Get ResourceList / DeviceInfo / AllCtrlList over TRS in 0.55-0.72 s; a 788-byte control list takes 320 ms (2.7 KB/s of the 3.1 KB/s line rate) | faster than the 1-2 s guessed; the flash cache stays, but a rescan at every boot is affordable |
 | 2026-10-07 | `AllCtrlList` instead of `ChCtrlList` as the control list resource | M2-117: `ChCtrlList` only exists behind a `ChannelList` entry (needs `resId`); `AllCtrlList` is the device-wide list and the one M2-103's own example uses |
 | 2026-10-07 | macOS sends MIDI-CI Discovery on hardware MIDI ports by itself (seen arriving at J3 during S3) | the receiver will see Discovery messages it did not start; the CI layer must ignore or forward them by MUID, never treat them as replies |
+| 2026-10-07 | S2 passed: BLE MIDI and Wi-Fi share the C6 radio without loss. Through CoreMIDI's BLE driver (7.5 ms interval): BLE -> TRS 15.7 ms median / 19 ms p95, TRS -> BLE 9.1 / 12.5 ms with Wi-Fi off; Wi-Fi joined and idle changes little (16.2 / 24.8 and 8.9 / 16.1); 100 KB/s to 700 KB/s of UDP raises p95 to ~40 ms (median +3-5 ms); 0 lost in every mode | Network mode keeps BLE on; Play mode keeps Wi-Fi off for the tightest timing; no bulk transfers (OTA) while playing |
+| 2026-10-07 | BLE MIDI tests go through CoreMIDI, not bleak | from CoreBluetooth directly macOS keeps a 30 ms interval (20 ms median, 34 ms p95); Apple's MIDI driver sets 7.5 ms. `tools/hil/blemidi` hands the device to CoreMIDI (`MIDIBluetoothDriverActivateAllConnections`) |
+| 2026-10-07 | HIL order: connect BLE first, then open other CoreMIDI ports | while another process holds a CoreMIDI client, the activation is ignored, and the first activation after that (or after `MIDIBluetoothDriverDisconnect`) fails too; `blemidi connect` is retried |
+| 2026-10-07 | Connection parameter request: 11.25-26.25 ms | Apple's accessory guidelines (min >= 11.25 ms for MIDI, max >= min + 15 ms); macOS's MIDI driver then picks 7.5 ms itself |
+| 2026-10-07 | S3 passed (BLE part): macOS runs MIDI-CI Discovery on a BLE MIDI 1.0 endpoint about 2 s after connecting, and `MIDICIDeviceManager` lists the responder (type legacy MIDI 1.0) | pass-through of CI between the Mac and the TRS device is worth doing; the device must answer within macOS's discovery window, which the 31250 baud round trip (~60 ms for Discovery) allows |
+| 2026-10-07 | S1 passed: macOS 26.5 finds an ESP32 Network MIDI 2.0 host over mDNS, connects from Audio MIDI Setup (MIDI 2.0 protocol session, no auth) and passes MIDI both ways; 6.4 ms out / 7.1 ms in median, p95 60-78 ms from the Wi-Fi link itself (plain ping to the receiver: max 104 ms) | Network MIDI 2.0 first, RTP-MIDI later (Windows rtpMIDI, older macOS) |
+| 2026-10-07 | Network MIDI needs Retransmit Request (and FEC) from the start | at 5 ms spacing 45/600 UDP packets were lost on air with no recovery in the spike; macOS's driver supports retransmit |
+| 2026-10-07 | The NM2 session config is a CoreMIDI device property (`midi2.udp.session` with `peers` on the UMP Network device's entity) | lets the HIL set up the session without clicking in Audio MIDI Setup (to try in phase 4) |
