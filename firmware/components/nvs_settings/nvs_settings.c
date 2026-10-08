@@ -39,6 +39,10 @@ static void migrate(nvs_handle_t h, uint8_t from) {
 
 esp_err_t nvs_settings_init(void) {
     lock = xSemaphoreCreateMutex();
+    // Defaults first, so the box still works (with them) if NVS cannot be read; the error goes to the self-test.
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_BASE);
+    settings_defaults(&current, mac);
     esp_err_t e = nvs_flash_init();
     if (e == ESP_ERR_NVS_NO_FREE_PAGES || e == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "NVS partition unusable (%s), erasing", esp_err_to_name(e));
@@ -47,10 +51,7 @@ esp_err_t nvs_settings_init(void) {
     }
     if (e) return e;
 
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_BASE);
-    settings_t s;
-    settings_defaults(&s, mac);
+    settings_t s = current;
 
     nvs_handle_t h;
     if ((e = nvs_open(NAMESPACE, NVS_READWRITE, &h))) return e;

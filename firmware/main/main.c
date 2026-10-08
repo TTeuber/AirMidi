@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "nvs_settings.h"
+#include "ota.h"
 #include "power.h"
 #include "uart_midi.h"
 #include "ui_io.h"
@@ -70,6 +71,10 @@ static void inject_task(void *arg) {
 }
 
 static volatile button_event_t pending_event;
+static bool settings_ok;
+
+// The self-test for a new image (ota_confirm_after).
+static bool healthy(void) { return settings_ok && ble_midi_ready() && bus_queue_dropped() == 0; }
 
 // esp_timer task: hand the event to the main loop.
 static void on_button(button_event_t ev) { pending_event = ev; }
@@ -133,8 +138,9 @@ void app_main(void) {
     ESP_LOGI(TAG, "board: %s", b->name);
     ESP_LOGI(TAG, "reset reason: %s", reset_reason(esp_reset_reason()));
 
+    ota_boot_report();
     board_init();
-    ESP_ERROR_CHECK(nvs_settings_init());
+    settings_ok = nvs_settings_init() == ESP_OK;
     settings_t s;
     nvs_settings_get(&s);
 
@@ -143,6 +149,9 @@ void app_main(void) {
     ble_midi_start(s.name);
     power_start();
     ui_start(on_button);
+    // A freshly updated image proves itself before it is kept: radio stack up, settings readable, still running
+    // after 10 s. A crash or a failed check before then boots the previous image again.
+    ota_confirm_after(10000, healthy);
 
     for (;;) {
         button_event_t ev = pending_event;
@@ -156,8 +165,9 @@ void app_main(void) {
         }
         ui_set_led(power_low() ? LED_LOW_BATTERY : ble_midi_connected() ? LED_CONNECTED : LED_ADVERTISING);
 
-        int c = getchar();  // console (USB): 's' counters, 'm' merge test hook, '0'-'2' power mode
+        int c = getchar();  // console (USB): 's' counters, 'i' image info, 'm' merge test hook, '0'-'2' power mode
         if (c == 's') print_status();
+        if (c == 'i') ota_boot_report();  // which slot runs, its OTA state, core dump
         if (c == 'm') xTaskCreate(inject_task, "inject", 2048, NULL, 5, NULL);
         if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
         vTaskDelay(pdMS_TO_TICKS(50));

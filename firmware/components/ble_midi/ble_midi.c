@@ -44,6 +44,7 @@ static slot_t slots[SLOTS];
 static uint16_t midi_handle;
 static uint8_t own_addr_type;
 static char dev_name[32];
+static volatile bool synced;
 
 static int port_of(int slot) { return slot == 0 ? PORT_BLE_0 : PORT_BLE_1; }
 
@@ -262,6 +263,7 @@ static void advertise(void) {
 static void on_sync(void) {
     ble_hs_id_infer_auto(0, &own_addr_type);
     advertise();
+    synced = true;
     ESP_LOGI(TAG, "advertising as %s", dev_name);
 }
 
@@ -290,6 +292,8 @@ void ble_midi_start(const char *name) {
 }
 
 void ble_midi_get_stats(int slot, ble_midi_slot_stats_t *out) { *out = slots[slot].stats; }
+
+bool ble_midi_ready(void) { return synced; }
 
 bool ble_midi_connected(void) {
     for (int i = 0; i < SLOTS; i++)
