@@ -43,6 +43,26 @@ const char *ota_reset_reason(void);
 
 // Receiving an update: begin, write the image in pieces as it arrives, end. ota_end() checks the image (and its
 // signature, when signed images are required) and makes it the next boot; the caller then restarts.
+// Fetching a release (Kconfig AIRMIDI_UPDATE_BASE_URL, or `base` for tests; NULL = the default):
+// ota_check() reads <base>/manifest.json; ota_install_start() downloads this board's image in a background task
+// and restarts into it if it verifies. Progress and errors are in ota_fetch_status().
+typedef struct {
+    char version[32];  // newest published version
+    char file[64];     // image for this board
+    bool newer;        // differs from the running version
+} ota_manifest_t;
+
+esp_err_t ota_check(const char *base, ota_manifest_t *out, char *err, size_t err_len);
+esp_err_t ota_install_start(const char *base);
+
+typedef struct {
+    const char *state;  // "idle", "downloading", "failed", "installed"
+    int percent;
+    char error[64];
+} ota_fetch_status_t;
+
+void ota_fetch_status(ota_fetch_status_t *out);
+
 esp_err_t ota_begin(void);
 esp_err_t ota_write(const void *data, size_t len);
 esp_err_t ota_end(void);

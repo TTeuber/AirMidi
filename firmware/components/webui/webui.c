@@ -179,6 +179,12 @@ static esp_err_t get_status(httpd_req_t *req) {
     cJSON_AddStringToObject(o, "running", oi.running);
     cJSON_AddStringToObject(o, "state", oi.state);
     cJSON_AddStringToObject(o, "rolled_back", oi.rolled_back);
+    ota_fetch_status_t fs;
+    ota_fetch_status(&fs);
+    cJSON *f = cJSON_AddObjectToObject(o, "fetch");
+    cJSON_AddStringToObject(f, "state", fs.state);
+    cJSON_AddNumberToObject(f, "percent", fs.percent);
+    cJSON_AddStringToObject(f, "error", fs.error);
     cJSON *c = cJSON_AddObjectToObject(o, "coredump");
     cJSON_AddBoolToObject(c, "present", cd.present);
     cJSON_AddNumberToObject(c, "size", cd.size);
@@ -310,6 +316,37 @@ static esp_err_t post_update(httpd_req_t *req) {
     return ESP_OK;
 }
 
+// {"base": "..."} optional: where to look instead of the configured release URL (tests use a local server).
+static void read_base(httpd_req_t *req, char *base, size_t len) {
+    base[0] = 0;
+    cJSON *in = read_json(req);
+    const char *b = in ? cJSON_GetStringValue(cJSON_GetObjectItem(in, "base")) : NULL;
+    if (b) snprintf(base, len, "%s", b);
+    cJSON_Delete(in);
+}
+
+static esp_err_t post_update_check(httpd_req_t *req) {
+    char base[160], err[64] = "";
+    read_base(req, base, sizeof base);
+    ota_manifest_t m;
+    if (ota_check(base, &m, err, sizeof err) != ESP_OK) return send_error(req, "502 Bad Gateway", err);
+    cJSON *r = cJSON_CreateObject();
+    cJSON_AddStringToObject(r, "current", esp_app_get_description()->version);
+    cJSON_AddStringToObject(r, "latest", m.version);
+    cJSON_AddBoolToObject(r, "newer", m.newer);
+    return send_json(req, r);
+}
+
+static esp_err_t post_update_install(httpd_req_t *req) {
+    char base[160];
+    read_base(req, base, sizeof base);
+    esp_err_t e = ota_install_start(base);
+    if (e == ESP_ERR_INVALID_STATE) return send_error(req, "409 Conflict", "a download is already running");
+    if (e) return send_error(req, "500 Internal Server Error", esp_err_to_name(e));
+    httpd_resp_set_status(req, "202 Accepted");
+    return httpd_resp_sendstr(req, "{}");
+}
+
 static bool chunk_sink(void *ctx, const void *data, size_t len) {
     return httpd_resp_send_chunk(ctx, data, len) == ESP_OK;
 }
@@ -355,6 +392,8 @@ void webui_start(const webui_hooks_t *h) {
         {.uri = "/api/update", .method = HTTP_POST, .handler = post_update},
         {.uri = "/api/coredump", .method = HTTP_GET, .handler = get_coredump},
         {.uri = "/api/coredump", .method = HTTP_DELETE, .handler = delete_coredump},
+        {.uri = "/api/update/check", .method = HTTP_POST, .handler = post_update_check},
+        {.uri = "/api/update/install", .method = HTTP_POST, .handler = post_update_install},
     };
     for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
     net_add_service("_http", "_tcp", 80);

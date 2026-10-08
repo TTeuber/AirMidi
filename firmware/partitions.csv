@@ -1,9 +1,10 @@
 # airmidi flash layout (4 MB; the S3's 8 MB uses the same layout). docs/design/ota.md explains the sizes.
+# Frozen from the first release on: an over-the-air update cannot change it.
 # Name,    Type, SubType,  Offset,   Size
 nvs,       data, nvs,      0x9000,   0x6000
 otadata,   data, ota,      0xF000,   0x2000
 phy_init,  data, phy,      0x11000,  0x1000
-ota_0,     app,  ota_0,    0x20000,  0x1C0000
-ota_1,     app,  ota_1,    0x1E0000, 0x1C0000
-coredump,  data, coredump, 0x3A0000, 0x10000
-storage,   data, littlefs, 0x3B0000, 0x50000
+ota_0,     app,  ota_0,    0x20000,  0x1D0000
+ota_1,     app,  ota_1,    0x1F0000, 0x1D0000
+coredump,  data, coredump, 0x3C0000, 0x10000
+storage,   data, littlefs, 0x3D0000, 0x30000

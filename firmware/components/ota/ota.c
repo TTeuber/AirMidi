@@ -3,13 +3,19 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "cJSON.h"
+#include "esp_app_desc.h"
 #include "esp_core_dump.h"
+#include "esp_crt_bundle.h"
 #include "esp_flash.h"
+#include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "ota";
 
@@ -176,4 +182,148 @@ esp_err_t ota_end(void) {
 void ota_abort(void) {
     if (update) esp_ota_abort(update);
     update = 0;
+}
+
+// ---- fetching a release ----------------------------------------------------------------------------------------
+
+#if CONFIG_IDF_TARGET_ESP32C6
+#define BOARD_KEY "c6"
+#else
+#define BOARD_KEY "s3"
+#endif
+
+static char fetch_base[160];
+static volatile int fetch_percent;
+static const char *volatile fetch_state = "idle";
+static char fetch_error[64];
+
+static esp_http_client_handle_t open_url(const char *url) {
+    esp_http_client_config_t c = {
+        .url = url,
+        .crt_bundle_attach = esp_crt_bundle_attach,  // HTTPS against the usual public CAs (GitHub's included)
+        .max_redirection_count = 5,                  // github.com/.../latest/download -> the release asset
+        .buffer_size = 4096,
+        .buffer_size_tx = 2048,  // the redirect target is a long signed URL
+        .timeout_ms = 15000,
+    };
+    esp_http_client_handle_t h = esp_http_client_init(&c);
+    if (!h) return NULL;
+    if (esp_http_client_open(h, 0) != ESP_OK) {
+        esp_http_client_cleanup(h);
+        return NULL;
+    }
+    // follow redirects by hand: esp_http_client_fetch_headers + set_redirection for a streamed GET
+    for (int i = 0; i < 5; i++) {
+        esp_http_client_fetch_headers(h);
+        int code = esp_http_client_get_status_code(h);
+        if (code < 300 || code >= 400) break;
+        esp_http_client_set_redirection(h);
+        esp_http_client_close(h);
+        if (esp_http_client_open(h, 0) != ESP_OK) {
+            esp_http_client_cleanup(h);
+            return NULL;
+        }
+    }
+    return h;
+}
+
+static void base_or_default(const char *base, char *out, size_t len) {
+    snprintf(out, len, "%s", base && *base ? base : CONFIG_AIRMIDI_UPDATE_BASE_URL);
+}
+
+esp_err_t ota_check(const char *base, ota_manifest_t *out, char *err, size_t err_len) {
+    memset(out, 0, sizeof *out);
+    char b[160], url[200];
+    base_or_default(base, b, sizeof b);
+    snprintf(url, sizeof url, "%s/manifest.json", b);
+    esp_http_client_handle_t h = open_url(url);
+    if (!h) return snprintf(err, err_len, "cannot reach %s", url), ESP_FAIL;
+    char body[1024];
+    int n = 0, got;
+    while (n < (int)sizeof body - 1 && (got = esp_http_client_read(h, body + n, sizeof body - 1 - n)) > 0) n += got;
+    body[n] = 0;
+    int code = esp_http_client_get_status_code(h);
+    esp_http_client_cleanup(h);
+    if (code != 200) return snprintf(err, err_len, "manifest: HTTP %d", code), ESP_FAIL;
+    cJSON *m = cJSON_Parse(body);
+    const char *ver = cJSON_GetStringValue(cJSON_GetObjectItem(m, "version"));
+    const char *file = cJSON_GetStringValue(cJSON_GetObjectItem(cJSON_GetObjectItem(m, "images"), BOARD_KEY));
+    esp_err_t e = ESP_OK;
+    if (!ver || !file) {
+        snprintf(err, err_len, "manifest has no image for this board");
+        e = ESP_FAIL;
+    } else {
+        snprintf(out->version, sizeof out->version, "%s", ver);
+        snprintf(out->file, sizeof out->file, "%s", file);
+        out->newer = strcmp(ver, esp_app_get_description()->version) != 0;
+    }
+    cJSON_Delete(m);
+    return e;
+}
+
+static void fail(const char *why) {
+    snprintf(fetch_error, sizeof fetch_error, "%s", why);
+    fetch_state = "failed";
+    ESP_LOGE(TAG, "update download failed: %s", why);
+}
+
+static void fetch_task(void *arg) {
+    ota_manifest_t m;
+    char err[64], url[240];
+    if (ota_check(fetch_base, &m, err, sizeof err) != ESP_OK) {
+        fail(err);
+        vTaskDelete(NULL);
+    }
+    snprintf(url, sizeof url, "%s/%s", fetch_base, m.file);
+    ESP_LOGI(TAG, "downloading %s (%s)", m.version, url);
+    esp_http_client_handle_t h = open_url(url);
+    int64_t total = h ? esp_http_client_get_content_length(h) : 0;
+    if (!h || esp_http_client_get_status_code(h) != 200 || total <= 0) {
+        if (h) esp_http_client_cleanup(h);
+        fail("image not found");
+        vTaskDelete(NULL);
+    }
+    if (ota_begin() != ESP_OK) {
+        esp_http_client_cleanup(h);
+        fail("no slot to write to");
+        vTaskDelete(NULL);
+    }
+    static char buf[4096];
+    int64_t done = 0;
+    int n;
+    while ((n = esp_http_client_read(h, buf, sizeof buf)) > 0) {
+        if (ota_write(buf, n) != ESP_OK) break;
+        done += n;
+        fetch_percent = (int)(100 * done / total);
+    }
+    esp_http_client_cleanup(h);
+    if (done != total) {
+        ota_abort();
+        fail("download interrupted");
+        vTaskDelete(NULL);
+    }
+    if (ota_end() != ESP_OK) {
+        fail("image did not verify");
+        vTaskDelete(NULL);
+    }
+    fetch_state = "installed";
+    vTaskDelay(pdMS_TO_TICKS(1500));  // let the web UI see it
+    esp_restart();
+}
+
+esp_err_t ota_install_start(const char *base) {
+    if (!strcmp(fetch_state, "downloading")) return ESP_ERR_INVALID_STATE;
+    base_or_default(base, fetch_base, sizeof fetch_base);
+    fetch_state = "downloading";
+    fetch_percent = 0;
+    fetch_error[0] = 0;
+    if (xTaskCreate(fetch_task, "ota_fetch", 8192, NULL, 4, NULL) != pdPASS)
+        return fetch_state = "idle", ESP_ERR_NO_MEM;
+    return ESP_OK;
+}
+
+void ota_fetch_status(ota_fetch_status_t *out) {
+    out->state = fetch_state;
+    out->percent = fetch_percent;
+    snprintf(out->error, sizeof out->error, "%s", fetch_error);
 }

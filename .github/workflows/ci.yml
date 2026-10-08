@@ -41,7 +41,8 @@ jobs:
           esp_idf_version: v5.5.1
           target: ${{ matrix.target }}
           path: firmware
-          command: git config --global --add safe.directory '*' && idf.py -B build_${{ matrix.board }} build
+          # build.sh signs the image with a throwaway key it generates (CI builds are not for installing)
+          command: git config --global --add safe.directory '*' && ./build.sh ${{ matrix.board }}
       - uses: actions/upload-artifact@v4
         with:
           name: airmidi-${{ matrix.board }}

@@ -231,7 +231,38 @@ function renderUpdate() {
   const f = $("#forget-dump");
   if (f) f.onclick = async () => (await api("/api/coredump", { method: "DELETE" }), poll());
   if (!uploading) wide($("#w-upload"), "firmware", "", 0);
+  renderRelease();
 }
+
+let release = null;
+
+function renderRelease() {
+  const f = status.ota.fetch;
+  if (f.state === "downloading") wide($("#w-release"), "download", f.percent, f.percent / 100);
+  else if (release) wide($("#w-release"), "release", esc(release.latest), 0);
+  else wide($("#w-release"), "release", "", 0);
+  if (f.state === "failed") $("#update-msg").textContent = "download failed: " + f.error;
+  if (f.state === "installed") $("#update-msg").textContent = "installed: restarting into it";
+}
+
+$("#check").onclick = async () => {
+  try {
+    release = await post("/api/update/check", {});
+    $("#install").hidden = !release.newer;
+    $("#update-msg").textContent = release.newer ? `${release.latest} is available` : "this is the newest release";
+  } catch (e) {
+    $("#update-msg").textContent = e.message;
+  }
+  render();
+};
+$("#install").onclick = async () => {
+  try {
+    await post("/api/update/install", {});
+    $("#install").hidden = true;
+  } catch (e) {
+    $("#update-msg").textContent = e.message;
+  }
+};
 
 $("#file").onchange = () => {
   const f = $("#file").files[0];

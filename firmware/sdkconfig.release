@@ -1,0 +1,1 @@
+CONFIG_SECURE_BOOT_SIGNING_KEY="keys/release_signing_key.pem"

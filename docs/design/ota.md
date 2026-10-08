@@ -7,11 +7,14 @@
 | nvs | 0x9000 | 24 KB | settings and Wi-Fi networks; same offset as the default layout, so settings survived the switch |
 | otadata | 0xF000 | 8 KB | which slot boots, and each image's state |
 | phy_init | 0x11000 | 4 KB | radio calibration |
-| ota_0 / ota_1 | 0x20000 / 0x1E0000 | 1.75 MB each | two app slots: one runs, the other receives |
-| coredump | 0x3A0000 | 64 KB | the last crash (ELF), for download |
-| storage | 0x3B0000 | 320 KB | LittleFS, for MIDI-CI profiles (phase 5) |
+| ota_0 / ota_1 | 0x20000 / 0x1F0000 | 1.81 MB each | two app slots: one runs, the other receives |
+| coredump | 0x3C0000 | 64 KB | the last crash (ELF), for download |
+| storage | 0x3D0000 | 192 KB | LittleFS, for MIDI-CI profiles (phase 5; a control list is a few KB) |
 
-The app is about 1.48 MB with BLE, Wi-Fi, the HTTP server and the web UI, so a slot has ~18% headroom.
+The layout is frozen from the first release on (an update cannot move partitions), so it was settled before one:
+with HTTPS for release downloads the image reached 1.63 MB, so the build optimises for size (`-Os`, 1.45 MB), uses
+the common-CA certificate bundle, leaves out BLE roles not used yet, and storage gave 128 KB to the app slots.
+About 20% of a slot is free for phases 4-6.
 
 ## An update, step by step
 
@@ -62,3 +65,21 @@ uploads them through the web API:
 | crashes 3 s after boot (`CONFIG_AIRMIDI_TEST_CRASH`) | rolls back, core dump kept | back on ota_1, 13.7 KB dump from task esp_timer |
 
 A 1.48 MB image uploads in about 16.5 s (89 KB/s over Wi-Fi with modem sleep).
+
+## Releases (`.github/workflows/release.yml`)
+
+A `vX.Y.Z` tag builds both boards with the release key (repository secret `AIRMIDI_SIGNING_KEY`, written to
+`firmware/keys/release_signing_key.pem` and selected by `firmware/sdkconfig.release`) and publishes, per board, the
+OTA image (`airmidi-c6.bin`, `airmidi-s3.bin`), a zip for a first install over USB (`esptool.py write_flash
+@flash_args`), and one `manifest.json`. A box reads `<base>/manifest.json` from `AIRMIDI_UPDATE_BASE_URL`
+(GitHub's `releases/latest/download`, which redirects to the newest release's assets), compares the version with
+its own, and on request downloads its board's image through the same `ota_begin/write/end` path as an upload, so
+the signature check, the sector erase and the self-test all apply.
+
+A box only accepts images signed with the key its own image was signed with: a box running a dev build (dev key)
+updates only to dev builds, and moves to release builds with one install of the USB zip.
+
+Tested (`tools/hil/release_test.py`, 8 checks): a local web server publishes `v0.1.0-test`; the box reports it as
+newer, reports a missing manifest as an error, downloads with progress, restarts into it, confirms it after the
+self-test and then reports itself up to date. HTTPS with GitHub's redirects was checked against real GitHub URLs
+(the TLS handshake and redirect succeed; the manifest is a 404 until a release exists).
