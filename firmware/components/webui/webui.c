@@ -321,6 +321,11 @@ static esp_err_t get_coredump(httpd_req_t *req) {
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
+static esp_err_t delete_coredump(httpd_req_t *req) {
+    ota_coredump_erase();
+    return httpd_resp_sendstr(req, "{}");
+}
+
 // ---- server --------------------------------------------------------------------------------------------------
 
 void webui_start(const webui_hooks_t *h) {
@@ -349,6 +354,7 @@ void webui_start(const webui_hooks_t *h) {
         {.uri = "/api/wifi", .method = HTTP_DELETE, .handler = delete_wifi},
         {.uri = "/api/update", .method = HTTP_POST, .handler = post_update},
         {.uri = "/api/coredump", .method = HTTP_GET, .handler = get_coredump},
+        {.uri = "/api/coredump", .method = HTTP_DELETE, .handler = delete_coredump},
     };
     for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
     net_add_service("_http", "_tcp", 80);

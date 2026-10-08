@@ -5,6 +5,14 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # A new image boots "pending verify"; it must pass the self-test (main.c) or the next boot rolls back.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# Updates must be signed (RSA-3072, Secure Boot V2 format; the S3 has no ECDSA variant). The running firmware
+# checks the signature before it switches; no eFuses are burned (no hardware Secure Boot). Dev builds use
+# keys/dev_signing_key.pem (gitignored, build.sh creates it); releases are signed with a key kept in CI secrets.
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="keys/dev_signing_key.pem"
 # A crash leaves a core dump in flash, shown in the log after the reboot (and downloadable from the web UI later).
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y

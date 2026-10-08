@@ -29,6 +29,9 @@ void ota_coredump_info(ota_coredump_t *out);
 // Stream the core dump out in chunks (the web UI's download); returns false if there is none.
 bool ota_coredump_read(bool (*sink)(void *ctx, const void *data, size_t len), void *ctx);
 
+// Forget the stored core dump (after it has been downloaded).
+void ota_coredump_erase(void);
+
 typedef struct {
     char running[17];      // partition label
     const char *state;     // "valid", "pending verify", ...

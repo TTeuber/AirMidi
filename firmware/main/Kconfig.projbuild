@@ -1,0 +1,12 @@
+menu "airmidi test images"
+    # Deliberately broken builds for tools/hil/ota_test.py, to prove that a bad update rolls back. Never set in a
+    # release: the release workflow builds from sdkconfig.defaults only.
+
+    config AIRMIDI_TEST_SELFTEST_FAIL
+        bool "Fail the post-update self-test"
+        default n
+
+    config AIRMIDI_TEST_CRASH
+        bool "Crash 3 s after boot"
+        default n
+endmenu

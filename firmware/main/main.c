@@ -1,6 +1,7 @@
 // airmidi firmware entry point: bring the board up, start the bus and the transports (TRS, BLE MIDI), the button
 // and LED, and the battery watch; then keep the LED state current and answer console commands.
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "airmidi/settings.h"
 #include "ble_midi.h"
@@ -9,6 +10,7 @@
 #include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net.h"
@@ -47,7 +49,16 @@ static volatile button_event_t pending_event;
 static bool settings_ok;
 
 // The self-test for a new image (ota_confirm_after).
-static bool healthy(void) { return settings_ok && ble_midi_ready() && webui_running() && bus_queue_dropped() == 0; }
+static bool healthy(void) {
+#if CONFIG_AIRMIDI_TEST_SELFTEST_FAIL
+    return false;  // test image (ota_test.py): must roll back
+#endif
+    return settings_ok && ble_midi_ready() && webui_running() && bus_queue_dropped() == 0;
+}
+
+#if CONFIG_AIRMIDI_TEST_CRASH
+static void crash(void *arg) { abort(); }  // test image (ota_test.py): must roll back
+#endif
 
 // esp_timer task: hand the event to the main loop.
 static void on_button(button_event_t ev) { pending_event = ev; }
@@ -149,6 +160,11 @@ void app_main(void) {
     // A freshly updated image proves itself before it is kept: radio stack up, settings readable, still running
     // after 10 s. A crash or a failed check before then boots the previous image again.
     ota_confirm_after(10000, healthy);
+#if CONFIG_AIRMIDI_TEST_CRASH
+    esp_timer_handle_t t;
+    esp_timer_create(&(esp_timer_create_args_t){.callback = crash, .name = "crash"}, &t);
+    esp_timer_start_once(t, 3000000);
+#endif
 
     for (;;) {
         button_event_t ev = pending_event;

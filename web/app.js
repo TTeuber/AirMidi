@@ -226,7 +226,10 @@ function renderUpdate() {
     ["crash", o.coredump.present ? `core dump, ${o.coredump.size} bytes, task ${o.coredump.task}` : "none"],
   ];
   $("#image").innerHTML = facts.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join("") +
-    (o.coredump.present ? `<dt></dt><dd><a href="/api/coredump">download core dump</a></dd>` : "");
+    (o.coredump.present ? `<dt></dt><dd><a href="/api/coredump">download core dump</a> &nbsp;
+      <a id="forget-dump">forget it</a></dd>` : "");
+  const f = $("#forget-dump");
+  if (f) f.onclick = async () => (await api("/api/coredump", { method: "DELETE" }), poll());
   if (!uploading) wide($("#w-upload"), "firmware", "", 0);
 }
 

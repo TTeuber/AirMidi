@@ -1,0 +1,1 @@
+CONFIG_SECURE_BOOT_SIGNING_KEY="keys/other_test_key.pem"

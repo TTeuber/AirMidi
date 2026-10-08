@@ -12,7 +12,12 @@ esac
 shift || true
 export IDF_PATH=${IDF_PATH:-$HOME/Developer/esp-idf}
 source "$IDF_PATH/export.sh" >/dev/null
-dir=build_$board
+dir=${BUILD_DIR:-build_$board}
+# Images are signed at build time; a dev key is made on first use (gitignored; releases use the CI secret).
+if [ ! -f keys/dev_signing_key.pem ]; then
+    mkdir -p keys
+    espsecure.py generate_signing_key --version 2 --scheme rsa3072 keys/dev_signing_key.pem
+fi
 # ESP-IDF only reads sdkconfig.defaults* when it creates sdkconfig; start over when they are newer than it.
 if [ -f "$dir/sdkconfig" ] && [ -n "$(find sdkconfig.defaults* -newer "$dir/sdkconfig")" ]; then
     echo "sdkconfig.defaults changed: regenerating $dir/sdkconfig"
@@ -20,6 +25,9 @@ if [ -f "$dir/sdkconfig" ] && [ -n "$(find sdkconfig.defaults* -newer "$dir/sdkc
 fi
 # SDKCONFIG per board too, so switching boards never mixes configurations.
 idf=(idf.py -B "$dir" -D SDKCONFIG="$dir/sdkconfig" -D IDF_TARGET=$target)
+# Test images (tools/hil/ota_test.py): an extra defaults file and a version label.
+if [ -n "$EXTRA_DEFAULTS" ]; then idf+=(-D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.$target;$EXTRA_DEFAULTS"); fi
+if [ -n "$PROJECT_VER" ]; then idf+=(-D PROJECT_VER="$PROJECT_VER"); fi
 "${idf[@]}" build
 if [ "$1" = flash ]; then
     "${idf[@]}" -p "${PORT:-$(ls /dev/cu.usbmodem* | head -1)}" flash

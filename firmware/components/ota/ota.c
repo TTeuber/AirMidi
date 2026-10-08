@@ -7,6 +7,7 @@
 #include "esp_flash.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_partition.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 
@@ -15,6 +16,7 @@ static const char *TAG = "ota";
 static bool (*check)(void);
 static esp_ota_handle_t update;
 static const esp_partition_t *update_part;
+static size_t update_len;
 
 static const char *state_name(esp_ota_img_states_t s) {
     switch (s) {
@@ -97,6 +99,8 @@ bool ota_coredump_read(bool (*sink)(void *ctx, const void *data, size_t len), vo
     return true;
 }
 
+void ota_coredump_erase(void) { esp_core_dump_image_erase(); }
+
 void ota_get_info(ota_info_t *out) {
     memset(out, 0, sizeof *out);
     const esp_partition_t *run = esp_ota_get_running_partition();
@@ -141,13 +145,23 @@ esp_err_t ota_begin(void) {
     update_part = esp_ota_get_next_update_partition(NULL);
     if (!update_part) return ESP_ERR_NOT_FOUND;
     ESP_LOGI(TAG, "receiving an update into %s", update_part->label);
+    update_len = 0;
     // Erase as the image arrives instead of the whole slot up front (1.75 MB erase would stall the upload).
     return esp_ota_begin(update_part, OTA_WITH_SEQUENTIAL_WRITES, &update);
 }
 
-esp_err_t ota_write(const void *data, size_t len) { return esp_ota_write(update, data, len); }
+esp_err_t ota_write(const void *data, size_t len) {
+    update_len += len;
+    return esp_ota_write(update, data, len);
+}
 
 esp_err_t ota_end(void) {
+    // Sequential writes erase only what they write. The signature block is looked for in the 4 KB sector after the
+    // image's data, so an unsigned upload would find whatever an earlier upload left there; found on the rig, when
+    // an unsigned copy of an image uploaded just before verified against that image's leftover signature. Erase
+    // that sector, so only a signature that came with this upload can count.
+    size_t sig = (update_len + 0xFFF) & ~(size_t)0xFFF;
+    if (sig + 0x1000 <= update_part->size) esp_partition_erase_range(update_part, sig, 0x1000);
     esp_err_t e = esp_ota_end(update);  // validates the image: format, SHA-256, and the signature if required
     update = 0;
     if (e) {
