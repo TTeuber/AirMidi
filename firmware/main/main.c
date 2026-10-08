@@ -11,6 +11,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "net.h"
 #include "nvs_settings.h"
 #include "ota.h"
 #include "power.h"
@@ -79,6 +80,24 @@ static bool healthy(void) { return settings_ok && ble_midi_ready() && bus_queue_
 // esp_timer task: hand the event to the main loop.
 static void on_button(button_event_t ev) { pending_event = ev; }
 
+// Switch mode now and remember it for the next boot.
+static void set_mode(airmidi_mode_t mode) {
+    settings_t s;
+    nvs_settings_get(&s);
+    if (s.mode != mode) {
+        s.mode = mode;
+        nvs_settings_set(&s);
+    }
+    ESP_LOGI(TAG, "mode: %s", airmidi_mode_name(mode));
+    net_set_mode(mode);
+}
+
+static airmidi_mode_t current_mode(void) {
+    settings_t s;
+    nvs_settings_get(&s);
+    return s.mode;
+}
+
 static void handle_button(button_event_t ev) {
     switch (ev) {
         case BUTTON_DOUBLE:
@@ -88,11 +107,11 @@ static void handle_button(button_event_t ev) {
         case BUTTON_SHORT:
             ESP_LOGI(TAG, "button: short press (MIDI-CI rescan arrives in phase 5)");
             break;
-        case BUTTON_LONG:
-            ESP_LOGI(TAG, "button: long press (mode switching arrives in phase 3)");
+        case BUTTON_LONG:  // Play <-> Network; from Setup back to Play
+            set_mode(current_mode() == AIRMIDI_MODE_PLAY ? AIRMIDI_MODE_NETWORK : AIRMIDI_MODE_PLAY);
             break;
         case BUTTON_VERY_LONG:
-            ESP_LOGI(TAG, "button: very long press (Setup mode arrives in phase 3)");
+            set_mode(AIRMIDI_MODE_SETUP);
             break;
         default:
             break;
@@ -127,6 +146,10 @@ static void print_status(void) {
     else
         printf("battery %lu mV (%d %%)%s; ", (unsigned long)power_cell_mv(), power_percent(),
                power_low() ? " LOW" : "");
+    char ip[16];
+    net_ip(ip);
+    printf("mode %s; wifi %s %s rssi %d; ", airmidi_mode_name(current_mode()), net_state_name(net_state()), ip,
+           net_rssi());
     printf("bus queue dropped %lu; free heap %lu\n", (unsigned long)bus_queue_dropped(),
            (unsigned long)esp_get_free_heap_size());
 }
@@ -147,6 +170,7 @@ void app_main(void) {
     bus_start(s.sysex_timeout_ms);
     uart_midi_start();
     ble_midi_start(s.name);
+    net_start(s.mode, s.name);
     power_start();
     ui_start(on_button);
     // A freshly updated image proves itself before it is kept: radio stack up, settings readable, still running
@@ -163,11 +187,20 @@ void app_main(void) {
             vTaskDelay(pdMS_TO_TICKS(200));  // let the notes-off reach the outputs
             power_shutdown();
         }
-        ui_set_led(power_low() ? LED_LOW_BATTERY : ble_midi_connected() ? LED_CONNECTED : LED_ADVERTISING);
+        net_state_t ns = net_state();
+        ui_set_led(power_low()            ? LED_LOW_BATTERY
+                   : ns == NET_AP         ? LED_SETUP
+                   : ns == NET_JOINING    ? LED_WIFI_JOINING
+                   : ble_midi_connected() ? LED_CONNECTED
+                                          : LED_ADVERTISING);
 
-        int c = getchar();  // console (USB): 's' counters, 'i' image info, 'm' merge test hook, '0'-'2' power mode
+        int c = getchar();  // console (USB): 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
+                            // '0'-'2' power mode
         if (c == 's') print_status();
         if (c == 'i') ota_boot_report();  // which slot runs, its OTA state, core dump
+        if (c == 'P') set_mode(AIRMIDI_MODE_PLAY);
+        if (c == 'N') set_mode(AIRMIDI_MODE_NETWORK);
+        if (c == 'S') set_mode(AIRMIDI_MODE_SETUP);
         if (c == 'm') xTaskCreate(inject_task, "inject", 2048, NULL, 5, NULL);
         if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
         vTaskDelay(pdMS_TO_TICKS(50));
