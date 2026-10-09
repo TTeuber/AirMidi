@@ -4,9 +4,19 @@
 // and gets datagrams to send, UMPs to deliver and session changes through callbacks.
 //
 // Sessions: either side may invite. A client invites on our control port (IN), we accept (OK), it invites again on
-// the data port, and the session is up. We invite the same way to take a session back after a restart (the client's
-// address kept by the caller), because a Mac keeps a session's participants but does not invite a box that went
-// away. The inviter keeps the clocks in step (CK, three-way); BY ends a session from either side.
+// the data port, and the session is up. The inviter keeps the clocks in step (CK, three-way, every 10 s); BY ends a
+// session from either side.
+//
+// Surviving a restart: macOS keeps sending clock syncs to a box that restarted, and ends the session (BY, and the
+// box is gone from its list) after three go unanswered. So a clock sync or MIDI from a client we have no session
+// with takes the session back: it is set up from that datagram (the client's SSRC, its data port, the control port
+// one below) and answered. This only works if our SSRC is the same as before the restart, so the caller derives it
+// from something stable (the MAC address), and the session clock must not have started again from 0
+// (rtpmidi_set_clock). Our sequence numbers must also carry on from before, or macOS takes
+// every packet "behind" its last one for a late one and drops it. So two journal-only packets go out, numbered half
+// the range apart: exactly one of them is ahead of whatever the client saw last, and its receiver feedback (RS)
+// names that one. MIDI waits for it (~1-2 s, at most 5). Not in the AppleMIDI protocol, which has no way back into
+// a session.
 //
 // MIDI: one RTP packet per batch, MIDI 1.0 commands in it (MIDI 2.0 from the bus is translated down), SysEx split
 // across packets when a batch ends inside one. Every packet carries a recovery journal (lib/rtp_journal), so a
@@ -61,11 +71,15 @@ typedef enum {
 typedef struct {
     uint32_t rx_packets, rx_late, rx_lost, rx_repairs, rx_bad;
     uint32_t tx_packets, journal_overflows;
+    uint32_t tx_held;  // MIDI not sent while a session taken back waited for its sequence number
 } rtpmidi_stats_t;
 
 typedef struct {
     rtpmidi_state_t state;
     bool initiator;
+    bool resumed;      // taken back after a restart (see the top of this file): the client's name is not known
+    bool seq_unknown;  // taken back, and the client has not said yet which of our two probes it took
+    uint16_t probe[2];
     rtpmidi_addr_t ctrl, data;  // the client's two ports
     uint32_t peer_ssrc, token;
     char peer_name[64];
@@ -96,12 +110,20 @@ typedef struct {
     rtpmidi_session_t s[RTPMIDI_SESSIONS];
     rtpmidi_callbacks_t cb;
     void *ctx;
+    uint64_t clock_base;              // session clock = clock_base + now (100 us units)
     uint8_t pkt[RTPMIDI_MAX_PACKET];  // the packet being built (here, not on the caller's stack)
 } rtpmidi_t;
 
 // ssrc and seed: random numbers from the caller (the lib has no entropy source).
 void rtpmidi_init(rtpmidi_t *h, const char *name, uint32_t ssrc, uint32_t seed, const rtpmidi_callbacks_t *cb,
                   void *ctx);
+
+// The session clock (RTP timestamps and clock sync) is clock_base + now, in 100 us units; clock_base is 0 unless
+// set. It must not run backwards across a restart: macOS maps a client's timestamps through the clock offset it
+// measured before, and a box whose clock started again from 0 looks days ahead in 32-bit RTP time, so macOS holds
+// its MIDI back (measured: timestamps 10 s ahead never arrived within the test, 10 s behind arrived at once). The
+// firmware sets it from wall-clock time once SNTP has it, before handling any datagram.
+void rtpmidi_set_clock(rtpmidi_t *h, uint64_t base_100us);
 
 void rtpmidi_receive(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, const uint8_t *pkt, size_t len, uint32_t now);
 

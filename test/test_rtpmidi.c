@@ -51,8 +51,8 @@ static void on_deliver(void *ctx, int session, const ump_t *u) {
 }
 
 static void on_session(void *ctx, int session, bool up, const char *peer) {
-    (void)session;
     peer_t *p = ctx;
+    if (up) TEST_ASSERT_EQUAL(p == &box && p->r.s[session].ctrl.port == 5100 && !peer[0], p->r.s[session].resumed);
     up ? p->ups++ : p->downs++;
     strcpy(p->peer, peer);
 }
@@ -195,6 +195,20 @@ static void test_clock_sync(void) {
     TEST_ASSERT_EQUAL(5 + 2, mac.n_out);
 }
 
+// The session clock can start from wall-clock time, so it does not run backwards across a restart: clock sync
+// answers and RTP timestamps both count from the base.
+static void test_session_clock_base(void) {
+    reset();
+    rtpmidi_set_clock(&box.r, 0x123456789ULL);
+    connect(&mac, 0);
+    rtpmidi_tick(&mac.r, 7);
+    pump(12);  // CK 0 from the Mac, answered at 12 ms
+    send_m1(&box, 0x90, 60, 1, 20);
+    const dgram_t *rtp_pkt = &box.out[0];
+    const uint8_t ts[4] = {0x23, 0x45, 0x68, 0x51};  // low 32 bits of base + 200 (20 ms)
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(ts, rtp_pkt->b + 4, 4);
+}
+
 static void test_bye_ends_the_session(void) {
     reset();
     connect(&mac, 0);
@@ -236,6 +250,70 @@ static void test_box_invites_and_retries(void) {
     TEST_ASSERT_EQUAL('C', box.out[0].b[2]);
 }
 
+// After a restart the box has no session, but the Mac still has one: its next clock sync (or MIDI) takes it back,
+// answered with the same SSRC as before (the caller keeps it stable).
+// The restarted box numbers its packets from a random start: ahead of or behind the Mac's last one. Both cases
+// (seeds) must end with the box carrying on from the probe the Mac took.
+static bool take_back(uint32_t seed) {  // returns whether the box's first probe was behind the old stream
+    reset();
+    connect(&mac, 0);
+    for (int i = 0; i < 5; i++) send_m1(&box, 0x90, 50, 1, 1);
+    pump(1);
+    rtpmidi_init(&box.r, "airmidi-7530", 0xB0B0B0B0, seed, &(rtpmidi_callbacks_t){on_send, on_deliver, on_session},
+                 &box);
+    box.ups = 0;
+    uint16_t old = mac.r.s[0].rx_seq;
+    rtpmidi_tick(&mac.r, 10000);  // the Mac's next clock sync
+    pump(10000);
+    TEST_ASSERT_EQUAL(1, box.ups);
+    bool behind = (int16_t)(box.r.s[0].probe[0] - (uint16_t)(old + 1)) < 0;
+    TEST_ASSERT_TRUE(box.r.s[0].resumed);
+    TEST_ASSERT_EQUAL_STRING("", box.peer);  // reported as taken back, with no name (the caller may know it)
+    TEST_ASSERT_EQUAL(5100, box.r.s[0].ctrl.port);
+    TEST_ASSERT_EQUAL(5101, box.r.s[0].data.port);
+    // Until the Mac's feedback names a probe, MIDI is held back (dropped and counted), not sent with numbers the
+    // Mac might take for late packets.
+    TEST_ASSERT_TRUE(box.r.s[0].seq_unknown);
+    send_m1(&box, 0x90, 59, 100, 10001);
+    TEST_ASSERT_EQUAL(1, box.r.s[0].stats.tx_held);
+    rtpmidi_tick(&mac.r, 10300);  // the Mac's feedback
+    pump(10300);
+    TEST_ASSERT_FALSE(box.r.s[0].seq_unknown);
+    uint16_t taken = mac.r.s[0].rx_seq;
+    TEST_ASSERT_TRUE(taken == box.r.s[0].probe[0] || taken == box.r.s[0].probe[1]);
+    TEST_ASSERT_TRUE(box.r.s[0].tx_seq == (uint16_t)(taken + 1));
+    send_m1(&box, 0x90, 60, 100, 10301);
+    send_m1(&mac, 0x91, 61, 100, 10301);
+    pump(10301);
+    TEST_ASSERT_EQUAL_HEX32(0x20903C64, mac.got[mac.n_got - 1].w[0]);
+    TEST_ASSERT_EQUAL_HEX32(0x20913D64, box.got[box.n_got - 1].w[0]);
+    return behind;
+}
+
+static void test_clock_sync_after_a_restart_takes_the_session_back(void) {
+    int behind = 0;
+    for (uint32_t seed = 1; seed <= 16; seed++) behind += take_back(seed * 2654435761u);  // spread out the seeds
+    TEST_ASSERT_TRUE(behind > 0 && behind < 16);                                          // both cases happened
+    // A clock sync answer (CK 2) takes nothing back.
+    rtpmidi_init(&box.r, "airmidi-7530", 0xB0B0B0B0, 99, &(rtpmidi_callbacks_t){on_send, on_deliver, on_session}, &box);
+    const uint8_t ck2[36] = {0xFF, 0xFF, 'C', 'K', 0x11, 0x11, 0x11, 0x11, 2};
+    rtpmidi_addr_t from = {mac.ip, 5101};
+    rtpmidi_receive(&box.r, RTPMIDI_DATA, &from, ck2, sizeof ck2, 20000);
+    TEST_ASSERT_EQUAL(RTPMIDI_IDLE, box.r.s[0].state);
+}
+
+static void test_midi_after_a_restart_takes_the_session_back(void) {
+    reset();
+    connect(&mac, 0);
+    rtpmidi_init(&box.r, "airmidi-7530", 0xB0B0B0B0, 99, &(rtpmidi_callbacks_t){on_send, on_deliver, on_session}, &box);
+    box.n_got = 0;
+    send_m1(&mac, 0x90, 64, 1, 100);
+    pump(100);
+    TEST_ASSERT_EQUAL(RTPMIDI_UP, box.r.s[0].state);
+    TEST_ASSERT_EQUAL(1, box.n_got);
+    TEST_ASSERT_EQUAL_HEX32(0x20904001, box.got[0].w[0]);
+}
+
 // ---- MIDI ----------------------------------------------------------------------------------------------------
 
 static void test_note_goes_out_in_one_packet_with_its_journal(void) {
@@ -248,7 +326,7 @@ static void test_note_goes_out_in_one_packet_with_its_journal(void) {
     TEST_ASSERT_EQUAL(5101, d->to.port);
     TEST_ASSERT_EQUAL(12 + 2 + 3 + 3, d->n);
     TEST_ASSERT_EQUAL_HEX8(0x80, d->b[0]);  // version 2
-    TEST_ASSERT_EQUAL_HEX8(0xE1, d->b[1]);  // M + payload type 97
+    TEST_ASSERT_EQUAL_HEX8(0x61, d->b[1]);  // payload type 97; M = 0 as Apple sends it (rtpmidi.c)
     const uint8_t ts[4] = {0, 0, 0, 50}, ssrc[4] = {0xB0, 0xB0, 0xB0, 0xB0};
     TEST_ASSERT_EQUAL_HEX8_ARRAY(ts, d->b + 4, 4);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(ssrc, d->b + 8, 4);
@@ -446,8 +524,7 @@ static void test_journal_only_packets_follow_the_last_data(void) {
     for (uint32_t t = 1000; t < 3000; t++) rtpmidi_tick(&box.r, t);
     TEST_ASSERT_EQUAL(3, box.n_out);
     for (int i = 0; i < 3; i++) {
-        TEST_ASSERT_EQUAL_HEX8(0x61, box.out[i].b[1]);  // M = 0: no MIDI list
-        TEST_ASSERT_EQUAL(0, box.out[i].b[13]);
+        TEST_ASSERT_EQUAL(0, box.out[i].b[13]);  // no MIDI list
     }
     pump(3000);
     TEST_ASSERT_EQUAL_HEX32(0x20803C40, mac.got[mac.n_got - 1].w[0]);  // repaired from the first of them
@@ -575,9 +652,12 @@ int main(void) {
     RUN_TEST(test_third_client_is_turned_away);
     RUN_TEST(test_silent_session_gives_its_slot_away);
     RUN_TEST(test_clock_sync);
+    RUN_TEST(test_session_clock_base);
     RUN_TEST(test_bye_ends_the_session);
     RUN_TEST(test_new_invitation_from_a_client_restarts_its_session);
     RUN_TEST(test_box_invites_and_retries);
+    RUN_TEST(test_clock_sync_after_a_restart_takes_the_session_back);
+    RUN_TEST(test_midi_after_a_restart_takes_the_session_back);
     RUN_TEST(test_note_goes_out_in_one_packet_with_its_journal);
     RUN_TEST(test_client_packet_with_running_status_and_delta_times);
     RUN_TEST(test_sysex_across_packets);

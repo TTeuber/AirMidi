@@ -29,8 +29,8 @@ static uint64_t get64(const uint8_t *p) { return (uint64_t)get32(p) << 32 | get3
 
 static uint32_t rnd(rtpmidi_t *h) { return h->seed = h->seed * 1664525u + 1013904223u; }
 
-// The session clock, in the 100 us units AppleMIDI uses for CK and RTP timestamps.
-static uint64_t clock_100us(uint32_t now_ms) { return (uint64_t)now_ms * 10; }
+// The session clock, in the 100 us units AppleMIDI uses for CK and RTP timestamps (see rtpmidi_set_clock).
+static uint64_t clock_100us(const rtpmidi_t *h, uint32_t now_ms) { return h->clock_base + (uint64_t)now_ms * 10; }
 
 void rtpmidi_init(rtpmidi_t *h, const char *name, uint32_t ssrc, uint32_t seed, const rtpmidi_callbacks_t *cb,
                   void *ctx) {
@@ -94,7 +94,7 @@ static void send_ck(rtpmidi_t *h, const rtpmidi_session_t *s, uint8_t count, con
     h->cb.send(h->ctx, RTPMIDI_DATA, &s->data, p, sizeof p);
 }
 
-static void start_session(rtpmidi_t *h, int i, uint32_t now) {
+static void start_session(rtpmidi_t *h, int i, uint32_t now, bool resumed) {
     rtpmidi_session_t *s = &h->s[i];
     set_state(s, RTPMIDI_UP, now);
     s->tx_seq = (uint16_t)rnd(h);
@@ -109,7 +109,31 @@ static void start_session(rtpmidi_t *h, int i, uint32_t now) {
     s->last_rx_ms = s->feedback_ms = now;
     s->tries = 0;
     s->next_ck_ms = now;
+    s->resumed = s->seq_unknown = resumed;
     h->cb.session_changed(h->ctx, i, true, s->peer_name);
+}
+
+static void send_packet(rtpmidi_t *h, rtpmidi_session_t *s, uint8_t *p, size_t n, uint32_t now);
+
+// A clock sync or MIDI from a client we have no session with: one we had before a restart. Take it back.
+static int resume(rtpmidi_t *h, uint32_t ssrc, const rtpmidi_addr_t *from, uint32_t now) {
+    int i = free_slot(h, now);
+    if (i < 0) return -1;
+    rtpmidi_session_t *s = &h->s[i];
+    s->initiator = false;
+    s->data = *from;
+    s->ctrl = (rtpmidi_addr_t){from->ip, (uint16_t)(from->port - 1)};  // AppleMIDI: data = control + 1
+    s->peer_ssrc = ssrc;
+    s->token = 0;
+    s->peer_name[0] = 0;
+    start_session(h, i, now, true);
+    // The two probes (see rtpmidi.h): send_packet() numbers each with tx_seq and counts it up by one.
+    s->probe[0] = s->tx_seq;
+    send_packet(h, s, h->pkt, 0, now);
+    s->tx_seq = s->probe[1] = s->probe[0] + 0x8000;
+    send_packet(h, s, h->pkt, 0, now);
+    s->state_ms = now;
+    return i;
 }
 
 static void copy_name(char *dst, size_t cap, const uint8_t *p, size_t len) {
@@ -216,9 +240,10 @@ static void rx_repair(void *ctx, uint8_t status, uint8_t d1, uint8_t d2) {
     c->h->cb.deliver(c->h->ctx, c->i, &u);
 }
 
-static void receive_rtp(rtpmidi_t *h, const uint8_t *p, size_t len, uint32_t now) {
+static void receive_rtp(rtpmidi_t *h, const rtpmidi_addr_t *from, const uint8_t *p, size_t len, uint32_t now) {
     if (len < 13 || (p[0] & 0xC0) != 0x80 || (p[1] & 0x7F) != RTPMIDI_PT) return;
     int i = find_by_ssrc(h, get32(p + 8));
+    if (i < 0) i = resume(h, get32(p + 8), from, now);
     if (i < 0 || h->s[i].state != RTPMIDI_UP) return;
     rtpmidi_session_t *s = &h->s[i];
     s->last_rx_ms = now;
@@ -300,7 +325,7 @@ static void receive_cmd(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, cons
             rtpmidi_session_t *s = &h->s[i];
             s->data = *from;
             send_session_cmd(h, sock, from, CMD_OK, token);  // again if it is a repeat: our OK may have been lost
-            if (s->state == RTPMIDI_WAIT_DATA) start_session(h, i, now);
+            if (s->state == RTPMIDI_WAIT_DATA) start_session(h, i, now, false);
         } else if (cmd == CMD_BY) {
             if (i >= 0) drop(h, i);
         } else {  // OK / NO to our invitation: matched by token, the client's SSRC is new to us
@@ -319,7 +344,7 @@ static void receive_cmd(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, cons
                     send_session_cmd(h, RTPMIDI_DATA, &s->data, CMD_IN, token);
                 } else {
                     s->data = *from;
-                    start_session(h, i, now);
+                    start_session(h, i, now, false);
                 }
                 break;
             }
@@ -328,6 +353,7 @@ static void receive_cmd(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, cons
     }
     if (cmd == CMD_CK && len >= 36) {
         int i = find_by_ssrc(h, get32(p + 4));
+        if (i < 0 && sock == RTPMIDI_DATA && p[8] == 0) i = resume(h, get32(p + 4), from, now);
         if (i < 0 || h->s[i].state != RTPMIDI_UP) return;
         rtpmidi_session_t *s = &h->s[i];
         s->last_rx_ms = now;
@@ -335,10 +361,10 @@ static void receive_cmd(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, cons
         // The inviter sends CK 0 with its time, the other side answers CK 1 with its own, the inviter closes with
         // CK 2; each side then knows the round trip and the offset between the clocks.
         if (p[8] == 0) {
-            ts[1] = clock_100us(now), ts[2] = 0;
+            ts[1] = clock_100us(h, now), ts[2] = 0;
             send_ck(h, s, 1, ts);
         } else if (p[8] == 1) {
-            ts[2] = clock_100us(now);
+            ts[2] = clock_100us(h, now);
             send_ck(h, s, 2, ts);
         }
         return;
@@ -346,16 +372,29 @@ static void receive_cmd(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, cons
     if (cmd == CMD_RS && len >= 12) {
         int i = find_by_ssrc(h, get32(p + 4));
         if (i < 0 || h->s[i].state != RTPMIDI_UP) return;
-        h->s[i].last_rx_ms = now;
-        rtpj_tx_ack(&h->s[i].jtx, get16(p + 8), h->s[i].tx_seq);
+        rtpmidi_session_t *s = &h->s[i];
+        s->last_rx_ms = now;
+        uint16_t seen = get16(p + 8);
+        if (s->seq_unknown) {
+            // Taken back: carry on after the probe the client took. Feedback about neither (sent before the probes
+            // arrived) is not trusted unless nothing else comes for 3 s.
+            if (seen != s->probe[0] && seen != s->probe[1] && now - s->state_ms < 3000) return;
+            s->seq_unknown = false;
+            s->tx_seq = seen + 1;
+            rtpj_tx_init(&s->jtx, s->tx_seq);
+            return;
+        }
+        rtpj_tx_ack(&s->jtx, seen, s->tx_seq);
     }
 }
+
+void rtpmidi_set_clock(rtpmidi_t *h, uint64_t base_100us) { h->clock_base = base_100us; }
 
 void rtpmidi_receive(rtpmidi_t *h, int sock, const rtpmidi_addr_t *from, const uint8_t *pkt, size_t len, uint32_t now) {
     if (len >= 4 && pkt[0] == 0xFF && pkt[1] == 0xFF)
         receive_cmd(h, sock, from, pkt, len, now);
     else if (sock == RTPMIDI_DATA)
-        receive_rtp(h, pkt, len, now);
+        receive_rtp(h, from, pkt, len, now);
 }
 
 // ---- sending -------------------------------------------------------------------------------------------------
@@ -444,10 +483,12 @@ static void record_command(void *ctx, uint8_t status, const uint8_t *data, size_
 // Header, command section, journal; then the packet's commands go into the journal's history.
 static void send_packet(rtpmidi_t *h, rtpmidi_session_t *s, uint8_t *p, size_t n, uint32_t now) {
     uint16_t seq = s->tx_seq;
-    p[0] = 0x80;                                    // version 2
-    p[1] = (uint8_t)((n ? 0x80 : 0) | RTPMIDI_PT);  // M: the MIDI list is not empty
+    p[0] = 0x80;  // version 2
+    // M = 0, against RFC 6295 2.1 (1 when the MIDI list is not empty): macOS 26 holds packets with M = 1 back by
+    // ~25 ms and drops some (measured; 4-6 ms and none lost with M = 0). Apple's own packets have it 0.
+    p[1] = RTPMIDI_PT;
     put16(p + 2, seq);
-    put32(p + 4, (uint32_t)clock_100us(now));
+    put32(p + 4, (uint32_t)clock_100us(h, now));
     put32(p + 8, h->ssrc);
     p[12] = (uint8_t)(0x80 | 0x40 | (n >> 8 & 0x0F));  // long header (B), journal (J), Z = 0, P = 0
     p[13] = (uint8_t)n;
@@ -464,6 +505,10 @@ static void send_packet(rtpmidi_t *h, rtpmidi_session_t *s, uint8_t *p, size_t n
 bool rtpmidi_send(rtpmidi_t *h, int i, const ump_t *u, int count, uint32_t now) {
     rtpmidi_session_t *s = &h->s[i];
     if (s->state != RTPMIDI_UP) return false;
+    if (s->seq_unknown) {
+        s->stats.tx_held += (uint32_t)count;
+        return true;
+    }
     int k = 0;
     while (k < count) {
         uint8_t *p = h->pkt;
@@ -504,9 +549,10 @@ void rtpmidi_tick(rtpmidi_t *h, uint32_t now) {
                 if (now - s->state_ms >= WAIT_DATA_MS) set_state(s, RTPMIDI_IDLE, now);
                 break;
             case RTPMIDI_UP:
+                if (s->seq_unknown && now - s->state_ms >= 5000) s->seq_unknown = false;  // no feedback: carry on
                 // The inviter keeps the clocks in step: six syncs 1.5 s apart, then one every 10 s (as macOS does).
                 if (s->initiator && (int32_t)(now - s->next_ck_ms) >= 0) {
-                    uint64_t ts[3] = {clock_100us(now), 0, 0};
+                    uint64_t ts[3] = {clock_100us(h, now), 0, 0};
                     send_ck(h, s, 0, ts);
                     s->next_ck_ms = now + (s->tries++ < 5 ? 1500 : 10000);
                 }
