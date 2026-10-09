@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "espnow_midi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net.h"
@@ -104,6 +105,19 @@ static void set_mode(airmidi_mode_t mode) {
     if (ble_running) ble_midi_set_slow_advertising(mode != AIRMIDI_MODE_PLAY);
 }
 
+// Console 'E': the ESP-NOW cable on or off (for boxes without the web UI at hand). Restarts: the radio's state at
+// boot depends on it.
+static void toggle_espnow(void) {
+    settings_t s;
+    nvs_settings_get(&s);
+    s.espnow = !s.espnow;
+    nvs_settings_set(&s);
+    ESP_LOGI(TAG, "ESP-NOW %s: restarting", s.espnow ? "on" : "off");
+    panic();
+    vTaskDelay(pdMS_TO_TICKS(300));
+    esp_restart();
+}
+
 static airmidi_mode_t current_mode(void) {
     settings_t s;
     nvs_settings_get(&s);
@@ -155,6 +169,18 @@ static void print_status(void) {
             printf("port %s: in %lu, out %lu, dropped %lu\n", names[p], (unsigned long)s.in, (unsigned long)s.out,
                    (unsigned long)s.dropped);
     }
+    espnow_midi_info_t en;
+    espnow_midi_get_info(&en);
+    if (en.running) {
+        printf(
+            "espnow: channel %u%s, %d peer(s)%s%s, rx %lu frames (%lu lost, %lu dups) %lu hellos, tx %lu (%lu "
+            "refused, last %s)\n",
+            en.channel, en.on_ap_channel ? " (access point)" : "", en.n_peers, en.n_peers ? ", first " : "",
+            en.n_peers ? en.peers[0] : "", (unsigned long)en.stats.rx_frames, (unsigned long)en.stats.rx_lost,
+            (unsigned long)en.stats.rx_dups, (unsigned long)en.stats.rx_hellos, (unsigned long)en.stats.tx_frames,
+            (unsigned long)en.tx_failed, esp_err_to_name(en.last_tx_error));
+        printf("espnow: unicast acknowledged %lu, not %lu\n", (unsigned long)en.tx_acked, (unsigned long)en.tx_unacked);
+    }
     if (power_on_usb())
         printf("battery: switch off, on USB power; ");
     else
@@ -187,7 +213,9 @@ void app_main(void) {
     ci_start();
     ble_running = ble_wanted(&s);
     if (ble_running) ble_midi_start(s.name, s.ble_device);
+    net_keep_radio_on(s.espnow);  // ESP-NOW needs the radio in Play mode too
     net_start(s.mode, s.name);
+    if (s.espnow) espnow_midi_start(s.name, s.espnow_group);
     if (ble_running) ble_midi_set_slow_advertising(s.mode != AIRMIDI_MODE_PLAY);
     if (s.mode == AIRMIDI_MODE_NETWORK) start_network_midi();
     webui_start(&(webui_hooks_t){.set_mode = set_mode});
@@ -235,6 +263,7 @@ void app_main(void) {
         if (c == 'm') xTaskCreate(inject_task, "inject", 2048, NULL, 5, NULL);
         if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
         if (c == 'B') usb_midi_bootloader();                // S3: restart into the ROM bootloader (flashing over USB)
+        if (c == 'E') toggle_espnow();
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

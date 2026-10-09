@@ -1,5 +1,5 @@
 idf_component_register(SRCS "net.c" INCLUDE_DIRS "include" REQUIRES airmidi_core
-                       PRIV_REQUIRES esp_wifi esp_netif esp_event esp_timer nvs_flash mdns)
+                       PRIV_REQUIRES board esp_wifi esp_netif esp_event esp_timer nvs_flash mdns)
 # Dev builds: seed the network list from the gitignored .wifi at the repo root (line 1 SSID, line 2 password;
 # copy .wifi.example). Left at the placeholder, or absent (CI, releases), nothing is seeded.
 set(wifi_file "${CMAKE_CURRENT_LIST_DIR}/../../../.wifi")

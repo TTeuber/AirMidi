@@ -12,7 +12,7 @@
 static const char *TAG = "settings";
 
 #define NAMESPACE "airmidi"
-#define SCHEMA 3  // bump when a field is added or changes meaning; add a step to migrate()
+#define SCHEMA 4  // bump when a field is added or changes meaning; add a step to migrate()
 
 static settings_t current;
 static SemaphoreHandle_t lock;
@@ -23,6 +23,8 @@ static esp_err_t write_all(nvs_handle_t h, const settings_t *s) {
     if (!e) e = nvs_set_u16(h, "sysex_to", s->sysex_timeout_ms);
     if (!e) e = nvs_set_u8(h, "ble_net", s->ble_in_network);
     if (!e) e = nvs_set_str(h, "ble_dev", s->ble_device);
+    if (!e) e = nvs_set_u8(h, "espnow", s->espnow);
+    if (!e) e = nvs_set_str(h, "espnow_grp", s->espnow_group);
     if (!e) e = nvs_set_u8(h, "schema", SCHEMA);
     if (!e) e = nvs_commit(h);
     return e;
@@ -35,6 +37,8 @@ static void migrate(nvs_handle_t h, uint8_t from) {
             nvs_set_u8(h, "ble_net", 1);
             /* fall through */
         case 2:  // schema 3 added ble_device; its default (none) needs no key
+            /* fall through */
+        case 3:  // schema 4 added espnow and espnow_group; their defaults (off, "airmidi") need no keys
             /* fall through */
         default:
             break;
@@ -83,6 +87,11 @@ esp_err_t nvs_settings_init(void) {
         s.ble_in_network = ble_net;
         len = sizeof s.ble_device;
         nvs_get_str(h, "ble_dev", s.ble_device, &len);
+        uint8_t espnow = s.espnow;
+        nvs_get_u8(h, "espnow", &espnow);
+        s.espnow = espnow;
+        len = sizeof s.espnow_group;
+        nvs_get_str(h, "espnow_grp", s.espnow_group, &len);
         const char *why = settings_check(&s);
         if (why) {
             ESP_LOGW(TAG, "stored settings invalid (%s), using defaults", why);

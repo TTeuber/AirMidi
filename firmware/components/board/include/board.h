@@ -15,6 +15,7 @@ typedef struct {
     adc_unit_t batt_adc_unit;  // A0: half the switched cell voltage (1:1 divider)
     int batt_adc_channel;      // -1: no battery (a dev kit on USB)
     int batt_offset_mv;        // added to the cell reading, from comparing it with a multimeter on this board
+    int8_t wifi_max_tx;        // Wi-Fi transmit power limit in 0.25 dBm, 0 = the chip's own (20 dBm)
 } board_t;
 
 // The board this firmware was built for (Kconfig AIRMIDI_BOARD).

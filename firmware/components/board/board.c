@@ -37,6 +37,10 @@ static const board_t the_board = {
     .button = GPIO_NUM_0,  // BOOT, with the kit's pull-up
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = -1,  // no battery: always "on USB"
+    // At the full 20 dBm none of the kit's Wi-Fi frames arrived (no ESP-NOW acknowledgement, no access point
+    // answering its authentication) while BLE worked; at 10 dBm all did. Most likely its 3.3 V sagging at the
+    // transmit peaks on a USB port.
+    .wifi_max_tx = 60,
 };
 #else
 #error "no board selected (CONFIG_AIRMIDI_BOARD)"

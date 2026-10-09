@@ -4,6 +4,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "board.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -127,12 +128,13 @@ static void retry(void *arg) {
 }
 
 static bool sntp_started;
+static bool radio_only;  // Play mode: Wi-Fi radio on (not joined) for ESP-NOW
 
 bool net_time_valid(void) { return time(NULL) > 1700000000; }  // 2023: anything earlier is the clock's reset value
 
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
-        join_next();
+        if (mode == AIRMIDI_MODE_NETWORK) join_next();  // in Play mode the radio may be on for ESP-NOW alone
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *d = data;
         ESP_LOGW(TAG, "not joined (reason %d)", d->reason);
@@ -175,6 +177,11 @@ static void stop_wifi(void) {
     ip_text[0] = 0;
 }
 
+static void limit_tx_power(void) {
+    int8_t max = board()->wifi_max_tx;
+    if (max) esp_wifi_set_max_tx_power(max);  // after esp_wifi_start(), or it does not hold
+}
+
 void net_set_mode(airmidi_mode_t m) {
     mode = m;
     stop_wifi();
@@ -191,12 +198,28 @@ void net_set_mode(airmidi_mode_t m) {
         wc.ap.ssid_len = len;
         esp_wifi_set_mode(WIFI_MODE_AP);
         esp_wifi_set_config(WIFI_IF_AP, &wc);
+    } else if (radio_only) {
+        esp_wifi_set_mode(WIFI_MODE_STA);  // not joining anything: the radio is on for ESP-NOW
+        ESP_ERROR_CHECK(esp_wifi_start());
+        limit_tx_power();
+        esp_wifi_set_ps(WIFI_PS_NONE);  // modem sleep would hold frames until the next wake-up
+        wifi_running = true;
+        ESP_LOGI(TAG, "Wi-Fi radio on for ESP-NOW only (play mode)");
+        return;
     } else {
         ESP_LOGI(TAG, "Wi-Fi off (play mode)");
         return;
     }
     ESP_ERROR_CHECK(esp_wifi_start());
     wifi_running = true;
+    limit_tx_power();
+}
+
+void net_keep_radio_on(bool on) { radio_only = on; }
+
+uint8_t net_ap_channel(void) {
+    wifi_ap_record_t ap;
+    return state == NET_CONNECTED && esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.primary : 0;
 }
 
 void net_start(airmidi_mode_t m, const char *name) {

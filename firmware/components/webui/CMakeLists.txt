@@ -1,7 +1,7 @@
 idf_component_register(SRCS "webui.c" INCLUDE_DIRS "include"
                        REQUIRES airmidi_core
                        PRIV_REQUIRES esp_http_server json esp_app_format esp_system esp_timer app_update nvs_settings net ota bus
-                                     uart_midi ble_midi power board net_midi rtp_midi ci)
+                                     uart_midi ble_midi power board net_midi rtp_midi espnow_midi usb_midi ci)
 # The web UI (web/ at the repo root) is gzipped at build time and linked into the image, so the UI always
 # matches the firmware it came with.
 set(web_dir ${CMAKE_CURRENT_LIST_DIR}/../../../web)

@@ -37,21 +37,24 @@ if [ "$1" = flash ]; then
     if [ -z "$port" ] && [ $target = esp32s3 ]; then
         # The S3 app runs TinyUSB: its serial port is the app's (named after its MAC address, 12 hex digits), not
         # the chip's USB-Serial-JTAG. esptool's reset pattern on it restarts the chip into the ROM bootloader
-        # (components/usb_midi), which comes back as USB-Serial-JTAG under another name.
+        # (components/usb_midi), which comes back as USB-Serial-JTAG under another name; so does console 'B', sent
+        # first in case the line pattern is missed.
         app=$(ls /dev/cu.usbmodem* 2>/dev/null | grep -E 'usbmodem[0-9A-F]{12}' | head -1)
         if [ -n "$app" ]; then
             before=$(ls /dev/cu.usbmodem*)
             python -c "
 import serial, sys, time
-s = serial.Serial('$app'); s.dtr = False; s.rts = True; time.sleep(0.1); s.dtr = True; s.rts = False; time.sleep(0.1)
+s = serial.Serial('$app'); s.write(b'B'); s.flush(); time.sleep(0.2)
+s.dtr = False; s.rts = True; time.sleep(0.1); s.dtr = True; s.rts = False; time.sleep(0.1)
 try: s.close()
 except Exception: pass"
-            for _ in $(seq 1 50); do
+            for _ in $(seq 1 100); do
                 port=$(comm -13 <(echo "$before") <(ls /dev/cu.usbmodem* 2>/dev/null) | head -1)
                 [ -n "$port" ] && break
                 sleep 0.1
             done
-            echo "$app -> bootloader on ${port:-?}"
+            if [ -z "$port" ]; then echo "$app did not come back as its bootloader; PORT=... to choose"; exit 1; fi
+            echo "$app -> bootloader on $port"
         fi
     fi
     port=${port:-$(ls /dev/cu.usbmodem* | head -1)}

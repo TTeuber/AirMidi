@@ -128,6 +128,9 @@ function renderStatus() {
       ? `${i + 1} ${c.peer} (midi ${c.protocol}.0), lost ${c.lost}, recovered ${c.recovered}` : `${i + 1} idle`).join(", ")],
     ["rtp", s.rtp.map((c, i) => c.active
       ? `${i + 1} ${c.peer}, lost ${c.lost}, repaired ${c.repairs}` : `${i + 1} idle`).join(", ")],
+    ["esp-now", s.espnow.on
+      ? `channel ${s.espnow.channel}, ${s.espnow.peers.length ? s.espnow.peers.map(esc).join(", ") : "looking"}, lost ${s.espnow.lost}`
+      : "off"],
     ["trs", `in ${s.trs.rx} bytes, out ${s.trs.tx} bytes, dropped ${s.trs.rx_dropped + s.trs.tx_dropped}`],
     ["midi-ci", s.ci.scanning ? "asking…" : s.ci.device ? `${s.ci.device} (${s.ci.result})` : s.ci.result || "not asked yet"],
     ["heap", `${Math.round(s.heap / 1024)} kb free`],
@@ -485,6 +488,8 @@ function renderSettings() {
   const t = settings.sysex_timeout_ms;
   wide($("#w-sysex"), "sysex wait", `${t} ms`, Math.log(t / 50) / Math.log(100));
   $("#t-blenet").classList.toggle("on", settings.ble_in_network);
+  $("#t-espnow").classList.toggle("on", settings.espnow);
+  wide($("#w-group"), "group", esc(settings.espnow_group), 0);
   const d = settings.ble_device;
   wide($("#w-bledev"), "ble device", d === "*" ? "any" : d ? esc(d) : "none", 0);
 }
@@ -514,6 +519,8 @@ editable($("#w-bledev"), "ble device", () => settings.ble_device,
   (v) => saveSetting("ble_device", v.trim().toLowerCase() === "any" ? "*" : v.trim()));
 
 $("#t-blenet").onclick = () => saveSetting("ble_in_network", !settings.ble_in_network);
+$("#t-espnow").onclick = () => saveSetting("espnow", !settings.espnow);
+editable($("#w-group"), "group", () => settings.espnow_group, (v) => saveSetting("espnow_group", v.trim()));
 
 async function saveSetting(key, value) {
   try {

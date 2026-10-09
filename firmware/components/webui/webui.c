@@ -16,6 +16,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "espnow_midi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net.h"
@@ -172,9 +173,9 @@ static esp_err_t get_status(httpd_req_t *req) {
     static const struct {
         int port;
         const char *name;
-    } shown[] = {{PORT_TRS, "trs"},    {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"}, {PORT_BLE_CENTRAL, "bledev"},
-                 {PORT_NET_0, "net1"}, {PORT_NET_1, "net2"}, {PORT_RTP_0, "rtp1"}, {PORT_RTP_1, "rtp2"},
-                 {PORT_WEB, "web"}};
+    } shown[] = {{PORT_TRS, "trs"},    {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"},   {PORT_BLE_CENTRAL, "bledev"},
+                 {PORT_NET_0, "net1"}, {PORT_NET_1, "net2"}, {PORT_RTP_0, "rtp1"},   {PORT_RTP_1, "rtp2"},
+                 {PORT_WEB, "web"},    {PORT_USB, "usb"},    {PORT_ESPNOW, "espnow"}};
     cJSON *ports = cJSON_AddArrayToObject(r, "ports");
     for (size_t i = 0; i < sizeof shown / sizeof shown[0]; i++) {
         bus_port_stats_t ps;
@@ -205,6 +206,20 @@ static esp_err_t get_status(httpd_req_t *req) {
         cJSON_AddNumberToObject(c, "retransmitted", ni.stats.tx_retransmitted);
         cJSON_AddItemToArray(net, c);
     }
+
+    espnow_midi_info_t en;
+    espnow_midi_get_info(&en);
+    cJSON *ej = cJSON_AddObjectToObject(r, "espnow");
+    cJSON_AddBoolToObject(ej, "on", en.running);
+    cJSON_AddNumberToObject(ej, "channel", en.channel);
+    cJSON *peers = cJSON_AddArrayToObject(ej, "peers");
+    for (int i = 0; i < en.n_peers; i++) cJSON_AddItemToArray(peers, cJSON_CreateString(en.peers[i]));
+    cJSON_AddNumberToObject(ej, "rx", en.stats.rx_frames);
+    cJSON_AddNumberToObject(ej, "lost", en.stats.rx_lost);
+    cJSON_AddNumberToObject(ej, "dups", en.stats.rx_dups);
+    cJSON_AddNumberToObject(ej, "tx", en.stats.tx_frames);
+    cJSON_AddNumberToObject(ej, "hellos", en.stats.rx_hellos);
+    cJSON_AddNumberToObject(ej, "bad", en.stats.rx_bad);
 
     cJSON *rtp = cJSON_AddArrayToObject(r, "rtp");
     for (int i = 0; i < RTPMIDI_SESSIONS; i++) {
@@ -292,6 +307,8 @@ static cJSON *settings_json(const settings_t *s) {
     cJSON_AddNumberToObject(r, "sysex_timeout_ms", s->sysex_timeout_ms);
     cJSON_AddBoolToObject(r, "ble_in_network", s->ble_in_network);
     cJSON_AddStringToObject(r, "ble_device", s->ble_device);
+    cJSON_AddBoolToObject(r, "espnow", s->espnow);
+    cJSON_AddStringToObject(r, "espnow_group", s->espnow_group);
     return r;
 }
 
@@ -324,12 +341,21 @@ static esp_err_t post_settings(httpd_req_t *req) {
         strncpy(s.ble_device, dev->valuestring, sizeof s.ble_device - 1);
         if (strlen(dev->valuestring) > SETTINGS_DEVICE_MAX) s.ble_device[0] = 1;  // fails the check below
     }
+    const cJSON *espnow = cJSON_GetObjectItem(in, "espnow");
+    if (cJSON_IsBool(espnow)) s.espnow = cJSON_IsTrue(espnow);
+    const cJSON *group = cJSON_GetObjectItem(in, "espnow_group");
+    if (cJSON_IsString(group)) {
+        memset(s.espnow_group, 0, sizeof s.espnow_group);
+        strncpy(s.espnow_group, group->valuestring, sizeof s.espnow_group - 1);
+        if (strlen(group->valuestring) > SETTINGS_GROUP_MAX) s.espnow_group[0] = 0;  // fails the check below
+    }
     cJSON_Delete(in);
     const char *why = settings_check(&s);
     if (why) return send_error(req, "400 Bad Request", why);
     if (nvs_settings_set(&s) != ESP_OK) return send_error(req, "500 Internal Server Error", "could not store");
     if (strcmp(s.ble_device, old.ble_device)) ble_midi_set_device(s.ble_device);  // applies without a restart
     bool restart = strcmp(s.name, old.name) != 0 || s.sysex_timeout_ms != old.sysex_timeout_ms ||
+                   s.espnow != old.espnow || strcmp(s.espnow_group, old.espnow_group) ||
                    (s.mode == AIRMIDI_MODE_NETWORK && s.ble_in_network != old.ble_in_network);
     cJSON *r = cJSON_CreateObject();
     cJSON_AddItemToObject(r, "settings", settings_json(&s));
