@@ -20,5 +20,6 @@ add_library(airmidi_core STATIC
     src/rtp_journal.c
     src/rtpmidi.c
     src/usbmidi.c
+    src/espnow_link.c
 )
 target_include_directories(airmidi_core PUBLIC include)

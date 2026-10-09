@@ -18,6 +18,7 @@ typedef enum {
 
 #define SETTINGS_NAME_MAX 31    // BLE device name, mDNS host name and UMP endpoint name; ASCII letters, digits, '-'
 #define SETTINGS_DEVICE_MAX 31  // BLE device name to connect to
+#define SETTINGS_GROUP_MAX 15   // ESP-NOW group name
 #define SETTINGS_SYSEX_TIMEOUT_MIN 50
 #define SETTINGS_SYSEX_TIMEOUT_MAX 5000
 
@@ -29,6 +30,10 @@ typedef struct {
     // A BLE MIDI device (keyboard, controller) the box connects to by itself: "" none, "*" the first one it finds,
     // otherwise the name it advertises or its address.
     char ble_device[SETTINGS_DEVICE_MAX + 1];
+    // The ESP-NOW cable: boxes with it on and the same group pass MIDI to each other (lib/espnow_link). Off by
+    // default: in Play mode it keeps the Wi-Fi radio on.
+    bool espnow;
+    char espnow_group[SETTINGS_GROUP_MAX + 1];
 } settings_t;
 
 // Defaults; the name ends in the last two bytes of the MAC address so two boxes in one room differ.

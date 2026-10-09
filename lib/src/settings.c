@@ -9,6 +9,8 @@ void settings_defaults(settings_t *s, const uint8_t mac[6]) {
     s->mode = AIRMIDI_MODE_PLAY;
     s->sysex_timeout_ms = 500;
     s->ble_in_network = false;
+    s->espnow = false;
+    strcpy(s->espnow_group, "airmidi");
 }
 
 const char *settings_check(const settings_t *s) {
@@ -27,6 +29,13 @@ const char *settings_check(const settings_t *s) {
     if (n > SETTINGS_DEVICE_MAX) return "BLE device name is too long";
     for (size_t i = 0; i < n; i++)
         if (s->ble_device[i] < 0x20 || s->ble_device[i] > 0x7E) return "BLE device name must be printable ASCII";
+    n = strnlen(s->espnow_group, sizeof s->espnow_group);
+    if (n == 0 || n > SETTINGS_GROUP_MAX) return "ESP-NOW group must be 1-15 characters";
+    for (size_t i = 0; i < n; i++) {
+        char c = s->espnow_group[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-'))
+            return "ESP-NOW group may only contain letters, digits and '-'";
+    }
     if (s->sysex_timeout_ms < SETTINGS_SYSEX_TIMEOUT_MIN || s->sysex_timeout_ms > SETTINGS_SYSEX_TIMEOUT_MAX)
         return "SysEx timeout out of range";
     return NULL;

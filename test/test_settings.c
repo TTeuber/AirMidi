@@ -16,6 +16,8 @@ static void test_defaults_are_valid(void) {
     TEST_ASSERT_EQUAL(500, s.sysex_timeout_ms);
     TEST_ASSERT_FALSE(s.ble_in_network);
     TEST_ASSERT_EQUAL_STRING("", s.ble_device);  // connects to nothing until told
+    TEST_ASSERT_FALSE(s.espnow);
+    TEST_ASSERT_EQUAL_STRING("airmidi", s.espnow_group);
     TEST_ASSERT_NULL(settings_check(&s));
 }
 
@@ -70,6 +72,19 @@ static void test_ble_device_rules(void) {
     TEST_ASSERT_NOT_NULL(settings_check(&s));
 }
 
+static void test_espnow_group_rules(void) {
+    settings_t s;
+    settings_defaults(&s, mac);
+    strcpy(s.espnow_group, "");
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+    strcpy(s.espnow_group, "stage left");
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+    strcpy(s.espnow_group, "Stage-2");
+    TEST_ASSERT_NULL(settings_check(&s));
+    memset(s.espnow_group, 'a', sizeof s.espnow_group);  // not terminated
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+}
+
 static void test_mode_names(void) {
     TEST_ASSERT_EQUAL_STRING("play", airmidi_mode_name(AIRMIDI_MODE_PLAY));
     TEST_ASSERT_EQUAL_STRING("network", airmidi_mode_name(AIRMIDI_MODE_NETWORK));
@@ -83,6 +98,7 @@ int main(void) {
     RUN_TEST(test_name_rules);
     RUN_TEST(test_mode_and_timeout_ranges);
     RUN_TEST(test_ble_device_rules);
+    RUN_TEST(test_espnow_group_rules);
     RUN_TEST(test_mode_names);
     return UNITY_END();
 }
