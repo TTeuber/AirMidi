@@ -222,6 +222,9 @@ void app_main(void) {
         int c = getchar();              // console: 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
                                         // '0'-'2' power mode, 'B' bootloader (S3)
         if (c == EOF) clearerr(stdin);  // no input yet; on a UART console EOF would otherwise stick
+        // TinyUSB's console drops output nobody reads (a short write), which leaves stdout in its error state for
+        // good: the box ran on but never printed again (S3). Clear it, so output resumes when someone reads.
+        if (ferror(stdout)) clearerr(stdout);
         if (c == 's') print_status();
         if (c == 'i') ota_boot_report();  // which slot runs, its OTA state, core dump
         if (c == 'P') set_mode(AIRMIDI_MODE_PLAY);
