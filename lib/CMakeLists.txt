@@ -19,5 +19,6 @@ add_library(airmidi_core STATIC
     src/ci_guard.c
     src/rtp_journal.c
     src/rtpmidi.c
+    src/usbmidi.c
 )
 target_include_directories(airmidi_core PUBLIC include)
