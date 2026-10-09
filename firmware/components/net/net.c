@@ -134,6 +134,8 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         join_next();
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *d = data;
+        ESP_LOGW(TAG, "not joined (reason %d)", d->reason);
         ip_text[0] = 0;
         if (mode != AIRMIDI_MODE_NETWORK || !wifi_running) return;
         state = NET_JOINING;
