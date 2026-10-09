@@ -1,6 +1,7 @@
 #include "net_midi.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "airmidi/translate.h"
@@ -29,7 +30,7 @@ typedef struct {
     bool announce;  // tell the client who we are once the session can carry data
 } session_ctx_t;
 
-static nm2_host_t host;
+static nm2_host_t *host;  // allocated when Network mode first starts (Play mode never needs it)
 static session_ctx_t ctx[NM2_SESSIONS];
 static SemaphoreHandle_t lock;  // the UDP task and the bus task both drive `host`
 static int sock = -1;
@@ -75,7 +76,7 @@ static void cb_deliver(void *c, int session, const ump_t *u) {
 static int8_t pending_up[NM2_SESSIONS] = {-1, -1};
 
 static void cb_session(void *c, int session, bool up, const char *peer) {
-    nm2_session_t *s = &host.s[session];
+    nm2_session_t *s = &host->s[session];
     if (up && s->resumed && !peer[0] && have_last_client && s->peer.ip == last_client.ip &&
         s->peer.port == last_client.port)
         snprintf(s->peer_name, sizeof s->peer_name, "%s", last_client.name);  // resumed without a name: we know it
@@ -126,7 +127,7 @@ static void net_flush(void *c) {
     session_ctx_t *s = c;
     if (!s->n_batch) return;
     xSemaphoreTake(lock, portMAX_DELAY);
-    nm2_host_send(&host, (int)(s - ctx), s->batch, s->n_batch, now_ms());
+    nm2_host_send(host, (int)(s - ctx), s->batch, s->n_batch, now_ms());
     xSemaphoreGive(lock);
     s->n_batch = 0;
 }
@@ -153,7 +154,7 @@ static void udp_task(void *arg) {
         if (connected && !was_connected && have_last_client) {
             nm2_addr_t a = {.ip = last_client.ip, .port = last_client.port};
             xSemaphoreTake(lock, portMAX_DELAY);
-            nm2_host_resume(&host, &a, last_client.name, now_ms());
+            nm2_host_resume(host, &a, last_client.name, now_ms());
             xSemaphoreGive(lock);
         }
         was_connected = connected;
@@ -166,23 +167,23 @@ static void udp_task(void *arg) {
         xSemaphoreTake(lock, portMAX_DELAY);
         if (n > 0) {
             nm2_addr_t src = {.ip = from.sin_addr.s_addr, .port = ntohs(from.sin_port)};
-            nm2_host_receive(&host, &src, buf, n, now);
+            nm2_host_receive(host, &src, buf, n, now);
             for (int s = 0; s < NM2_SESSIONS; s++) {
-                if (n_replies[s]) nm2_host_send(&host, s, replies[s], n_replies[s], now);
+                if (n_replies[s]) nm2_host_send(host, s, replies[s], n_replies[s], now);
                 n_replies[s] = 0;
             }
         }
         if (now - last_tick >= 10) {
-            nm2_host_tick(&host, now);
+            nm2_host_tick(host, now);
             last_tick = now;
         }
         for (int s = 0; s < NM2_SESSIONS; s++) {
             // Only once the client has spoken on the session: UMP Data right behind Invitation Accepted made macOS
             // answer Bye "Session Not Established" in 1 of 4 connects. And not before a resumed session's Session
             // Reset is answered: nm2 sends no data until then.
-            if (!ctx[s].announce || !host.s[s].active || !host.s[s].heard || host.s[s].reset_pending) continue;
+            if (!ctx[s].announce || !host->s[s].active || !host->s[s].heard || host->s[s].reset_pending) continue;
             ump_t out[UMP_ENDPOINT_MAX_REPLY];
-            nm2_host_send(&host, s, out, ump_endpoint_announce(&ctx[s].ep, out), now);
+            nm2_host_send(host, s, out, ump_endpoint_announce(&ctx[s].ep, out), now);
             ctx[s].announce = false;
         }
         xSemaphoreGive(lock);
@@ -193,6 +194,12 @@ static void udp_task(void *arg) {
 }
 
 void net_midi_start(const char *name) {
+    if (host) return;  // already running
+    host = calloc(1, sizeof *host);
+    if (!host) {
+        ESP_LOGE(TAG, "no memory for the Network MIDI 2.0 host");
+        return;
+    }
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_BASE);
     snprintf(piid, sizeof piid, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
@@ -212,7 +219,7 @@ void net_midi_start(const char *name) {
         bus_register_output(port_of(i), &ops, &ctx[i]);
     }
     nm2_callbacks_t cb = {.send = cb_send, .deliver = cb_deliver, .session_changed = cb_session};
-    nm2_host_init(&host, name_buf, piid, &cb, NULL);
+    nm2_host_init(host, name_buf, piid, &cb, NULL);
     xTaskCreate(udp_task, "netmidi", 6144, NULL, 11, NULL);
     mdns_txt_item_t txt[] = {{"UMPEndpointName", name_buf}, {"ProductInstanceId", piid}};
     mdns_service_add(name_buf, "_midi2", "_udp", NET_MIDI_PORT, txt, 2);
@@ -221,8 +228,9 @@ void net_midi_start(const char *name) {
 
 void net_midi_get_info(int session, net_midi_session_info_t *out) {
     memset(out, 0, sizeof *out);
+    if (!host) return;
     xSemaphoreTake(lock, portMAX_DELAY);
-    const nm2_session_t *s = &host.s[session];
+    const nm2_session_t *s = &host->s[session];
     out->active = s->active;
     if (s->active) {
         snprintf(out->peer, sizeof out->peer, "%s", s->peer_name);

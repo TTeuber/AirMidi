@@ -1,5 +1,6 @@
 #include "ble_midi.h"
 
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
@@ -40,9 +41,11 @@ typedef struct {
     uint16_t peer_handle;  // central: the device's MIDI characteristic value
     midi1_in_t parser;
     blemidi_tx_t tx;
-    volatile uint16_t mtu;                         // latest ATT MTU (23 until exchanged)
-    uint16_t tx_mtu;                               // the MTU tx is sized for
-    uint8_t backlog[BACKLOG][BLEMIDI_MAX_PACKET];  // bus task: packets NimBLE had no buffer for yet, oldest first
+    volatile uint16_t mtu;  // latest ATT MTU (23 until exchanged)
+    uint16_t tx_mtu;        // the MTU tx is sized for
+    // Bus task: packets NimBLE had no buffer for yet, oldest first. 4 KB, allocated when the slot is first used and
+    // kept (freeing it on a disconnect could race the bus task, which may still be flushing).
+    uint8_t (*backlog)[BLEMIDI_MAX_PACKET];
     uint16_t backlog_len[BACKLOG];
     int n_backlog;
     ble_midi_slot_stats_t stats;
@@ -70,6 +73,7 @@ static slot_t *free_peripheral_slot(void) {
 }
 
 static void slot_connected(slot_t *s, uint16_t conn) {
+    if (!s->backlog) s->backlog = malloc(BACKLOG * sizeof s->backlog[0]);  // NULL: no backlog, bursts drop instead
     memset(&s->stats, 0, sizeof s->stats);
     s->conn = conn;
     s->stats.connected = true;
@@ -158,7 +162,7 @@ static void emit_packet(void *ctx, const uint8_t *pkt, size_t len) {
         s->stats.tx_packets++;
         return;
     }
-    if (s->n_backlog == BACKLOG) {
+    if (s->n_backlog == BACKLOG || !s->backlog) {
         s->stats.tx_failed++;
         return;
     }

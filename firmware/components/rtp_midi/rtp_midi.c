@@ -1,6 +1,7 @@
 #include "rtp_midi.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/select.h>
 #include <sys/time.h>
@@ -27,7 +28,7 @@ typedef struct {
     int n_batch;
 } session_ctx_t;
 
-static rtpmidi_t host;
+static rtpmidi_t *host;  // allocated when Network mode first starts (Play mode never needs it)
 static session_ctx_t ctx[RTPMIDI_SESSIONS];
 static SemaphoreHandle_t lock;   // the UDP task and the bus task both drive `host`
 static int socks[2] = {-1, -1};  // control, data
@@ -57,7 +58,7 @@ static void cb_deliver(void *c, int session, const ump_t *u) { bus_send(port_of(
 static int8_t pending_up[RTPMIDI_SESSIONS] = {-1, -1};
 
 static void cb_session(void *c, int session, bool up, const char *peer) {
-    rtpmidi_session_t *s = &host.s[session];
+    rtpmidi_session_t *s = &host->s[session];
     if (up && s->resumed && s->ctrl.ip == last_client.ip)
         snprintf(s->peer_name, sizeof s->peer_name, "%s", last_client.name);  // taken back without a name
     ESP_LOGI(TAG, "session %d %s (\"%s\")%s", session, up ? "up" : "down", s->peer_name,
@@ -98,7 +99,7 @@ static void rtp_flush(void *c) {
     session_ctx_t *s = c;
     if (!s->n_batch) return;
     xSemaphoreTake(lock, portMAX_DELAY);
-    rtpmidi_send(&host, (int)(s - ctx), s->batch, s->n_batch, now_ms());
+    rtpmidi_send(host, (int)(s - ctx), s->batch, s->n_batch, now_ms());
     xSemaphoreGive(lock);
     s->n_batch = 0;
 }
@@ -143,7 +144,7 @@ static void udp_task(void *arg) {
             gettimeofday(&tv, NULL);
             uint64_t wall = net_time_valid() ? (uint64_t)tv.tv_sec * 10000 + tv.tv_usec / 100 : 0;
             xSemaphoreTake(lock, portMAX_DELAY);
-            if (wall) rtpmidi_set_clock(&host, wall - (uint64_t)now_ms() * 10);
+            if (wall) rtpmidi_set_clock(host, wall - (uint64_t)now_ms() * 10);
             xSemaphoreGive(lock);
             clock_set = true;
             ESP_LOGI(TAG, "session clock from %s", wall ? "wall-clock time" : "boot (no wall-clock time)");
@@ -165,10 +166,10 @@ static void udp_task(void *arg) {
             int n = recvfrom(socks[k], buf, sizeof buf, MSG_DONTWAIT, (struct sockaddr *)&from, &fl);
             if (n <= 0 || !clock_set) continue;
             rtpmidi_addr_t src = {.ip = from.sin_addr.s_addr, .port = ntohs(from.sin_port)};
-            rtpmidi_receive(&host, k, &src, buf, (size_t)n, now);
+            rtpmidi_receive(host, k, &src, buf, (size_t)n, now);
         }
         if (now - last_tick >= 10) {
-            rtpmidi_tick(&host, now);
+            rtpmidi_tick(host, now);
             last_tick = now;
         }
         xSemaphoreGive(lock);
@@ -179,6 +180,12 @@ static void udp_task(void *arg) {
 }
 
 void rtp_midi_start(const char *name) {
+    if (host) return;  // already running
+    host = calloc(1, sizeof *host);
+    if (!host) {
+        ESP_LOGE(TAG, "no memory for RTP-MIDI");
+        return;
+    }
     lock = xSemaphoreCreateMutex();
     load_last_client();
     for (int i = 0; i < RTPMIDI_SESSIONS; i++) bus_register_output(port_of(i), &ops, &ctx[i]);
@@ -187,7 +194,7 @@ void rtp_midi_start(const char *name) {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_BASE);
     uint32_t ssrc = (uint32_t)mac[2] << 24 | (uint32_t)mac[3] << 16 | (uint32_t)mac[4] << 8 | mac[5];
-    rtpmidi_init(&host, name, ssrc, esp_random(), &cb, NULL);
+    rtpmidi_init(host, name, ssrc, esp_random(), &cb, NULL);
     xTaskCreate(udp_task, "rtpmidi", 4096, NULL, 11, NULL);
     mdns_service_add(name, "_apple-midi", "_udp", RTP_MIDI_PORT, NULL, 0);
     ESP_LOGI(TAG, "RTP-MIDI on UDP %d/%d", RTP_MIDI_PORT, RTP_MIDI_PORT + 1);
@@ -195,8 +202,9 @@ void rtp_midi_start(const char *name) {
 
 void rtp_midi_get_info(int session, rtp_midi_session_info_t *out) {
     memset(out, 0, sizeof *out);
+    if (!host) return;
     xSemaphoreTake(lock, portMAX_DELAY);
-    const rtpmidi_session_t *s = &host.s[session];
+    const rtpmidi_session_t *s = &host->s[session];
     out->active = s->state == RTPMIDI_UP;
     if (out->active) {
         snprintf(out->peer, sizeof out->peer, "%s", s->peer_name);

@@ -73,6 +73,15 @@ static void on_button(button_event_t ev) { pending_event = ev; }
 // without it unless the setting asks for it.
 static bool ble_wanted(const settings_t *s) { return s->mode != AIRMIDI_MODE_NETWORK || s->ble_in_network; }
 
+// Network MIDI 2.0 and RTP-MIDI, the first time the box is in Network mode (their sessions take ~45 KB that Play
+// mode never needs; the S3 runs short of RAM otherwise).
+static void start_network_midi(void) {
+    settings_t s;
+    nvs_settings_get(&s);
+    net_midi_start(s.name);
+    rtp_midi_start(s.name);
+}
+
 // Switch mode now and remember it for the next boot. Starting or stopping BLE needs a restart (NimBLE does not
 // come back cleanly after a deinit), so a switch that changes it saves and restarts.
 static void set_mode(airmidi_mode_t mode) {
@@ -90,6 +99,7 @@ static void set_mode(airmidi_mode_t mode) {
         esp_restart();
     }
     net_set_mode(mode);
+    if (mode == AIRMIDI_MODE_NETWORK) start_network_midi();
     if (ble_running) ble_midi_set_slow_advertising(mode != AIRMIDI_MODE_PLAY);
 }
 
@@ -177,8 +187,7 @@ void app_main(void) {
     if (ble_running) ble_midi_start(s.name, s.ble_device);
     net_start(s.mode, s.name);
     if (ble_running) ble_midi_set_slow_advertising(s.mode != AIRMIDI_MODE_PLAY);
-    net_midi_start(s.name);
-    rtp_midi_start(s.name);
+    if (s.mode == AIRMIDI_MODE_NETWORK) start_network_midi();
     webui_start(&(webui_hooks_t){.set_mode = set_mode});
     power_start();
     ui_start(on_button);
