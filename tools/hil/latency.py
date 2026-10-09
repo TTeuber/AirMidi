@@ -3,7 +3,7 @@
     out:  Mac -> <port> (BLE / network) -> receiver -> J2 OUT -> AudioFuse MIDI IN -> Mac
     in:   Mac -> AudioFuse MIDI OUT -> J3 IN -> receiver -> <port> -> Mac
 
-    uv run --with python-rtmidi python tools/hil/latency.py "<port name>" [count] [gap_ms]
+    uv run --with python-rtmidi python tools/hil/latency.py "<port name>" [count] [gap_ms] [value offset]
 
 Each message is a CC whose channel/controller/value encode its sequence number, so order, loss and duplicates
 show up as well as timing. Sends are spaced gap_ms (default 20) +-5 ms apart so they do not lock to a radio
@@ -26,8 +26,13 @@ NOT_PLAIN = {0, 6, 32, 38, 98, 99, 100, 101}
 CONTROLLERS = [c for c in range(120) if c not in NOT_PLAIN]
 
 
+# Added to every value. RTP-MIDI repairs a lost CC from its journal only if the receiver's value differs from the
+# journal's, so a run that repeats an earlier run's values cannot show such repairs: give each run its own offset.
+OFFSET = 0
+
+
 def cc(i):
-    return [0xB0 | (i % 16), CONTROLLERS[(i // 16) % len(CONTROLLERS)], i % 128]
+    return [0xB0 | (i % 16), CONTROLLERS[(i // 16) % len(CONTROLLERS)], (i + OFFSET) % 128]
 
 
 def seq_of(m):
@@ -101,6 +106,7 @@ if __name__ == "__main__":
     port = sys.argv[1]
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 300
     gap = float(sys.argv[3]) if len(sys.argv) > 3 else 20
+    OFFSET = int(sys.argv[4]) if len(sys.argv) > 4 else 0
     out, inn = measure(port, n, gap)
     print(f"{port}:")
     print(fmt("wireless -> TRS", out))

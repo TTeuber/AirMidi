@@ -23,6 +23,7 @@
 #include "nvs_settings.h"
 #include "ota.h"
 #include "power.h"
+#include "rtp_midi.h"
 #include "uart_midi.h"
 
 static const char *TAG = "web";
@@ -159,12 +160,13 @@ static esp_err_t get_status(httpd_req_t *req) {
     cJSON_AddNumberToObject(trs, "rx_dropped", t.rx_dropped_bytes);
     cJSON_AddNumberToObject(trs, "tx_dropped", t.tx_dropped);
 
-    // The ports this firmware has so far (net, usb and espnow come in later phases).
+    // The ports this board has (CI is internal).
     static const struct {
         int port;
         const char *name;
-    } shown[] = {{PORT_TRS, "trs"},    {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"},
-                 {PORT_NET_0, "net1"}, {PORT_NET_1, "net2"}, {PORT_WEB, "web"}};
+    } shown[] = {{PORT_TRS, "trs"},    {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"}, {PORT_BLE_CENTRAL, "bledev"},
+                 {PORT_NET_0, "net1"}, {PORT_NET_1, "net2"}, {PORT_RTP_0, "rtp1"}, {PORT_RTP_1, "rtp2"},
+                 {PORT_WEB, "web"}};
     cJSON *ports = cJSON_AddArrayToObject(r, "ports");
     for (size_t i = 0; i < sizeof shown / sizeof shown[0]; i++) {
         bus_port_stats_t ps;
@@ -194,6 +196,25 @@ static esp_err_t get_status(httpd_req_t *req) {
         cJSON_AddNumberToObject(c, "tx", ni.stats.tx_cmds);
         cJSON_AddNumberToObject(c, "retransmitted", ni.stats.tx_retransmitted);
         cJSON_AddItemToArray(net, c);
+    }
+
+    cJSON *rtp = cJSON_AddArrayToObject(r, "rtp");
+    for (int i = 0; i < RTPMIDI_SESSIONS; i++) {
+        rtp_midi_session_info_t ri;
+        rtp_midi_get_info(i, &ri);
+        cJSON *c = cJSON_CreateObject();
+        cJSON_AddBoolToObject(c, "active", ri.active);
+        cJSON_AddStringToObject(c, "peer", ri.peer);
+        cJSON_AddStringToObject(c, "ip", ri.ip);
+        cJSON_AddNumberToObject(c, "rx", ri.stats.rx_packets);
+        cJSON_AddNumberToObject(c, "lost", ri.stats.rx_lost);
+        cJSON_AddNumberToObject(c, "repairs", ri.stats.rx_repairs);
+        cJSON_AddBoolToObject(c, "resumed", ri.resumed);
+        cJSON_AddBoolToObject(c, "syncing", ri.syncing);
+        cJSON_AddNumberToObject(c, "bad", ri.stats.rx_bad);
+        cJSON_AddNumberToObject(c, "late", ri.stats.rx_late);
+        cJSON_AddNumberToObject(c, "tx", ri.stats.tx_packets);
+        cJSON_AddItemToArray(rtp, c);
     }
 
     ci_status_t cs;

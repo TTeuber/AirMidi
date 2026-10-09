@@ -2,10 +2,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "mdns.h"
@@ -124,6 +126,10 @@ static void retry(void *arg) {
     if (mode == AIRMIDI_MODE_NETWORK && wifi_running) join_next();
 }
 
+static bool sntp_started;
+
+bool net_time_valid(void) { return time(NULL) > 1700000000; }  // 2023: anything earlier is the clock's reset value
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         join_next();
@@ -143,6 +149,12 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
         esp_err_t ps = esp_wifi_set_ps(WIFI_PS_NONE);
         if (ps) ESP_LOGW(TAG, "could not turn Wi-Fi power save off: %s", esp_err_to_name(ps));
         ESP_LOGI(TAG, "joined, %s.local at %s", host, ip_text);
+        // Wall-clock time, for RTP-MIDI's session clock (it must not start again from 0 after a restart).
+        if (!sntp_started) {
+            esp_sntp_config_t c = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+            esp_netif_sntp_init(&c);
+            sntp_started = true;
+        }
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_AP_START) {
         strcpy(ip_text, "192.168.4.1");
         state = NET_AP;

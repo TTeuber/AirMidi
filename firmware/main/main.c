@@ -1,4 +1,5 @@
-// airmidi firmware entry point: bring the board up, start the bus, the transports (TRS, BLE MIDI, network), MIDI-CI,
+// airmidi firmware entry point: bring the board up, start the bus, the transports (TRS, BLE MIDI, Network MIDI 2.0,
+// RTP-MIDI), MIDI-CI,
 // the web UI, the button and LED, and the battery watch; then keep the LED state current and answer console
 // commands.
 #include <stdio.h>
@@ -20,6 +21,7 @@
 #include "nvs_settings.h"
 #include "ota.h"
 #include "power.h"
+#include "rtp_midi.h"
 #include "uart_midi.h"
 #include "ui_io.h"
 #include "webui.h"
@@ -133,7 +135,8 @@ static void print_status(void) {
                s.interval_x125 * 1.25, s.mtu, (unsigned long)s.rx_packets, (unsigned long)s.rx_bad,
                (unsigned long)s.tx_packets, (unsigned long)s.tx_failed);
     }
-    static const char *names[PORT_COUNT] = {"trs", "ble0", "ble1", "net0", "net1", "web", "usb", "espnow", "ci"};
+    static const char *names[PORT_COUNT] = {"trs",  "ble0", "ble1", "blec", "net0",   "net1",
+                                            "rtp0", "rtp1", "web",  "usb",  "espnow", "ci"};
     for (int p = 0; p < PORT_COUNT; p++) {
         bus_port_stats_t s;
         bus_get_stats(p, &s);
@@ -175,6 +178,7 @@ void app_main(void) {
     net_start(s.mode, s.name);
     if (ble_running) ble_midi_set_slow_advertising(s.mode != AIRMIDI_MODE_PLAY);
     net_midi_start(s.name);
+    rtp_midi_start(s.name);
     webui_start(&(webui_hooks_t){.set_mode = set_mode});
     power_start();
     ui_start(on_button);

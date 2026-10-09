@@ -29,4 +29,7 @@ esp_err_t net_add_network(const char *ssid, const char *pass);
 esp_err_t net_remove_network(const char *ssid);
 
 // Announce an extra mDNS service (e.g. _http._tcp on port 80) for as long as Wi-Fi is up.
+// True once SNTP has set the clock (wall-clock time).
+bool net_time_valid(void);
+
 void net_add_service(const char *type, const char *proto, uint16_t port);

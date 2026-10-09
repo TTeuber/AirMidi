@@ -3,7 +3,7 @@
 "use strict";
 
 const $ = (s) => document.querySelector(s);
-const HUES = { trs: "fir", ble: "slate", net: "heather", web: "salmon", usb: "fir", espnow: "salmon" };
+const HUES = { trs: "fir", ble: "slate", net: "heather", rtp: "heather", web: "salmon", usb: "fir", espnow: "salmon" };
 let status = null;
 let last = null;  // previous status, for message rates
 let lastAt = 0;
@@ -123,6 +123,8 @@ function renderStatus() {
     ["ble", s.ble.map((c, i) => `${i + 1} ${c.state}${c.interval_ms ? " " + c.interval_ms + " ms" : ""}`).join(", ")],
     ["net", s.net.map((c, i) => c.active
       ? `${i + 1} ${c.peer} (midi ${c.protocol}.0), lost ${c.lost}, recovered ${c.recovered}` : `${i + 1} idle`).join(", ")],
+    ["rtp", s.rtp.map((c, i) => c.active
+      ? `${i + 1} ${c.peer}, lost ${c.lost}, repaired ${c.repairs}` : `${i + 1} idle`).join(", ")],
     ["trs", `in ${s.trs.rx} bytes, out ${s.trs.tx} bytes, dropped ${s.trs.rx_dropped + s.trs.tx_dropped}`],
     ["midi-ci", s.ci.scanning ? "asking…" : s.ci.device ? `${s.ci.device} (${s.ci.result})` : s.ci.result || "not asked yet"],
     ["heap", `${Math.round(s.heap / 1024)} kb free`],
