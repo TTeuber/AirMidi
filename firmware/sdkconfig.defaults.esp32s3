@@ -1,2 +1,18 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_AIRMIDI_BOARD_XIAO_S3=y
+# USB MIDI (components/usb_midi): TinyUSB with one MIDI and one CDC interface (the console moves there).
+CONFIG_TINYUSB_MIDI_COUNT=1
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=1
+# PSRAM (the XIAO S3 has 8 MB octal; dev kits vary, so a missing one is not fatal): Wi-Fi, lwIP and Bluetooth buffers
+# go there first. Without it the S3 has ~340 KB of internal RAM, and Network mode with BLE ran it out.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+# The console is TinyUSB's serial port (components/usb_midi), not USB-Serial-JTAG: TinyUSB takes the USB PHY, and
+# anything written to USB-Serial-JTAG after that (a panic report, the next boot's log) waited forever and hung the
+# chip. Before usb_midi_start() there is no console; crashes leave a core dump in flash.
+CONFIG_ESP_CONSOLE_NONE=y

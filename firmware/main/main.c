@@ -24,6 +24,7 @@
 #include "rtp_midi.h"
 #include "uart_midi.h"
 #include "ui_io.h"
+#include "usb_midi.h"
 #include "webui.h"
 
 static const char *TAG = "airmidi";
@@ -181,6 +182,7 @@ void app_main(void) {
     nvs_settings_get(&s);
 
     bus_start(s.sysex_timeout_ms);
+    usb_midi_start(s.name);  // S3: the console moves to USB from here on
     uart_midi_start();
     ci_start();
     ble_running = ble_wanted(&s);
@@ -217,8 +219,9 @@ void app_main(void) {
                    : ble_midi_connected() ? LED_CONNECTED
                                           : LED_ADVERTISING);
 
-        int c = getchar();  // console (USB): 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
-                            // '0'-'2' power mode
+        int c = getchar();              // console: 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
+                                        // '0'-'2' power mode, 'B' bootloader (S3)
+        if (c == EOF) clearerr(stdin);  // no input yet; on a UART console EOF would otherwise stick
         if (c == 's') print_status();
         if (c == 'i') ota_boot_report();  // which slot runs, its OTA state, core dump
         if (c == 'P') set_mode(AIRMIDI_MODE_PLAY);
@@ -228,6 +231,7 @@ void app_main(void) {
         if (c == 'D') ci_scan(true);
         if (c == 'm') xTaskCreate(inject_task, "inject", 2048, NULL, 5, NULL);
         if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
+        if (c == 'B') usb_midi_bootloader();                // S3: restart into the ROM bootloader (flashing over USB)
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
