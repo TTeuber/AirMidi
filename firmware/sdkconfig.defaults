@@ -25,14 +25,15 @@ CONFIG_FREERTOS_HZ=1000
 # A stuck task reboots the box instead of leaving it silently dead.
 CONFIG_ESP_TASK_WDT_PANIC=y
 
-# Bluetooth: NimBLE host, BLE only, two centrals at once (PORT_BLE_0/1).
+# Bluetooth: NimBLE host, BLE only. Two centrals connected to us (PORT_BLE_0/1) and one device we connect to
+# ourselves (PORT_BLE_CENTRAL), so both roles. Bonds with devices that want pairing are kept in NVS.
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
-CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=3
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
-# Peripheral only for now (BLE central to a keyboard is phase 6).
-CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
-CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
 # HTTPS to GitHub needs the common CAs, not the full Mozilla list.
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
 

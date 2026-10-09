@@ -16,7 +16,8 @@ typedef enum {
     AIRMIDI_MODE_COUNT
 } airmidi_mode_t;
 
-#define SETTINGS_NAME_MAX 31  // BLE device name, mDNS host name and UMP endpoint name; ASCII letters, digits, '-'
+#define SETTINGS_NAME_MAX 31    // BLE device name, mDNS host name and UMP endpoint name; ASCII letters, digits, '-'
+#define SETTINGS_DEVICE_MAX 31  // BLE device name to connect to
 #define SETTINGS_SYSEX_TIMEOUT_MIN 50
 #define SETTINGS_SYSEX_TIMEOUT_MAX 5000
 
@@ -25,6 +26,9 @@ typedef struct {
     airmidi_mode_t mode;
     uint16_t sysex_timeout_ms;  // how long a SysEx in progress may hold other sources off a merged output
     bool ble_in_network;        // keep BLE on in Network mode (costs network MIDI ~16 ms: the radio is shared)
+    // A BLE MIDI device (keyboard, controller) the box connects to by itself: "" none, "*" the first one it finds,
+    // otherwise the name it advertises or its address.
+    char ble_device[SETTINGS_DEVICE_MAX + 1];
 } settings_t;
 
 // Defaults; the name ends in the last two bytes of the MAC address so two boxes in one room differ.

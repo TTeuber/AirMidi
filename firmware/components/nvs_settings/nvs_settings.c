@@ -12,7 +12,7 @@
 static const char *TAG = "settings";
 
 #define NAMESPACE "airmidi"
-#define SCHEMA 2  // bump when a field is added or changes meaning; add a step to migrate()
+#define SCHEMA 3  // bump when a field is added or changes meaning; add a step to migrate()
 
 static settings_t current;
 static SemaphoreHandle_t lock;
@@ -22,6 +22,7 @@ static esp_err_t write_all(nvs_handle_t h, const settings_t *s) {
     if (!e) e = nvs_set_u8(h, "mode", (uint8_t)s->mode);
     if (!e) e = nvs_set_u16(h, "sysex_to", s->sysex_timeout_ms);
     if (!e) e = nvs_set_u8(h, "ble_net", s->ble_in_network);
+    if (!e) e = nvs_set_str(h, "ble_dev", s->ble_device);
     if (!e) e = nvs_set_u8(h, "schema", SCHEMA);
     if (!e) e = nvs_commit(h);
     return e;
@@ -32,6 +33,8 @@ static void migrate(nvs_handle_t h, uint8_t from) {
     switch (from) {
         case 1:  // schema 2 added ble_in_network; schema 1 boxes kept BLE on in Network mode, so they still do
             nvs_set_u8(h, "ble_net", 1);
+            /* fall through */
+        case 2:  // schema 3 added ble_device; its default (none) needs no key
             /* fall through */
         default:
             break;
@@ -78,6 +81,8 @@ esp_err_t nvs_settings_init(void) {
         uint8_t ble_net = s.ble_in_network;
         nvs_get_u8(h, "ble_net", &ble_net);
         s.ble_in_network = ble_net;
+        len = sizeof s.ble_device;
+        nvs_get_str(h, "ble_dev", s.ble_device, &len);
         const char *why = settings_check(&s);
         if (why) {
             ESP_LOGW(TAG, "stored settings invalid (%s), using defaults", why);

@@ -23,6 +23,10 @@ const char *settings_check(const settings_t *s) {
     }
     if (s->name[0] == '-' || s->name[n - 1] == '-') return "name may not start or end with '-'";
     if ((unsigned)s->mode >= AIRMIDI_MODE_COUNT) return "unknown mode";
+    n = strnlen(s->ble_device, sizeof s->ble_device);
+    if (n > SETTINGS_DEVICE_MAX) return "BLE device name is too long";
+    for (size_t i = 0; i < n; i++)
+        if (s->ble_device[i] < 0x20 || s->ble_device[i] > 0x7E) return "BLE device name must be printable ASCII";
     if (s->sysex_timeout_ms < SETTINGS_SYSEX_TIMEOUT_MIN || s->sysex_timeout_ms > SETTINGS_SYSEX_TIMEOUT_MAX)
         return "SysEx timeout out of range";
     return NULL;

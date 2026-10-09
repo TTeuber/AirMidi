@@ -15,6 +15,7 @@ static void test_defaults_are_valid(void) {
     TEST_ASSERT_EQUAL(AIRMIDI_MODE_PLAY, s.mode);
     TEST_ASSERT_EQUAL(500, s.sysex_timeout_ms);
     TEST_ASSERT_FALSE(s.ble_in_network);
+    TEST_ASSERT_EQUAL_STRING("", s.ble_device);  // connects to nothing until told
     TEST_ASSERT_NULL(settings_check(&s));
 }
 
@@ -53,6 +54,22 @@ static void test_mode_and_timeout_ranges(void) {
     TEST_ASSERT_NULL(settings_check(&s));
 }
 
+// The BLE device to connect to: empty (none), "*" (any), or a name as advertised, which may have spaces.
+static void test_ble_device_rules(void) {
+    settings_t s;
+    settings_defaults(&s, mac);
+    strcpy(s.ble_device, "*");
+    TEST_ASSERT_NULL(settings_check(&s));
+    strcpy(s.ble_device, "microKEY Air-37");
+    TEST_ASSERT_NULL(settings_check(&s));
+    strcpy(s.ble_device, "tab\there");
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+    s.ble_device[0] = (char)0xC3;  // UTF-8 is not accepted: the name is compared byte for byte with the advertisement
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+    memset(s.ble_device, 'a', sizeof s.ble_device);  // not terminated
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+}
+
 static void test_mode_names(void) {
     TEST_ASSERT_EQUAL_STRING("play", airmidi_mode_name(AIRMIDI_MODE_PLAY));
     TEST_ASSERT_EQUAL_STRING("network", airmidi_mode_name(AIRMIDI_MODE_NETWORK));
@@ -65,6 +82,7 @@ int main(void) {
     RUN_TEST(test_defaults_are_valid);
     RUN_TEST(test_name_rules);
     RUN_TEST(test_mode_and_timeout_ranges);
+    RUN_TEST(test_ble_device_rules);
     RUN_TEST(test_mode_names);
     return UNITY_END();
 }

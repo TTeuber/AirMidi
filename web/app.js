@@ -120,6 +120,9 @@ function renderStatus() {
     ["up", fmtUptime(s.uptime_ms)],
     ["reset", s.reset_reason],
     ["wifi", s.wifi.state + (s.wifi.ip ? " " + s.wifi.ip : "")],
+    ["device", s.device.target
+      ? `${s.device.state}${s.device.name ? " " + esc(s.device.name) : ""}${s.device.interval_ms ? " " + s.device.interval_ms + " ms" : ""}`
+      : "none set"],
     ["ble", s.ble.map((c, i) => `${i + 1} ${c.state}${c.interval_ms ? " " + c.interval_ms + " ms" : ""}`).join(", ")],
     ["net", s.net.map((c, i) => c.active
       ? `${i + 1} ${c.peer} (midi ${c.protocol}.0), lost ${c.lost}, recovered ${c.recovered}` : `${i + 1} idle`).join(", ")],
@@ -473,6 +476,7 @@ let settings = null;
 async function loadSettings() {
   settings = await api("/api/settings");
   renderSettings();
+  loadBle();
 }
 
 function renderSettings() {
@@ -481,7 +485,33 @@ function renderSettings() {
   const t = settings.sysex_timeout_ms;
   wide($("#w-sysex"), "sysex wait", `${t} ms`, Math.log(t / 50) / Math.log(100));
   $("#t-blenet").classList.toggle("on", settings.ble_in_network);
+  const d = settings.ble_device;
+  wide($("#w-bledev"), "ble device", d === "*" ? "any" : d ? esc(d) : "none", 0);
 }
+
+// BLE MIDI devices around (the box scans 5 s when asked); clicking one makes it the device to connect to.
+let bleTimer = null;
+async function loadBle() {
+  const b = await api("/api/ble");
+  $("#ble-found").innerHTML = b.found
+    .map((f) => [f.name || f.address, f])
+    .map(([id, f]) => `<li class="${id === b.name && b.state === "connected" ? "on" : ""}"><a data-name="${esc(id)}">${esc(id)}</a>
+      <span class="small">${f.rssi} dBm</span></li>`)
+    .join("") || `<li>${b.scanning ? "looking…" : "none found"}</li>`;
+  document.querySelectorAll("#ble-found a").forEach((a) => (a.onclick = () => saveSetting("ble_device", a.dataset.name)));
+  clearTimeout(bleTimer);
+  if (b.scanning) bleTimer = setTimeout(loadBle, 1000);
+}
+$("#ble-scan").onclick = async () => {
+  try {
+    await post("/api/ble/scan", {});
+    setTimeout(loadBle, 500);
+  } catch (e) {
+    $("#settings-msg").textContent = e.message;
+  }
+};
+editable($("#w-bledev"), "ble device", () => settings.ble_device,
+  (v) => saveSetting("ble_device", v.trim().toLowerCase() === "any" ? "*" : v.trim()));
 
 $("#t-blenet").onclick = () => saveSetting("ble_in_network", !settings.ble_in_network);
 

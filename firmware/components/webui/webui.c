@@ -152,6 +152,14 @@ static esp_err_t get_status(httpd_req_t *req) {
         cJSON_AddItemToArray(ble, c);
     }
 
+    ble_midi_central_info_t bc;
+    ble_midi_central_info(&bc);
+    cJSON *dv = cJSON_AddObjectToObject(r, "device");
+    cJSON_AddStringToObject(dv, "state", ble_midi_central_state_name(bc.state));
+    cJSON_AddStringToObject(dv, "target", bc.target);
+    cJSON_AddStringToObject(dv, "name", bc.name);
+    cJSON_AddNumberToObject(dv, "interval_ms", bc.stats.connected ? bc.stats.interval_x125 * 1.25 : 0);
+
     uart_midi_stats_t t;
     uart_midi_get_stats(&t);
     cJSON *trs = cJSON_AddObjectToObject(r, "trs");
@@ -246,6 +254,35 @@ static esp_err_t get_status(httpd_req_t *req) {
     return send_json(req, r);
 }
 
+// ---- /api/ble: BLE MIDI devices around, for choosing the one to connect to ----------------------------------
+
+static esp_err_t get_ble(httpd_req_t *req) {
+    ble_midi_central_info_t ci;
+    ble_midi_central_info(&ci);
+    cJSON *r = cJSON_CreateObject();
+    cJSON_AddStringToObject(r, "state", ble_midi_central_state_name(ci.state));
+    cJSON_AddStringToObject(r, "target", ci.target);
+    cJSON_AddStringToObject(r, "name", ci.name);
+    cJSON_AddBoolToObject(r, "scanning", ci.listing);
+    cJSON *list = cJSON_AddArrayToObject(r, "found");
+    ble_midi_found_t f[BLE_MIDI_FOUND_MAX];
+    int n = ble_midi_found(f, BLE_MIDI_FOUND_MAX);
+    for (int i = 0; i < n; i++) {
+        cJSON *d = cJSON_CreateObject();
+        cJSON_AddStringToObject(d, "name", f[i].name);
+        cJSON_AddStringToObject(d, "address", f[i].address);
+        cJSON_AddNumberToObject(d, "rssi", f[i].rssi);
+        cJSON_AddItemToArray(list, d);
+    }
+    return send_json(req, r);
+}
+
+static esp_err_t post_ble_scan(httpd_req_t *req) {
+    if (!ble_midi_ready()) return send_error(req, "409 Conflict", "Bluetooth is off in this mode");
+    ble_midi_scan_list();
+    return send_json(req, cJSON_CreateObject());
+}
+
 // ---- /api/settings, /api/mode --------------------------------------------------------------------------------
 
 static cJSON *settings_json(const settings_t *s) {
@@ -254,6 +291,7 @@ static cJSON *settings_json(const settings_t *s) {
     cJSON_AddStringToObject(r, "mode", airmidi_mode_name(s->mode));
     cJSON_AddNumberToObject(r, "sysex_timeout_ms", s->sysex_timeout_ms);
     cJSON_AddBoolToObject(r, "ble_in_network", s->ble_in_network);
+    cJSON_AddStringToObject(r, "ble_device", s->ble_device);
     return r;
 }
 
@@ -280,10 +318,17 @@ static esp_err_t post_settings(httpd_req_t *req) {
     if (cJSON_IsNumber(timeout)) s.sysex_timeout_ms = timeout->valuedouble > 65535 ? 0 : timeout->valueint;
     const cJSON *ble_net = cJSON_GetObjectItem(in, "ble_in_network");
     if (cJSON_IsBool(ble_net)) s.ble_in_network = cJSON_IsTrue(ble_net);
+    const cJSON *dev = cJSON_GetObjectItem(in, "ble_device");
+    if (cJSON_IsString(dev)) {
+        memset(s.ble_device, 0, sizeof s.ble_device);
+        strncpy(s.ble_device, dev->valuestring, sizeof s.ble_device - 1);
+        if (strlen(dev->valuestring) > SETTINGS_DEVICE_MAX) s.ble_device[0] = 1;  // fails the check below
+    }
     cJSON_Delete(in);
     const char *why = settings_check(&s);
     if (why) return send_error(req, "400 Bad Request", why);
     if (nvs_settings_set(&s) != ESP_OK) return send_error(req, "500 Internal Server Error", "could not store");
+    if (strcmp(s.ble_device, old.ble_device)) ble_midi_set_device(s.ble_device);  // applies without a restart
     bool restart = strcmp(s.name, old.name) != 0 || s.sysex_timeout_ms != old.sysex_timeout_ms ||
                    (s.mode == AIRMIDI_MODE_NETWORK && s.ble_in_network != old.ble_in_network);
     cJSON *r = cJSON_CreateObject();
@@ -636,6 +681,8 @@ void webui_start(const webui_hooks_t *h) {
         {.uri = "/api/coredump", .method = HTTP_DELETE, .handler = delete_coredump},
         {.uri = "/api/update/check", .method = HTTP_POST, .handler = post_update_check},
         {.uri = "/api/update/install", .method = HTTP_POST, .handler = post_update_install},
+        {.uri = "/api/ble", .method = HTTP_GET, .handler = get_ble},
+        {.uri = "/api/ble/scan", .method = HTTP_POST, .handler = post_ble_scan},
         {.uri = "/api/ci", .method = HTTP_GET, .handler = get_ci},
         {.uri = "/api/ci/device", .method = HTTP_GET, .handler = get_ci_device},
         {.uri = "/api/ci/scan", .method = HTTP_POST, .handler = post_ci_scan},

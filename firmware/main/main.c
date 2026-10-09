@@ -174,7 +174,7 @@ void app_main(void) {
     uart_midi_start();
     ci_start();
     ble_running = ble_wanted(&s);
-    if (ble_running) ble_midi_start(s.name);
+    if (ble_running) ble_midi_start(s.name, s.ble_device);
     net_start(s.mode, s.name);
     if (ble_running) ble_midi_set_slow_advertising(s.mode != AIRMIDI_MODE_PLAY);
     net_midi_start(s.name);
