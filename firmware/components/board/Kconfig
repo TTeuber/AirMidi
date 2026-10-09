@@ -14,6 +14,13 @@ menu "airmidi board"
         config AIRMIDI_BOARD_XIAO_S3
             bool "receiver rev A + XIAO ESP32-S3"
             depends on IDF_TARGET_ESP32S3
+
+        config AIRMIDI_BOARD_DEVKITC_S3
+            bool "ESP32-S3-DevKitC-1 on its own"
+            depends on IDF_TARGET_ESP32S3
+            help
+                A bare dev kit on its native USB port: USB MIDI, the radios and the web UI, no TRS jacks wired
+                (UART MIDI on GPIO17/18 if you add them), no battery, the BOOT button as the box's button.
     endchoice
 
 endmenu

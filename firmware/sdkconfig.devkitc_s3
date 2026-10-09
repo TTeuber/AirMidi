@@ -1,0 +1,6 @@
+# The ESP32-S3-DevKitC-1 on its own (build.sh s3kit): see firmware/components/board.
+CONFIG_AIRMIDI_BOARD_DEVKITC_S3=y
+# The kit's other USB port (its USB-UART bridge on GPIO43/44) carries the boot log and panic reports, and flashes with
+# auto-reset, whatever TinyUSB does on the native port; the console moves to TinyUSB's serial port once USB starts.
+# (The XIAO S3 cannot: GPIO43/44 are its MIDI pins.)
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y

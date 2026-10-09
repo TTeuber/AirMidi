@@ -14,7 +14,7 @@ cf=(uv tool run --quiet --from clang-format==18.1.8 clang-format)
 if [ "$1" = --fix ]; then "${cf[@]}" -i $files; fi
 "${cf[@]}" --dry-run --Werror $files && echo "clean"
 
-for board in c6 s3; do
+for board in c6 s3 s3kit; do
     echo "== firmware $board"
     firmware/build.sh $board 2>&1 | grep -E "error|warning:|binary size|build complete" || true
 done

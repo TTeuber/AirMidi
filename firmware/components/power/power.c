@@ -46,6 +46,12 @@ static void sample_task(void *arg) {
 void power_start(void) {
     const board_t *b = board();
     battery_init(&battery);
+    if (b->batt_adc_channel < 0) {  // no battery on this board: always on USB
+        battery_update(&battery, 0);
+        power_set_mode(1);
+        ESP_LOGI(TAG, "no battery on this board");
+        return;
+    }
     adc_oneshot_unit_init_cfg_t uc = {.unit_id = b->batt_adc_unit};
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&uc, &adc));
     adc_oneshot_chan_cfg_t cc = {.atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT};

@@ -28,6 +28,16 @@ static const board_t the_board = {
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = ADC_CHANNEL_0,  // GPIO1
 };
+#elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
+static const board_t the_board = {
+    .name = "ESP32-S3-DevKitC-1",
+    .midi_tx = GPIO_NUM_17,  // free pins (43/44 go to the kit's USB-UART bridge)
+    .midi_rx = GPIO_NUM_18,
+    .led = GPIO_NUM_NC,    // only an addressable RGB LED on the kit
+    .button = GPIO_NUM_0,  // BOOT, with the kit's pull-up
+    .batt_adc_unit = ADC_UNIT_1,
+    .batt_adc_channel = -1,  // no battery: always "on USB"
+};
 #else
 #error "no board selected (CONFIG_AIRMIDI_BOARD)"
 #endif
@@ -41,9 +51,11 @@ void board_init(void) {
     gpio_set_level(RF_SWITCH_EN, 0);
     gpio_set_level(ANT_SELECT, 0);
 #endif
-    gpio_config_t led = {.pin_bit_mask = 1ULL << the_board.led, .mode = GPIO_MODE_OUTPUT};
-    gpio_config(&led);
-    gpio_set_level(the_board.led, 0);
+    if (the_board.led != GPIO_NUM_NC) {
+        gpio_config_t led = {.pin_bit_mask = 1ULL << the_board.led, .mode = GPIO_MODE_OUTPUT};
+        gpio_config(&led);
+        gpio_set_level(the_board.led, 0);
+    }
     gpio_config_t btn = {
         .pin_bit_mask = 1ULL << the_board.button, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
     gpio_config(&btn);
