@@ -47,6 +47,23 @@ round. One-way latency, no round trip to halve.
 - `resume_test.py`: connect Network MIDI once, reset the box 3 times, MIDI must come back both ways each time with
   nobody touching Audio MIDI Setup (see [network-midi.md](network-midi.md)).
 - `nm2connect.swift`: connects or disconnects (`--remove`) macOS's Network MIDI 2.0 session to the box.
+- `rtpconnect.swift`: the same for one of macOS's RTP-MIDI sessions (made once in Audio MIDI Setup), through its
+  `apple.midirtp.session` property; `MIDINetworkSession` stays disabled from a command-line tool on macOS 26.
+- `rtp_test.py`: RTP-MIDI with macOS's own driver, both ways at 20 and 5 ms, then resets: the box must take the
+  session back each time ([rtp-midi.md](rtp-midi.md)). It keeps the session's port open: macOS closes a session
+  nobody listens to.
+- `blepeer.swift`: a BLE MIDI peripheral on the Mac (CoreBluetooth), standing in for a keyboard the box connects to;
+  `central_test.py` runs the box's BLE central against it, in Network and Play mode.
+- `ble_ota.py`, `ble_ota_test.py`: firmware update over BLE (bleak), refused and accepted images.
+- `usb_test.py`: USB MIDI on an S3 box, with BLE MIDI on the other side, so a bare dev kit is enough.
+- `espnow_test.py`: the ESP-NOW cable between the C6 (TRS, Network mode) and an S3 (USB MIDI, Play mode).
+
+Run `resume_test.py` on its own: straight after `ci_test.py` in one chain, its first invitation went unanswered
+once (alone, right after: 10/10). Not pinned down; CoreMIDI has shown other order effects (see BLE above).
+
+A second box: the S3 tests run on an ESP32-S3-DevKitC-1 (`firmware/build.sh s3kit`). Over its native USB port it is
+a USB MIDI device with its console beside it; `build.sh s3kit flash` gets it into its bootloader through that port
+([transports.md](transports.md), USB MIDI). Its UART port, when connected, shows the boot log and panics.
 
 CoreMIDI's Bluetooth driver turned out fragile under test automation: after a few `MIDIBluetoothDriverDisconnect`
 calls and with Audio MIDI Setup open for a while, it stopped promoting this peripheral at all (`bluetoothd` lists

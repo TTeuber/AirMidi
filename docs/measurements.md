@@ -38,6 +38,26 @@ own USB MIDI path and the TRS wire time (3 bytes at 31250 baud = 0.96 ms).
 | Web UI (WebSocket) -> TRS, 100 CCs | phase 4 | 3.9 ms | | 90 ms | 0/100 |
 | TRS -> web UI (WebSocket) | phase 4 | 10.1 ms | | 97 ms | 0/100 |
 | TRS -> web UI after the WebSocket send fix | phase 5 | 10.0 ms | | 97 ms | 0/100 |
+| Network MIDI 2.0 -> TRS, MIDI 2.0 protocol (after the endpoint announcement) | phase 5 | 7.2 ms | | | 0/300 |
+| TRS -> Network MIDI 2.0, same | phase 5 | 4.9 ms | | | 0/300 |
+| RTP-MIDI (macOS driver) -> TRS, 20 ms spacing | phase 6 | 6.6-8.0 ms | 9.7-78 ms | | 0/300 |
+| TRS -> RTP-MIDI, same | phase 6 | 3.8-7.3 ms | 8.9-85 ms | | 0/300 |
+| RTP-MIDI -> TRS, 5 ms spacing (journal repairs) | phase 6 | 6.5-8.1 ms | 9.3-86 ms | | 0/600 |
+| TRS -> RTP-MIDI, 5 ms spacing | phase 6 | 3.7-5.8 ms | 7.8-77 ms | | 0/600 |
+| BLE device (box as central) -> TRS, Play mode | phase 6 | 13.0 ms | 18.6 ms | 19.4 ms | 0/100 |
+| TRS -> BLE device, Play mode | phase 6 | 11.3 ms | 18.7 ms | 19.4 ms | 0/100 |
+| BLE device -> TRS, Network mode with BLE | phase 6 | 21.5 ms | 291 ms | 434 ms | 0/100 |
+| TRS -> BLE device, Network mode with BLE | phase 6 | 16.4 ms | 45.8 ms | 47.3 ms | 0/100 |
+| BLE (bleak) -> S3 -> USB MIDI | phase 6 | 7.8-8.2 ms | | 19-29 ms | 0/162 |
+| USB MIDI -> S3 -> BLE | phase 6 | 8.7-9.1 ms | | 27-28 ms | 0/162 |
+| TRS -> C6 -> ESP-NOW -> S3 -> USB MIDI, 20 ms | phase 6 | 3.8 ms | 7.9 ms | | 0/300 |
+| USB MIDI -> S3 -> ESP-NOW -> C6 -> TRS, 20 ms | phase 6 | 4.1 ms | 8.1 ms | | 0/300 |
+| TRS -> ESP-NOW -> USB MIDI, 5 ms | phase 6 | 3.5 ms | 6.9 ms | | 0/600 |
+| USB MIDI -> ESP-NOW -> TRS, 5 ms | phase 6 | 4.0 ms | 8.5 ms | | 0/600 |
+
+The RTP-MIDI ranges are across runs on different evenings: the p95 follows the Mac's Wi-Fi (under 10 ms on a quiet
+night, ~80 ms on a busy one). The ESP-NOW rows include the TRS wire (~1 ms a message) and USB at the S3 end; the
+radio hop itself is about 2 ms. Updates over BLE: 1.6 MB in 69 s (23 KB/s, Play mode, bleak on macOS).
 
 MIDI-CI over TRS (phase 5, `tools/hil/ci_test.py`): a full scan (Discovery, capabilities, 4 resources, 1.4 KB of
 JSON) takes 720-910 ms, a rescan of a known device 37-74 ms, a scan with nothing on the jacks 3.0 s (the spec's

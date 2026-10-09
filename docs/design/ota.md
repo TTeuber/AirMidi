@@ -66,6 +66,25 @@ uploads them through the web API:
 
 A 1.48 MB image uploads in about 16.5 s (89 KB/s over Wi-Fi with modem sleep).
 
+## Over BLE (`ble_update`)
+
+For a box that is not on Wi-Fi (Play mode), the same signed images go over BLE: a GATT service next to BLE MIDI with
+a control characteristic (begin with the size, end, abort; progress and the verdict come back as notifications), a
+data characteristic (write without response) and the running version (read). `ota_end()` checks the signature as for
+an upload, so anyone in BLE range can start an upload but nothing unsigned installs. Flash writes run in their own
+task, so the BLE host task never waits for them; that task has 8 KB of stack, because checking the RSA-3072
+signature overflowed 3 KB (in SHA-512).
+
+Each data write carries its offset. BLE delivers what reaches the box in order, but writes without response can be
+lost before they get there: CoreBluetooth drops the ones its queue has no room for, and bleak 3.0 does not wait for
+room (`tools/hil/ble_ota.py` asks CoreBluetooth itself). So the box takes only the piece it expects next and, after
+a gap, asks once for a resend from there (go-back-N). The client keeps at most 16 KB beyond the last progress
+report, as flash writes are slower than BLE at times.
+
+`ble_ota_test.py`, 9 checks in Play mode: an unsigned and a corrupted image are refused, and the box keeps
+running; the good image (1.6 MB) goes over in 69 s (23 KB/s), the box restarts into it, passes its self-test, and
+the web API shows it valid.
+
 ## Releases (`.github/workflows/release.yml`)
 
 A `vX.Y.Z` tag builds both boards with the release key (repository secret `AIRMIDI_SIGNING_KEY`, written to

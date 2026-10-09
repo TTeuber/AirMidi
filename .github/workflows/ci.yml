@@ -26,11 +26,13 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        board: [c6, s3]
+        board: [c6, s3, s3kit]
         include:
           - board: c6
             target: esp32c6
           - board: s3
+            target: esp32s3
+          - board: s3kit  # the ESP32-S3-DevKitC-1 on its own
             target: esp32s3
     steps:
       - uses: actions/checkout@v4

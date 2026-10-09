@@ -297,10 +297,12 @@ user's own devices (sd_synth) take this role.
 ## Open questions
 
 - License (decide before the repo goes public): MIT or Apache-2.0 for code, CERN-OHL-P for hardware.
-- Which S3 board gets mounted (second rev A board?), and when.
+- Which S3 board gets mounted (second rev A board?), and when. Until then an ESP32-S3-DevKitC-1 is the second box
+  (`build.sh s3kit`).
+- The dev kit's Wi-Fi works only up to ~15 dBm on USB power; does a XIAO S3 on the receiver's TPS63020 need a limit?
 - ~~Network MIDI 2.0 vs RTP-MIDI first: spike S1.~~ Network MIDI 2.0 (decision log 2026-10-07).
 - ~~BLE + Wi-Fi together on the C6: spike S2.~~ Works, BLE stays on in Network mode (decision log 2026-10-07).
-- USB MIDI 2.0 class support in TinyUSB on the S3: check before phase 6.
+- ~~USB MIDI 2.0 class support in TinyUSB on the S3: check before phase 6.~~ USB MIDI 1.0 (decision log 2026-10-08).
 - ~~A↔B crossover cables or adapters for the AudioFuse (Type B): what does the user have?~~ In place (S0).
 - GitHub: repo created under the user's account when they say so; nothing is pushed until then.
 - ~~ROM boot banner on MIDI OUT at every reset~~: eFuse burned on the C6 (decision log 2026-10-08); the S3 needs it too.
@@ -363,3 +365,13 @@ user's own devices (sd_synth) take this role.
 | 2026-10-08 | The box announces its UMP endpoint when a Network MIDI 2.0 session starts (Endpoint Info, identity, name, instance id, stream configuration), once the client has spoken; the function block declares MIDI-CI | macOS never sends Endpoint or Function Block Discovery over the session, so it knew nothing of the box and ran no MIDI-CI: the reason `MIDICIDeviceManager` found nothing in phase 5. Told, macOS asks for the block, switches to MIDI 2.0 and runs Discovery through the box (`mac_ci_test.py` 12/12). Announcing right after Invitation Accepted got `Bye 0x05` in 1 of 4 connects; after the client's first packet, 8 of 8 |
 | 2026-10-08 | Guard each MIDI 1.0 output against MIDI-CI Discovery loops: a Discovery from another port within 1 s of the last one written is dropped (`lib/ci_guard`) | macOS passes Discovery from one port on to its other MIDI-CI endpoints; with TRS cabled back to the same Mac every Discovery circled until the TRS line was full (120 000 messages, scans timing out). Loops die on their first lap now |
 | 2026-10-08 | `latency.py` skips CC 0, 6, 32, 38, 98-101 | in a MIDI 2.0 protocol session those are not passed on as plain CCs (M2-104), which read as 32/300 lost; with them skipped 0/300 and 0/600, medians within 1 ms of phase 4 |
+| 2026-10-08 | RTP-MIDI as the second network transport, both run in Network mode; recovery journal for chapters P, C, W, N, T, closed-loop checkpoint, history for 4 channels at once | the journal repairs losses without retransmission (RFC 6295's mandate, tested as a property through 30-50% loss); 16 channels of history cost 26 KB of the C6's heap |
+| 2026-10-08 | RTP-MIDI packets with the M bit 0, against RFC 6295 | macOS 26 held packets with M = 1 back ~25 ms and dropped some (86/300); Apple's own packets have it 0; with 0: 4-6 ms, none lost (docs/design/rtp-midi.md) |
+| 2026-10-08 | RTP-MIDI sessions are taken back after a restart: SSRC from the MAC address, session clock from SNTP wall-clock time, sequence numbers found with two probes half the range apart | macOS never re-invites a box that went away; a clock restarted from 0 looks days ahead in 32-bit RTP time and macOS holds such MIDI; macOS drops packets "behind" its last. rtp_test.py: 5/5 resets taken back |
+| 2026-10-08 | BLE central: one device (`ble_device`: none, any, a name or an address), "just works" pairing when asked, connection updates held to 15 ms | the box can take a BLE keyboard by itself; macOS's peripheral advertises no name, so an address works too. central_test.py 14/14, Play mode 13.0 / 11.3 ms median |
+| 2026-10-08 | Firmware update over BLE (ble_update): the same signed images, offsets in every write and go-back-N | for boxes not on Wi-Fi; CoreBluetooth drops writes without response it has no room for and bleak 3.0 does not wait. 1.6 MB in 69 s, unsigned and corrupted images refused (ble_ota_test.py 9/9) |
+| 2026-10-08 | USB MIDI 1.0 (TinyUSB) on the S3, console on a CDC port beside it; S3 console no longer USB-Serial-JTAG | every host speaks 1.0; TinyUSB takes the PHY, and writes to USB-Serial-JTAG afterwards (a panic, the next boot's log) hung the chip. usb_test.py 162/162 each way |
+| 2026-10-08 | ESP-NOW cable: hellos per group, unicast with radio-level retries, duplicates dropped; a free box looks for its peer, back to channel 1 every other step | two boxes as a wireless MIDI cable with no access point, one may be on an access point's channel. espnow_test.py 9/9, 3.5-4.1 ms median including TRS and USB, 0 lost |
+| 2026-10-08 | ESP32-S3-DevKitC-1 as the second box (`build.sh s3kit`), its Wi-Fi held to 15 dBm | the S3 receiver is not mounted yet; at 20 dBm none of the kit's Wi-Fi frames arrived (no ESP-NOW acknowledgement, no access point answer) while BLE worked, at 10-15 dBm all did |
+| 2026-10-08 | Network MIDI starts with Network mode; BLE backlogs come with their connection; PSRAM on the S3 | the S3 had 7 KB of heap in Play mode; ~45 KB of session state was idle there |
+| 2026-10-08 | Phase 6 done: RTP-MIDI, BLE central, OTA over BLE, USB MIDI, ESP-NOW cable, each tested on the hardware | host tests 17/17 suites; rtp_test, central_test, ble_ota_test, usb_test, espnow_test all pass, and the earlier hardware tests still do |
