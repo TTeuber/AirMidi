@@ -45,8 +45,8 @@ log has every measured result; [docs/measurements.md](docs/measurements.md) the 
 
 - `lib/`: 17 suites of host unit tests under AddressSanitizer + UndefinedBehaviorSanitizer, including randomized
   round trips and property tests (the RTP-MIDI journal through 30-50% packet loss). The CI workflow runs them, the
-  format check and the firmware builds (C6, XIAO S3, S3 dev kit) on every push (it has not
-  run on GitHub yet: the repo is not published; `tools/check.sh` runs the same steps locally).
+  format check and the firmware builds (C6, XIAO S3, S3 dev kit) on every push; `tools/check.sh` runs the same
+  steps locally.
 - On the hardware, with an Arturia AudioFuse cabled to the box so both ends of every test sit on the Mac's clock:
   `tools/hil/bridge_test.py` (15 checks), `ota_test.py` (13: refused, accepted, rolled back), `release_test.py`
   (8), `web_test.py` (14), `ws_test.py`, `ci_test.py` (21, against `devices/mac_standin`, a MIDI-CI device on the
@@ -74,3 +74,9 @@ firmware/build.sh c6 flash        # build and flash the C6 board (s3 for the XIA
 
 ESP-IDF v5.5 (`IDF_PATH`, default `~/Developer/esp-idf`), CMake, and `uv` (for the pinned clang-format and the
 Python test tools).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Two bundled third-party parts keep their own licenses: the Unity test framework in
+`test/unity/` (MIT, [test/unity/LICENSE.txt](test/unity/LICENSE.txt)) and the Geist font in `web/` (SIL Open Font
+License 1.1, [web/OFL-Geist.txt](web/OFL-Geist.txt)).

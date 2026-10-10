@@ -1,7 +1,7 @@
 menu "airmidi updates"
     config AIRMIDI_UPDATE_BASE_URL
         string "Where releases are published"
-        default "https://github.com/tylerteuber/airmidi/releases/latest/download"
+        default "https://github.com/TTeuber/AirMidi/releases/latest/download"
         help
             The box reads <base>/manifest.json ({"version": ..., "images": {"c6": file, "s3": file}}) and downloads
             <base>/<file> for its board. GitHub's "latest/download" URL redirects to the newest release's assets.
