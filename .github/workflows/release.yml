@@ -32,7 +32,7 @@ jobs:
           printf '%s\n' "$KEY" > firmware/keys/release_signing_key.pem
       - uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5.1
+          esp_idf_version: v5.5.5  # the first release with httpd ws_post_handshake_cb (webui)
           target: ${{ matrix.target }}
           path: firmware
           # the action sets git's safe.directory and wraps this in a single-quoted bash -c: no single quotes here

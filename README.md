@@ -72,7 +72,7 @@ tools/check.sh                    # what CI runs: host tests, clang-format check
 firmware/build.sh c6 flash        # build and flash the C6 board (s3 for the XIAO S3, s3kit for an S3 dev kit)
 ```
 
-ESP-IDF v5.5 (`IDF_PATH`, default `~/Developer/esp-idf`), CMake, and `uv` (for the pinned clang-format and the
+ESP-IDF v5.5.5 or later in the v5.5 series (`IDF_PATH`, default `~/Developer/esp-idf`), CMake, and `uv` (for the pinned clang-format and the
 Python test tools).
 
 ## License

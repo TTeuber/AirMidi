@@ -40,7 +40,7 @@ jobs:
           fetch-depth: 0  # git describe needs the tags for the version string
       - uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.5.1
+          esp_idf_version: v5.5.5  # the first release with httpd ws_post_handshake_cb (webui)
           target: ${{ matrix.target }}
           path: firmware
           # build.sh signs the image with a throwaway key it generates (CI builds are not for installing). The action
