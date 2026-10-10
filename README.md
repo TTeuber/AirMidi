@@ -29,11 +29,13 @@ on a custom PCB in a 3D-printed box.
 
 ![The receiver PCB in the open enclosure](docs/images/pcb.jpg)
 
-The receiver PCB (rev A): a Seeed XIAO ESP32-C6 (or ESP32-S3) on headers, MIDI out through a TRS Type A jack, MIDI
-in through a 6N138 optocoupler, a Li-ion cell with a TP4057 USB-C charger and a TPS63020 buck-boost to 3.3 V, a
-power switch, a button and an LED. An ESP32-S3-DevKitC-1 serves as the second box for USB MIDI and the ESP-NOW
-link. The board layer ([board-and-settings.md](docs/design/board-and-settings.md)) is the only code that names a
-GPIO.
+The receiver PCB: a Seeed XIAO ESP32-C6 (or ESP32-S3) on headers, MIDI out through a TRS Type A jack, MIDI in
+through a 6N138 optocoupler, a Li-ion cell with a TP4057 USB-C charger and a TPS63020 buck-boost to 3.3 V, a power
+switch, a button and an LED. An ESP32-S3-DevKitC-1 serves as the second box for USB MIDI and the ESP-NOW link. The
+board layer ([board-and-settings.md](docs/design/board-and-settings.md)) is the only code that names a GPIO.
+
+**[hardware/](hardware)** has the schematic, the KiCad project, Gerbers, BOM and the printable enclosure, with the
+board's revision history: the photo shows rev A, and rev B fixes what its bring-up found.
 
 ## Features
 
@@ -109,6 +111,7 @@ test/       host unit tests for lib/ (Unity)              tools/hil/    hardware
 firmware/   ESP-IDF project (C6 and S3)                   spikes/       early experiments, results in the plan
 web/        the web UI (HTML/CSS/JS, gzipped into the firmware)
 devices/    MIDI-CI device side: the Mac stand-in (CoreMIDI)
+hardware/   the receiver PCB and enclosure: schematic, KiCad project, Gerbers, BOM, STL
 ```
 
 ## Build
@@ -124,6 +127,8 @@ the update image per board and a zip for a first install over USB (`esptool.py w
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Two bundled third-party parts keep their own licenses: the Unity test framework in
-`test/unity/` (MIT, [test/unity/LICENSE.txt](test/unity/LICENSE.txt)) and the Geist font in `web/` (SIL Open Font
-License 1.1, [web/OFL-Geist.txt](web/OFL-Geist.txt)).
+The firmware, software and documentation are MIT ([LICENSE](LICENSE)); the hardware in `hardware/` is
+CERN-OHL-P-2.0 ([hardware/LICENSE](hardware/LICENSE)), the permissive open hardware licence. Two bundled third-party
+parts keep their own licenses: the Unity test framework in `test/unity/` (MIT,
+[test/unity/LICENSE.txt](test/unity/LICENSE.txt)) and the Geist font in `web/` (SIL Open Font License 1.1,
+[web/OFL-Geist.txt](web/OFL-Geist.txt)).

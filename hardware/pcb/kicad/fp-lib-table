@@ -1,0 +1,4 @@
+(fp_lib_table (version 7)
+  (lib (name "measured")(type "KiCad")(uri "${KIPRJMOD}/lib/measured.pretty")(options "")(descr "parts/gen_measured.py"))
+  (lib (name "lcsc")(type "KiCad")(uri "${KIPRJMOD}/lib/lcsc.pretty")(options "")(descr "fetched from LCSC (parts/fetch.py)"))
+)

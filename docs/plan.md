@@ -296,7 +296,7 @@ user's own devices (sd_synth) take this role.
 
 ## Open questions
 
-- License (decide before the repo goes public): MIT or Apache-2.0 for code, CERN-OHL-P for hardware.
+- ~~License~~: decided 2026-10-09, MIT for the code, CERN-OHL-P-2.0 for `hardware/` (decision log).
 - Which S3 board gets mounted (second rev A board?), and when. Until then an ESP32-S3-DevKitC-1 is the second box
   (`build.sh s3kit`).
 - The dev kit's Wi-Fi works only up to ~15 dBm on USB power; does a XIAO S3 on the receiver's TPS63020 need a limit?
@@ -375,3 +375,5 @@ user's own devices (sd_synth) take this role.
 | 2026-10-08 | ESP32-S3-DevKitC-1 as the second box (`build.sh s3kit`), its Wi-Fi held to 15 dBm | the S3 receiver is not mounted yet; at 20 dBm none of the kit's Wi-Fi frames arrived (no ESP-NOW acknowledgement, no access point answer) while BLE worked, at 10-15 dBm all did |
 | 2026-10-08 | Network MIDI starts with Network mode; BLE backlogs come with their connection; PSRAM on the S3 | the S3 had 7 KB of heap in Play mode; ~45 KB of session state was idle there |
 | 2026-10-08 | Phase 6 done: RTP-MIDI, BLE central, OTA over BLE, USB MIDI, ESP-NOW cable, each tested on the hardware | host tests 17/17 suites; rtp_test, central_test, ble_ota_test, usb_test, espnow_test all pass, and the earlier hardware tests still do |
+| 2026-10-09 | Public on GitHub (TTeuber/AirMidi): MIT for code and docs; CI on ESP-IDF v5.5.5; first release v0.1.0 signed with the release key in CI | MIT is what embedded libraries (TinyUSB, Unity) use and asks nothing of a reader; v5.5.1 lacks the httpd callback the web UI uses |
+| 2026-10-10 | `hardware/` = rev B, exported from the design workspace as outputs only (PDFs, renders, KiCad project with bundled libraries, Gerbers, BOM, STL/STEP), under CERN-OHL-P-2.0 | rev B fixes rev A's reversed cell connector; the generator code needs the whole workspace, so it stays there; LCSC 3D models left out (redistribution terms unclear) |

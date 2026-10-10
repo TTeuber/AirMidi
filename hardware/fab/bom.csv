@@ -1,0 +1,21 @@
+qty,refs,description,MPN,LCSC
+1,U1,Seeed XIAO ESP32S3 soldered straight onto the board on its male headers (no sockets),XIAO ESP32S3,C2913204
+1,U2,"TP4057 USB-C Li-ion charger module with protection, 12.1 x 17 mm, soldered on header stubs",TP4057 USB-C module,
+1,U3,"TPS63020 buck-boost module, 1.8-5.5 V in, 3.3 V out, 17.6 x 26.3 mm, soldered on header stubs",TPS63020 module,
+1,J1,"JST S2B-PH-K-S, 2-pin PH 2.0 mm side-entry socket (Li-ion cell plug)",S2B-PH-K-S(LF)(SN),C173752
+2,J2 J3,"3.5 mm stereo jack, right angle PCB mount, 5 pins (PJ-307C) for TRS MIDI",PJ-307C,C16684
+1,U4,"6N138 darlington optocoupler, DIP-8, in a socket (MIDI in)",6N138,C3001991
+1,SW1,"SPDT slide switch, right angle (bent pins), 4.8 mm pitch, 12.7 x 6.2 x 6.5 body, 6 mm handle (SS12D10G6-WJ)",SS12D10G6-WJ,C7431059
+1,SW2,"6 mm tactile button, 13 mm tall round stem (user button through a flat lid)",KH-6X6X13H-TJ,C2837523
+1,D1,"1N4148 small signal diode, DO-35, lying flat on 7.62 mm (MIDI in reverse protection)",1N4148,
+1,LED1,"3 mm LED, green (BLE status)",3A4GUD,C52034646
+2,R1 R2,"100 kOhm 1/4 W resistor, flat (battery-sense divider)",,
+1,R3,"10 Ohm 1/4 W resistor, flat (MIDI out source side)",,
+1,R4,"33 Ohm 1/4 W resistor, flat (MIDI out data side)",,
+2,R5 R7,"1 kOhm 1/4 W resistor, flat (LED series)",,
+1,R6,"220 Ohm 1/4 W resistor, flat (MIDI in LED series)",,
+4,H1 H2 H3 H4,M3 mounting hole,,
+1,,"EEMB LP553454 Li-Po cell, 3.7 V 1050 mAh, 54x34x5 mm, JST-PH 2.0 plug, built-in protection (PCM)",LP553454,
+7,,1x2 2.54 mm pin header (footswitch leads),,
+1,,"DIP-8 IC socket, 7.62 mm",DS1009-08AT1NX-0A2,C72124
+4,,M3 x 20 mm pan head screw (receiver lid through the boss and PCB into the base standoff),,

@@ -1,0 +1,31 @@
+Drill report for midi_receiver.kicad_pcb
+Created on 2026-10-10T00:02:26
+
+Copper Layer Stackup:
+    =============================================================
+    L1 :  F.Cu                      front
+    L2 :  B.Cu                      back
+
+
+Drill file 'midi_receiver.drl' contains
+    plated through holes:
+    =============================================================
+    T1  0.400mm  0.0157"  (1 hole)
+    T2  0.750mm  0.0295"  (2 holes))
+    T3  0.800mm  0.0315"  (10 holes)  (with 10 slots)
+    T4  0.800mm  0.0315"  (24 holes))
+    T5  0.900mm  0.0354"  (2 holes))
+    T6  1.000mm  0.0394"  (28 holes))
+    T7  1.100mm  0.0433"  (4 holes))
+    T8  1.100mm  0.0433"  (3 holes)  (with 3 slots)
+
+    Total plated holes count 74
+
+
+Not plated through holes are merged with plated holes
+    unplated through holes:
+    =============================================================
+    T9  1.200mm  0.0472"  (10 holes))
+    T10  3.200mm  0.1260"  (4 holes))
+
+    Total unplated holes count 14

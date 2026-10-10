@@ -1,0 +1,182 @@
+(footprint "TPS63020_Module"
+	(version 20240108)
+	(generator "gen_measured")
+	(layer "F.Cu")
+	(descr "TPS63020 buck-boost module on header stubs: 4 corner pads (2 holes each), VIN end at +Y, GND on -X; measured")
+	(tags "tps63020 buck-boost module")
+	(property "Reference" "REF**"
+		(at 0 -14.65 0)
+		(layer "F.SilkS")
+		(uuid "2a75eb2c-8d54-56bb-a156-736f22e9c11c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "TPS63020_Module"
+		(at 0 14.65 0)
+		(layer "F.Fab")
+		(uuid "78bc7698-35c2-54d2-b49b-1ecb69de1213")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_rect
+		(start -8.8 -13.15)
+		(end 8.8 13.15)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "d90f8dfd-54a6-50b0-af90-d8a6119eb0bf")
+	)
+	(fp_rect
+		(start -8.91 -13.26)
+		(end 8.91 13.26)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "1b5884af-a6bc-5121-b1fe-c5ce24f0eb6b")
+	)
+	(fp_rect
+		(start -9.3 -13.65)
+		(end 9.3 13.65)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "1a9e1187-892d-5fbd-9325-0f6a9d579657")
+	)
+	(pad "1" thru_hole rect
+		(at 5.08 11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "744283ef-e96d-541f-a5b6-a0f720bdc5e5")
+	)
+	(pad "1" thru_hole circle
+		(at 7.62 11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "97157f2a-c6d9-55ea-bbf6-7e0463bf0c4d")
+	)
+	(pad "2" thru_hole circle
+		(at -7.62 11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "7052f134-69b4-5507-b6ee-476c56511226")
+	)
+	(pad "2" thru_hole circle
+		(at -5.08 11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "6e2232a6-972d-512c-b2cf-21d9f37db02b")
+	)
+	(pad "3" thru_hole circle
+		(at 5.08 -11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "3f2a8393-2d48-5fd1-9623-3e5a53bfa9ae")
+	)
+	(pad "3" thru_hole circle
+		(at 7.62 -11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "1610433e-cc20-57c2-be9a-cd4f4477c8b2")
+	)
+	(pad "4" thru_hole circle
+		(at -7.62 -11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "2f3320a4-2faf-5740-b749-578383400bc1")
+	)
+	(pad "4" thru_hole circle
+		(at -5.08 -11.43)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "6fe56a7a-2c03-5f3f-9b5f-92ddec30a435")
+	)
+	(fp_text user "VIN"
+		(at 6.35 9.13 0)
+		(layer "F.SilkS")
+		(uuid "25ca8a9e-c411-554d-a1cb-0b3dccf74a28")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(fp_text user "GND"
+		(at -6.35 9.13 0)
+		(layer "F.SilkS")
+		(uuid "9271ae94-ecd8-5024-b0c1-86da5a15e0ab")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(fp_text user "OUT"
+		(at 6.35 -9.13 0)
+		(layer "F.SilkS")
+		(uuid "23c8e8b4-6972-54b3-8a9e-ccd16df135cf")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(fp_text user "GND"
+		(at -6.35 -9.13 0)
+		(layer "F.SilkS")
+		(uuid "a1997fc4-9877-5538-b12f-097364323a39")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(model "${KIPRJMOD}/lib/measured.3dshapes/TPS63020_Module.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

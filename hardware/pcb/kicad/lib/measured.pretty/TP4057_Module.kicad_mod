@@ -1,0 +1,199 @@
+(footprint "TP4057_Module"
+	(version 20240108)
+	(generator "gen_measured")
+	(layer "F.Cu")
+	(descr "TP4057 USB-C charger module on header stubs, USB-C at -Y; pins B+ B- OUT+ OUT- IN+ IN-; measured")
+	(tags "tp4057 charger module usb-c")
+	(property "Reference" "REF**"
+		(at 0 -11.5 0)
+		(layer "F.SilkS")
+		(uuid "49c72581-778d-56cd-b0d4-c4572eddf16d")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "TP4057_Module"
+		(at 0 10 0)
+		(layer "F.Fab")
+		(uuid "805e85f1-6086-5cb2-aa19-f135c10b71eb")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_rect
+		(start -6.05 -8.5)
+		(end 6.05 8.5)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "f965e193-673e-5675-b675-0231df40dd1c")
+	)
+	(fp_rect
+		(start -6.16 -8.61)
+		(end 6.16 8.61)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "0bc8f565-3376-54c8-8895-85180b82b99a")
+	)
+	(fp_rect
+		(start -6.55 -9)
+		(end 6.55 9)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "5501bbd3-bf0b-5aa2-a45b-dbbddfb6ef6c")
+	)
+	(fp_rect
+		(start -4.5 -10)
+		(end 4.5 -7.5)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.SilkS")
+		(uuid "9d46c8c0-759d-5bdd-9cb3-4f794730d8da")
+	)
+	(pad "1" thru_hole rect
+		(at 2.54 7.5)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "efc68400-ea5a-56d3-b748-91255cff2bc7")
+	)
+	(fp_text user "B+"
+		(at 2.54 5.8 0)
+		(layer "F.SilkS")
+		(uuid "97db6975-ce99-593b-8923-38158d916e11")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "2" thru_hole circle
+		(at -2.54 7.5)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "fdfaba4c-769d-569d-bb33-c813e3ebdbc2")
+	)
+	(fp_text user "B-"
+		(at -2.54 5.8 0)
+		(layer "F.SilkS")
+		(uuid "cd47b147-03bc-5aca-8877-664a1aab8b81")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "3" thru_hole circle
+		(at 5.08 7.5)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "e94f3566-3660-5083-8030-e324a7c39fd8")
+	)
+	(fp_text user "O+"
+		(at 5.08 5.8 0)
+		(layer "F.SilkS")
+		(uuid "0d4db10b-6c5d-5884-aa45-f9cc76f7ec8f")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "4" thru_hole circle
+		(at -5.08 7.5)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "c49b5007-a7a1-51eb-aa95-e4bd7275c20d")
+	)
+	(fp_text user "O-"
+		(at -5.08 5.8 0)
+		(layer "F.SilkS")
+		(uuid "1407ab8c-aec3-5347-af70-b389748a059a")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "5" thru_hole circle
+		(at 5.08 -2.66)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "1ad265f9-88fa-5a0a-8dec-4e0524842077")
+	)
+	(fp_text user "I+"
+		(at 5.08 -0.96 0)
+		(layer "F.SilkS")
+		(uuid "0d240258-3c56-5d54-aa13-d5091e9081d6")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "6" thru_hole circle
+		(at -5.08 -2.66)
+		(size 1.7 1.7)
+		(drill 1)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+		(uuid "8eb30994-0e88-545d-974c-e8fff8f27571")
+	)
+	(fp_text user "I-"
+		(at -5.08 -0.96 0)
+		(layer "F.SilkS")
+		(uuid "4bdca38f-148a-5831-aa2c-50c602fe5854")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(model "${KIPRJMOD}/lib/measured.3dshapes/TP4057_Module.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)
