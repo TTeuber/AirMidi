@@ -35,8 +35,8 @@ jobs:
           esp_idf_version: v5.5.1
           target: ${{ matrix.target }}
           path: firmware
+          # the action sets git's safe.directory and wraps this in a single-quoted bash -c: no single quotes here
           command: >-
-            git config --global --add safe.directory '*' &&
             EXTRA_DEFAULTS=sdkconfig.release PROJECT_VER=${{ github.ref_name }} ./build.sh ${{ matrix.board }}
       - name: collect
         run: |
