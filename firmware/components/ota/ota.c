@@ -186,10 +186,14 @@ void ota_abort(void) {
 
 // ---- fetching a release ----------------------------------------------------------------------------------------
 
-#if CONFIG_IDF_TARGET_ESP32C6
+// The image a box takes from a release's manifest: per board, not per chip (the S3 dev kit has other pins than the
+// XIAO S3). Same names as build.sh's.
+#if CONFIG_AIRMIDI_BOARD_XIAO_C6
 #define BOARD_KEY "c6"
-#else
+#elif CONFIG_AIRMIDI_BOARD_XIAO_S3
 #define BOARD_KEY "s3"
+#elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
+#define BOARD_KEY "s3kit"
 #endif
 
 static char fetch_base[160];

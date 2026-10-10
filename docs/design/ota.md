@@ -87,12 +87,12 @@ the web API shows it valid.
 
 ## Releases (`.github/workflows/release.yml`)
 
-A `vX.Y.Z` tag builds both boards with the release key (repository secret `AIRMIDI_SIGNING_KEY`, written to
+A `vX.Y.Z` tag builds every board (`c6`, `s3`, `s3kit`) with the release key (repository secret `AIRMIDI_SIGNING_KEY`, written to
 `firmware/keys/release_signing_key.pem` and selected by `firmware/sdkconfig.release`) and publishes, per board, the
-OTA image (`airmidi-c6.bin`, `airmidi-s3.bin`), a zip for a first install over USB (`esptool.py write_flash
+OTA image (`airmidi-c6.bin`, `airmidi-s3.bin`, `airmidi-s3kit.bin`), a zip for a first install over USB (`esptool.py write_flash
 @flash_args`), and one `manifest.json`. A box reads `<base>/manifest.json` from `AIRMIDI_UPDATE_BASE_URL`
 (GitHub's `releases/latest/download`, which redirects to the newest release's assets), compares the version with
-its own, and on request downloads its board's image through the same `ota_begin/write/end` path as an upload, so
+its own, and on request downloads its board's image (by board, not chip: the dev kit has other pins than the XIAO S3) through the same `ota_begin/write/end` path as an upload, so
 the signature check, the sector erase and the self-test all apply.
 
 A box only accepts images signed with the key its own image was signed with: a box running a dev build (dev key)

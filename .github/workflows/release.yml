@@ -1,5 +1,5 @@
 name: release
-# Push a tag vX.Y.Z: both boards are built, signed with the release key, and published with a manifest.json, which
+# Push a tag vX.Y.Z: every board is built, signed with the release key, and published with a manifest.json, which
 # is what boxes in the field read (Kconfig AIRMIDI_UPDATE_BASE_URL -> releases/latest/download).
 on:
   push:
@@ -13,14 +13,16 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        board: [c6, s3]
+        board: [c6, s3, s3kit]
         include:
           - board: c6
             target: esp32c6
           - board: s3
             target: esp32s3
+          - board: s3kit  # the ESP32-S3-DevKitC-1 on its own
+            target: esp32s3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: release signing key (repository secret AIRMIDI_SIGNING_KEY)
@@ -48,7 +50,7 @@ jobs:
              $b/airmidi.bin $b/flash_args out/flash/
           (cd out/flash && zip -q ../airmidi-${{ matrix.board }}-usb-flash.zip *)
           rm -r out/flash
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.board }}
           path: out/*
@@ -57,16 +59,16 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: out
           merge-multiple: true
       - name: manifest.json
         run: |
           cat > out/manifest.json <<JSON
-          {"version": "${{ github.ref_name }}", "images": {"c6": "airmidi-c6.bin", "s3": "airmidi-s3.bin"}}
+          {"version": "${{ github.ref_name }}", "images": {"c6": "airmidi-c6.bin", "s3": "airmidi-s3.bin", "s3kit": "airmidi-s3kit.bin"}}
           JSON
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: out/*
           generate_release_notes: true
