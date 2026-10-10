@@ -47,7 +47,9 @@ jobs:
           cp $b/airmidi.bin out/airmidi-${{ matrix.board }}.bin
           # for a first install over USB: esptool.py write_flash @flash_args
           cp $b/bootloader/bootloader.bin $b/partition_table/partition-table.bin $b/ota_data_initial.bin \
-             $b/airmidi.bin $b/flash_args out/flash/
+             $b/airmidi.bin out/flash/
+          # the zip is flat: drop the build's subdirectories (bootloader/, partition_table/) from the paths
+          sed -E 's#^(0x[0-9a-fA-F]+ ).*/#\1#' $b/flash_args > out/flash/flash_args
           (cd out/flash && zip -q ../airmidi-${{ matrix.board }}-usb-flash.zip *)
           rm -r out/flash
       - uses: actions/upload-artifact@v7
