@@ -8,7 +8,7 @@ jobs:
     # lib/ on the host with AddressSanitizer + UndefinedBehaviorSanitizer
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: cmake -S test -B test/build
       - run: cmake --build test/build -j
       - run: ctest --test-dir test/build --output-on-failure
@@ -16,7 +16,7 @@ jobs:
   format:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: clang-format 18.1.8 (the version .clang-format names)
         run: |
           files=$(git ls-files '*.c' '*.h' | grep -v -e '^test/unity/' -e '^spikes/')
@@ -35,7 +35,7 @@ jobs:
           - board: s3kit  # the ESP32-S3-DevKitC-1 on its own
             target: esp32s3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0  # git describe needs the tags for the version string
       - uses: espressif/esp-idf-ci-action@v1
@@ -46,7 +46,7 @@ jobs:
           # build.sh signs the image with a throwaway key it generates (CI builds are not for installing). The action
           # sets git's safe.directory itself and pastes this line into a single-quoted bash -c: no single quotes here.
           command: ./build.sh ${{ matrix.board }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: airmidi-${{ matrix.board }}
           path: |
