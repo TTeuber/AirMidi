@@ -44,6 +44,8 @@ typedef struct {
     blemidi_tx_t tx;
     volatile uint16_t mtu;  // latest ATT MTU (23 until exchanged)
     bool asked_fast;        // peripheral: our 7.5-15 ms request is pending (Apple's rules come second)
+    bool apple_range;       // the central refused 7.5-15 ms: it got Apple's range and is left alone after that
+    uint8_t fast_asks;      // 7.5-15 ms requests on this connection (Android drifts to ~50 ms after pairing)
     uint16_t tx_mtu;        // the MTU tx is sized for
     // Bus task: packets NimBLE had no buffer for yet, oldest first. 4 KB, allocated when the slot is first used and
     // kept (freeing it on a disconnect could race the bus task, which may still be flushing).
@@ -467,6 +469,16 @@ static int central_event(struct ble_gap_event *e, void *arg) {
 
 // ---- peripheral: centrals connecting to us (host task) --------------------------------------------------------
 
+// Ask for BLE MIDI's 7.5-15 ms. Android takes the slow end of whatever it is offered (26.25 ms with the Apple range
+// below, measured on a Pixel 9a) and later moves to 48.75 ms on its own (after pairing, measured), so this is asked
+// again when the interval drifts above 15 ms, up to three times per connection. Apple's accessory guidelines
+// (min >= 11.25 ms for MIDI, max >= min + 15 ms) reject it; such a central gets the compliant range once
+// (BLE_GAP_EVENT_CONN_UPDATE) and macOS's own MIDI driver picks 7.5 ms anyway.
+static void ask_fast(slot_t *s) {
+    struct ble_gap_upd_params up = {.itvl_min = 6, .itvl_max = 12, .latency = 0, .supervision_timeout = 200};
+    if (ble_gap_update_params(s->conn, &up) == 0) s->asked_fast = true, s->fast_asks++;
+}
+
 static void advertise(void);
 
 static int gap_event(struct ble_gap_event *e, void *arg) {
@@ -482,12 +494,9 @@ static int gap_event(struct ble_gap_event *e, void *arg) {
                 break;
             }
             slot_connected(s, e->connect.conn_handle);
-            // Ask for BLE MIDI's 7.5-15 ms first. Android takes the slow end of whatever it is offered (26.25 ms with
-            // the Apple-compliant range below, measured on a Pixel 9a), which is a bend every 26 ms. Apple's
-            // accessory guidelines (min >= 11.25 ms for MIDI, max >= min + 15 ms) reject this one; then the
-            // compliant range follows (BLE_GAP_EVENT_CONN_UPDATE), and macOS's own MIDI driver picks 7.5 ms anyway.
-            struct ble_gap_upd_params up = {.itvl_min = 6, .itvl_max = 12, .latency = 0, .supervision_timeout = 200};
-            s->asked_fast = ble_gap_update_params(s->conn, &up) == 0;
+            s->asked_fast = s->apple_range = false;
+            s->fast_asks = 0;
+            ask_fast(s);
             ESP_LOGI(TAG, "slot %d connected (interval %.2f ms)", (int)(s - slots), s->stats.interval_x125 * 1.25);
             advertise();  // keep advertising while a slot is free
             break;
@@ -505,11 +514,18 @@ static int gap_event(struct ble_gap_event *e, void *arg) {
         }
         case BLE_GAP_EVENT_CONN_UPDATE: {
             slot_t *s = slot_by_conn(e->conn_update.conn_handle);
-            if (s && s->asked_fast) {
+            bool answer = s && s->asked_fast;  // the answer to our request, rather than the central's own change
+            if (answer) {
                 s->asked_fast = false;
-                if (e->conn_update.status != 0) {
+                // A collision is no refusal: the central started its own update at the same moment (Android does
+                // right after the link is encrypted, measured), and it is asked again once that one settles.
+                int st = e->conn_update.status;
+                bool collision =
+                    st == BLE_HS_HCI_ERR(BLE_ERR_LMP_COLLISION) || st == BLE_HS_HCI_ERR(BLE_ERR_DIFF_TRANS_COLL);
+                if (st != 0 && !collision) {
                     ESP_LOGI(TAG, "slot %d: 7.5-15 ms refused (%d), asking for 11.25-26.25 ms", (int)(s - slots),
                              e->conn_update.status);
+                    s->apple_range = true;
                     struct ble_gap_upd_params up = {
                         .itvl_min = 9, .itvl_max = 21, .latency = 0, .supervision_timeout = 200};
                     ble_gap_update_params(s->conn, &up);
@@ -519,6 +535,8 @@ static int gap_event(struct ble_gap_event *e, void *arg) {
             if (s && ble_gap_conn_find(s->conn, &d) == 0) {
                 s->stats.interval_x125 = d.conn_itvl;
                 ESP_LOGI(TAG, "slot %d interval %.2f ms", (int)(s - slots), d.conn_itvl * 1.25);
+                if (!answer && !s->apple_range && e->conn_update.status == 0 && d.conn_itvl > 12 && s->fast_asks < 3)
+                    ask_fast(s);
             }
             break;
         }
