@@ -169,3 +169,6 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | The pairing window also opens for 2 min after a power-on | rev A has one button (8 s = Setup); power is physical access too |
 | 2026-10-24 | An LL procedure collision is no refusal; the box re-asks for 7.5-15 ms when Android drifts to 48.75 ms after pairing | measured on the Pixel 9a: back to 15 ms |
 | 2026-10-24 | A2 tried on the phone; the page follows the box only on sightings after its link died, and closes that link first | a stale BLE sighting and the replaced page's dispose both broke the follow (app commit 9fcad12) |
+| 2026-10-24 | Strips bar: box, synth, layout; synth page from the device's MIDI-CI control list; values kept per box screen | user: no way back to settings, and a page for the synth's parameters filled by MIDI-CI |
+| 2026-10-24 | Protocols: MIDI 1.0 always, standard MIDI-CI first (MIDI Message Report for current values), "X-" PE resources for custom data, no custom UMP transport for now; MPE stays | user's decision after the protocol discussion (docs/design/midi-ci.md "Protocol policy") |
+

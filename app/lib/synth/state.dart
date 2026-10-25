@@ -1,5 +1,7 @@
 // The device's controls for as long as the box screen is open, not just while the synth page is: the page shows what
-// was last sent or heard, and the device's own CCs keep moving the values while the page is closed.
+// was last sent or heard, and the device's own CCs keep moving the values while the page is closed. Where the knobs
+// really are comes from a MIDI-CI MIDI Message Report (askCurrent): the device answers with ordinary CCs and pitch
+// bend, which arrive like its knob moves.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -35,6 +37,28 @@ class SynthState extends ChangeNotifier {
       error = null;
     } catch (e) {
       error = '$e';
+    }
+    notifyListeners();
+  }
+
+  /// Ask the box to ask the device for its current values (MIDI-CI MIDI Message Report). They arrive on the link.
+  /// Older box firmware has no such endpoint, and devices without Process Inquiry say so: the values then stay
+  /// where they are (the defaults, or what was set here).
+  String? report; // the last report's outcome, for the page: "ok", "not supported", ...
+  Future<void> askCurrent() async {
+    try {
+      await config.call('POST', '/api/ci/report');
+      for (var i = 0; i < 20; i++) {
+        await Future.delayed(const Duration(milliseconds: 150));
+        final s = await config.call('GET', '/api/ci');
+        final r = s['report'] as String? ?? '';
+        if (r != 'asking' && r != '') {
+          report = r;
+          break;
+        }
+      }
+    } catch (e) {
+      report = 'not available';
     }
     notifyListeners();
   }

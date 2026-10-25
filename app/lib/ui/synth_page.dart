@@ -45,7 +45,7 @@ class _SynthPageState extends State<SynthPage> {
     super.initState();
     widget.synth.addListener(_changed);
     widget.synth.attach(widget.link);
-    widget.synth.load();
+    widget.synth.load().then((_) => widget.synth.askCurrent()); // where the knobs are now
   }
 
   @override
@@ -122,11 +122,16 @@ class _SynthPageState extends State<SynthPage> {
               child: Text('${d.hidden} controls not shown (hidden, per-note or not supported yet)',
                   style: const TextStyle(color: cGrey, fontSize: 12)),
             ),
-          const Padding(
-            padding: EdgeInsets.only(top: 14),
-            child: Text('Values start at the synth\'s defaults (MIDI-CI does not say where its knobs are) and follow '
-                'as soon as you or the synth move them. Double-tap a fader for its default.',
-                style: TextStyle(color: cGrey, fontSize: 12)),
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: Text(
+                widget.synth.report == 'ok'
+                    ? 'Values read from the synth (MIDI-CI MIDI Message Report) and kept in step with its knobs. '
+                        'Double-tap a fader for its default.'
+                    : 'This synth does not report its current values (${widget.synth.report ?? 'asking'}): they start '
+                        'at its defaults and follow as soon as you or the synth move them. Double-tap a fader for '
+                        'its default.',
+                style: const TextStyle(color: cGrey, fontSize: 12)),
           ),
         ],
       ]),
