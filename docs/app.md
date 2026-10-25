@@ -141,8 +141,8 @@ Status (2026-10-24):
   the mDNS TXT record and /api/status. Design note: `docs/design/config-over-ble.md`.
 - A2 written: one list entry per box (BLE + mDNS merged by id), box screen over BLE or HTTP (status, mode, stored
   networks, Wi-Fi setup with the box's scan, phones, settings), pairing on first use, and the page follows the box
-  when a mode change or a restart moves it to the other transport. The list merge and following are not yet tried
-  on the phone (it was locked).
+  when a mode change or a restart moves it to the other transport. Tried on the Pixel 9a: every mode change in
+  both directions and a restarting settings change followed the box; the phone re-paired through Setup mode.
 
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.
@@ -168,3 +168,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | Wi-Fi scan and try work in Play mode too (radio on for the probe only) | a phone on BLE never needs Setup mode |
 | 2026-10-24 | The pairing window also opens for 2 min after a power-on | rev A has one button (8 s = Setup); power is physical access too |
 | 2026-10-24 | An LL procedure collision is no refusal; the box re-asks for 7.5-15 ms when Android drifts to 48.75 ms after pairing | measured on the Pixel 9a: back to 15 ms |
+| 2026-10-24 | A2 tried on the phone; the page follows the box only on sightings after its link died, and closes that link first | a stale BLE sighting and the replaced page's dispose both broke the follow (app commit 9fcad12) |
