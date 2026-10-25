@@ -1,0 +1,57 @@
+// The device's controls for as long as the box screen is open, not just while the synth page is: the page shows what
+// was last sent or heard, and the device's own CCs keep moving the values while the page is closed.
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import '../link/config.dart';
+import '../link/link.dart';
+import 'controls.dart';
+
+class SynthState extends ChangeNotifier {
+  final ConfigClient config;
+  Device? device;
+  String? error;
+  MidiLink? _link;
+  StreamSubscription<List<int>>? _sub;
+
+  SynthState(this.config);
+
+  /// The control list, read once; [force] reads it again (after a rescan) and keeps the values of the controls that
+  /// are still there.
+  Future<void> load({bool force = false}) async {
+    if (device != null && !force) return;
+    try {
+      final fresh = Device.fromApi(await config.call('GET', '/api/ci/device'));
+      final old = device;
+      if (old != null) {
+        for (final c in fresh.controls) {
+          for (final o in old.controls) {
+            if (o.type == c.type && o.channel == c.channel && listEquals(o.index, c.index)) c.value = o.value;
+          }
+        }
+      }
+      device = fresh;
+      error = null;
+    } catch (e) {
+      error = '$e';
+    }
+    notifyListeners();
+  }
+
+  /// Follow what arrives on [link] (the strips page's link; a new one replaces the old).
+  void attach(MidiLink link) {
+    if (identical(link, _link)) return;
+    _sub?.cancel();
+    _link = link;
+    _sub = link.incoming.listen((m) {
+      if (device?.receive(m) == true) notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+}

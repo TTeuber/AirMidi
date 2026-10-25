@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../link/config.dart';
 import '../link/link.dart';
+import '../synth/state.dart';
 import 'strips_page.dart';
 
 /// Finds the box again on BLE or Wi-Fi after it left the link this page uses, and returns its page (null: not found).
@@ -40,6 +41,7 @@ class _BoxPageState extends State<BoxPage> {
   Timer? poll;
 
   ConfigClient get api => widget.config;
+  late final synth = SynthState(widget.config); // the device's control values, kept while this page is open
 
   @override
   void initState() {
@@ -61,6 +63,7 @@ class _BoxPageState extends State<BoxPage> {
 
   @override
   void dispose() {
+    synth.dispose();
     _close();
     super.dispose();
   }
@@ -172,7 +175,7 @@ class _BoxPageState extends State<BoxPage> {
               final link = await widget.midi();
               if (!context.mounted) return;
               await Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => StripsPage(link: link, config: api)));
+                  .push(MaterialPageRoute(builder: (_) => StripsPage(link: link, synth: synth)));
             } catch (e) {
               setState(() => error = '$e');
             }

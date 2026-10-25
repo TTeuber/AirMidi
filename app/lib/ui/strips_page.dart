@@ -6,10 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-import '../link/config.dart';
 import '../link/link.dart';
 import '../play/player.dart';
 import '../strips/strips.dart';
+import '../synth/state.dart';
 import 'synth_page.dart';
 
 const cBg = Color(0xFF090C0F), cN = Color(0xFFA5B0B6), cGrey = Color(0xFF636363), cAc = Color(0xFFE9C944);
@@ -34,8 +34,8 @@ class Settings {
 
 class StripsPage extends StatefulWidget {
   final MidiLink? link;
-  final ConfigClient? config; // for the synth page (the box's MIDI-CI device); null without a box
-  const StripsPage({super.key, this.link, this.config});
+  final SynthState? synth; // the box's MIDI-CI device, for the synth page; null without a box
+  const StripsPage({super.key, this.link, this.synth});
 
   @override
   State<StripsPage> createState() => _StripsPageState();
@@ -63,6 +63,8 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
     final l = widget.link;
     if (l != null) {
       player.attach(l, s.count).catchError((e) => setState(() => player.lastError = '$e'));
+      widget.synth?.attach(l); // the device's knobs move its values while the synth page is closed, too
+      widget.synth?.load();
     }
     statsTimer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
   }
@@ -166,7 +168,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
             height: _barH,
             child: Row(children: [
               _barButton('box', () => Navigator.of(context).maybePop()),
-              _barButton('synth', _openSynth, enabled: widget.config != null && widget.link != null),
+              _barButton('synth', _openSynth, enabled: widget.synth != null && widget.link != null),
               _barButton(showSettings ? 'done' : 'layout', () => setState(() => showSettings = !showSettings)),
             ]),
           ),
@@ -182,7 +184,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
     setState(() => showSettings = false);
     player.handleAll(strings.clear()); // fingers off the strips while the page is up
     await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => SynthPage(config: widget.config!, link: widget.link!)));
+        .push(MaterialPageRoute(builder: (_) => SynthPage(synth: widget.synth!, link: widget.link!)));
   }
 
   // A third of the bar each; the whole bar height responds, not just the word.

@@ -1,75 +1,76 @@
 // The synth behind the box: its controls as its MIDI-CI control list describes them (read by the box over TRS), drawn
-// as faders, pickers and toggles. Moving one sends its CC through the box; the synth's own knobs move them back.
+// as faders, pickers and toggles. Moving one sends its CC through the box; the synth's own knobs move them back. The
+// values live in SynthState (owned by the box screen), so they are still there the next time the page opens.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../link/config.dart';
 import '../link/link.dart';
 import '../synth/controls.dart';
+import '../synth/state.dart';
 import 'strips_page.dart';
 
 class SynthPage extends StatefulWidget {
-  final ConfigClient config;
+  final SynthState synth;
   final MidiLink link;
-  const SynthPage({super.key, required this.config, required this.link});
+  const SynthPage({super.key, required this.synth, required this.link});
 
   @override
   State<SynthPage> createState() => _SynthPageState();
 }
 
 class _SynthPageState extends State<SynthPage> {
-  Device? device;
-  String? message;
+  String? scanMessage;
   bool scanning = false;
-  StreamSubscription<List<int>>? sub;
   final dirty = <Control>{};
   Timer? sendTimer;
+
+  Device? get device => widget.synth.device;
+
+  String? get message {
+    if (scanMessage != null) return scanMessage;
+    if (widget.synth.error != null) return widget.synth.error;
+    if (device != null && device!.controls.isEmpty) {
+      return 'No controls: the box has not found a MIDI-CI device on its TRS jacks. Check the cables and rescan.';
+    }
+    return null;
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
+  }
 
   @override
   void initState() {
     super.initState();
-    _load();
-    sub = widget.link.incoming.listen((m) {
-      if (device?.receive(m) == true && mounted) setState(() {});
-    });
+    widget.synth.addListener(_changed);
+    widget.synth.attach(widget.link);
+    widget.synth.load();
   }
 
   @override
   void dispose() {
-    sub?.cancel();
+    widget.synth.removeListener(_changed);
     sendTimer?.cancel();
     _flush();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    try {
-      final d = Device.fromApi(await widget.config.call('GET', '/api/ci/device'));
-      setState(() {
-        device = d;
-        message = d.controls.isEmpty
-            ? 'No controls: the box has not found a MIDI-CI device on its TRS jacks. Check the cables and rescan.'
-            : null;
-      });
-    } catch (e) {
-      setState(() => message = '$e');
-    }
-  }
-
   // Ask the box to read the device again (Discovery + Property Exchange over TRS, under a second).
   Future<void> _rescan() async {
-    setState(() => (scanning = true, message = 'asking the device on TRS'));
+    setState(() => (scanning = true, scanMessage = 'asking the device on TRS'));
     try {
-      await widget.config.call('POST', '/api/ci/scan', {'force': true});
+      final api = widget.synth.config;
+      await api.call('POST', '/api/ci/scan', {'force': true});
       for (var i = 0; i < 40; i++) {
         await Future.delayed(const Duration(milliseconds: 250));
-        final s = await widget.config.call('GET', '/api/ci');
+        final s = await api.call('GET', '/api/ci');
         if (s['scanning'] != true) break;
       }
-      await _load();
+      scanMessage = null;
+      await widget.synth.load(force: true);
     } catch (e) {
-      setState(() => message = '$e');
+      scanMessage = '$e';
     } finally {
       if (mounted) setState(() => scanning = false);
     }
@@ -149,12 +150,14 @@ class _SynthPageState extends State<SynthPage> {
               child: Stack(children: [
                 Container(color: stripHues[0].base.withValues(alpha: 0.18)),
                 FractionallySizedBox(widthFactor: d.fraction(c), child: Container(color: stripHues[0].base)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(children: [
-                    Expanded(child: Text(c.title, style: const TextStyle(color: cN, fontSize: 15))),
-                    Text(d.shown(c), style: const TextStyle(color: cN, fontSize: 15)),
-                  ]),
+                Positioned.fill(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(children: [
+                      Expanded(child: Text(c.title, style: const TextStyle(color: cN, fontSize: 15))),
+                      Text(d.shown(c), style: const TextStyle(color: cN, fontSize: 15)),
+                    ]),
+                  ),
                 ),
               ]),
             ),
@@ -192,15 +195,15 @@ class _SynthPageState extends State<SynthPage> {
   Widget _cell(String label, bool on, VoidCallback onTap) =>
       GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: _box(label, on, minWidth: 64));
 
+  // As wide as its label (a set alignment would stretch it across the whole row inside a Wrap).
   Widget _box(String label, bool on, {double minWidth = 96}) => Container(
         constraints: BoxConstraints(minWidth: minWidth),
         height: 44,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: on ? stripHues[2].base : Colors.transparent,
           border: Border.all(color: on ? stripHues[2].base : cGrey),
         ),
-        child: Text(label, style: TextStyle(color: on ? cBg : cN, fontSize: 14)),
+        child: Center(widthFactor: 1, child: Text(label, style: TextStyle(color: on ? cBg : cN, fontSize: 14))),
       );
 }
