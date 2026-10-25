@@ -116,5 +116,8 @@ steps of a BLE link do not zipper. Checked in `host/test.cpp` ("mpe").
 A UART error (the box resetting, a cable plugged in while running) used to stop MIDI IN for good while the audio
 went on: libDaisy only learns of the error once the HAL's DMA abort completes, which it did not, so it kept
 "listening" to a dead UART. The main loop now checks the UART's DMA request bit and restarts listening when it is
-off (`KeepListening` in src/main.cpp; `dbg.rxRestarts` counts it). Checked over SWD by clearing the DMA request
-bit while notes arrive: one restart per forced overrun, notes play again right after.
+off (`KeepListening` in src/main.cpp; `dbg.rxRestarts` counts it). It sets the UART up again before listening:
+after some errors (a framing error, seen) the HAL's receive state stays "busy" with the DMA request already cleared,
+and a plain stop and start is refused forever. Checked over SWD: clearing the DMA request bit with the line idle
+(the stuck-busy case) and with notes arriving (an overrun) each gives one restart, and notes play right after. In a
+session of box mode changes and restarts it recovered ten times by itself.

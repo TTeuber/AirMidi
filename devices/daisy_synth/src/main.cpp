@@ -35,6 +35,7 @@ syn::Synth                           synth;
 syn::Device                          device;
 CpuLoadMeter                         cpu;
 UartHandler                          uart;
+UartHandler::Config                  uartConfig; // kept: KeepListening sets the UART up again with it
 ShiftRegister4021<2>                 buttons;
 LedDriverPca9685<1, true>            leds;
 LedDriverPca9685<1, true>::DmaBuffer DMA_BUFFER_MEM_SECTION ledBufA, ledBufB;
@@ -93,8 +94,10 @@ void RxCallback(uint8_t* data, size_t size, void*, UartHandler::Result res)
 // box resetting, a cable plugged in while running): found 2026-10-24 with overrun + noise flags set, DMA receive
 // off, 7540 bytes in and then nothing, audio still running. So the main loop looks at the UART itself, and when its
 // DMA request is off it stops and starts listening again. A byte or two of the glitch is lost, nothing after it.
-// The new start is refused while the aborted DMA stream is still busy (thousands of tries in a row, measured), so
-// tries are 2 ms apart and only a start that took is counted.
+// Stopping and starting the listener is not enough: HAL_UART_DMAStop resets the HAL's receive state only while the
+// DMA request bit is still set, and the error has already cleared it, so every new start was refused as busy (seen
+// after a framing error). Setting the UART up again resets all of the HAL's state. Tries are 2 ms apart; only a
+// start that took is counted.
 void KeepListening()
 {
     static uint32_t lastTry = 0;
@@ -104,8 +107,9 @@ void KeepListening()
     if(us - lastTry < 2000)
         return;
     lastTry = us;
-    uart.DmaListenStop(); // stops the DMA, puts the HAL's receive state back to ready
+    uart.DmaListenStop();
     USART1->ICR = USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_FECF | USART_ICR_PECF;
+    uart.Init(uartConfig);
     if(uart.DmaListenStart(rxDma, sizeof(rxDma), RxCallback, nullptr) == UartHandler::Result::OK)
         dbg.rxRestarts = dbg.rxRestarts + 1;
 }
@@ -163,12 +167,12 @@ void AudioCallback(AudioHandle::InputBuffer, AudioHandle::OutputBuffer out, size
 
 void InitHardware()
 {
-    UartHandler::Config uc;
-    uc.periph        = UartHandler::Config::Peripheral::USART_1;
-    uc.mode          = UartHandler::Config::Mode::TX_RX;
-    uc.baudrate      = 31250;
-    uc.pin_config.tx = seed::D13;
-    uc.pin_config.rx = seed::D14;
+    UartHandler::Config& uc = uartConfig;
+    uc.periph               = UartHandler::Config::Peripheral::USART_1;
+    uc.mode                 = UartHandler::Config::Mode::TX_RX;
+    uc.baudrate             = 31250;
+    uc.pin_config.tx        = seed::D13;
+    uc.pin_config.rx        = seed::D14;
     uart.Init(uc);
     uart.DmaListenStart(rxDma, sizeof(rxDma), RxCallback, nullptr);
 
