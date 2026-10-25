@@ -135,6 +135,15 @@ and runs the same screens over HTTP. Only built if BLE setup turns out unreliabl
 - **A5 app:** MIDI-CI control page drawn natively from `/api/ci/device`; firmware update: the box fetches it on
   Wi-Fi, or the phone downloads the signed release from GitHub and pushes it over `ble_update` in Play mode.
 
+Status (2026-10-24):
+- A0 done: plays well on the Pixel 9a; stuck notes and the slow interval found and fixed (decision log).
+- A1 done except two items: the `id` in mDNS TXT / scan response (needed once A2 merges BLE and Wi-Fi sightings),
+  and a run of `tools/hil/ble_config_test.py` (written; the Mac's Bluetooth was off, so the service was tested from
+  the phone instead). Design note: `docs/design/config-over-ble.md`.
+- A2 in part: box screen over BLE or HTTP (status, mode, stored networks, Wi-Fi setup with the box's scan, phones),
+  pairing on first use. Still to do: settings editing, BLE and mDNS sightings merged, following the box into
+  Network mode (today: reconnect by address).
+
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.
 
@@ -155,3 +164,7 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | A0 on the hardware: works, plays well; stuck notes came from the app resending the MPE zone setup (24 CCs) on every layout slider tick, which overflowed the box's TRS queue (3 207 dropped) | setup only when the strip count changes; 8 ms between batches; the box's merge now coalesces bends/pressure/CCs (docs/design/transports.md) |
 | 2026-10-24 | The box asks for 7.5-15 ms first, Apple's 11.25-26.25 ms only if refused | the Pixel 9a took 26.25 ms from the Apple range |
 | 2026-10-24 | Layout button: whole bar height, 112 px wide; key picked from 12 cells | user: the button was hard to hit, "key +" only stepped |
+| 2026-10-24 | One API for HTTP and BLE (`components/api`), a GATT service carrying it (`ble_config`, framing in `lib/blecfg.c`), trusted phones + pairing window | design note config-over-ble.md; ESP-IDF's wifi_provisioning would bring a second BLE setup and cover Wi-Fi only |
+| 2026-10-24 | Wi-Fi scan and try work in Play mode too (radio on for the probe only) | a phone on BLE never needs Setup mode |
+| 2026-10-24 | The pairing window also opens for 2 min after a power-on | rev A has one button (8 s = Setup); power is physical access too |
+| 2026-10-24 | An LL procedure collision is no refusal; the box re-asks for 7.5-15 ms when Android drifts to 48.75 ms after pairing | measured on the Pixel 9a: back to 15 ms |
