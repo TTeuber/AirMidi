@@ -23,6 +23,15 @@ task. The bus task:
 encoded message the bus leaves the rest in the output's merge queue, which is bounded and counts its overflow. The
 transports themselves never block and only drop in a case the bus should prevent.
 
+**Latest value wins.** A source can send faster than an output carries: the app's pedal steel strips send a pitch
+bend per strip every few ms, TRS carries ~1000 messages/s. Waiting values are coalesced in the merge queue (pitch
+bend, channel and poly pressure, ordinary controllers): a new one replaces the queued one for the same channel from
+the same source, unless another message for that channel came between them (a note on in between would start at
+the wrong bend). Bank select, RPN/NRPN and channel mode controllers only mean something in order and are never
+merged. Before this (2026-10-24) a flood of 6 360 messages in 5 s overflowed the TRS queue, dropped 3 207
+messages, note offs among them, and left notes hanging; now a bend flood never drops a note off (`test_merge.c`).
+The console's port line shows `coalesced`.
+
 Port up/down changes go through the same queue, so only the bus task touches the merges and a port coming up is
 ordered with the traffic around it (an `on_up` hook resets the transport's send state there). Priority 15, above
 the transports' own tasks: a burst arriving is routed before more piles up behind it.

@@ -71,6 +71,7 @@ static void deliver(int port, int src, const ump_t *u, uint32_t now) {
     uint32_t before = o->merge->dropped;
     merge_push(o->merge, src, u, now);
     o->stats.dropped += o->merge->dropped - before;
+    o->stats.coalesced = o->merge->coalesced;
     // Drain right away rather than after the whole batch: a long SysEx is hundreds of UMPs, more than the merge
     // queue holds. Writes only fill the transport's buffer; the BLE packet still goes out once, at flush time.
     drain_one(o, now);

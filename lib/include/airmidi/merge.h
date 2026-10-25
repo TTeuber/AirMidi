@@ -6,6 +6,13 @@
 //   - if it does not end within the timeout, it is closed (an empty END, which the encoder turns into F7), the
 //     rest of that SysEx is dropped when it comes, and the queue moves on.
 // Bounded queues; overflow is dropped and counted, never blocks the caller.
+//
+// Values that only matter as their latest state (pitch bend, channel and poly pressure, ordinary controllers) are
+// coalesced: a new one replaces the one still queued for the same channel (and note or controller) from the same
+// source, in place, as long as no other message for that channel lies between them. A slow output (TRS at 31250
+// baud carries ~1000 messages/s) then sends fewer, newer values instead of falling behind and dropping note offs.
+// Controllers that only mean something in sequence (bank select, RPN/NRPN select and data entry, channel mode) are
+// never coalesced.
 #pragma once
 
 #include <stdbool.h>
@@ -36,6 +43,7 @@ typedef struct {
     uint16_t timeout_ms;
     uint32_t dropped;  // queue overflow + rest of timed-out SysEx
     uint32_t timeouts;
+    uint32_t coalesced;  // values replaced by a newer one before they were written
 } merge_t;
 
 void merge_init(merge_t *m, uint16_t timeout_ms);

@@ -166,8 +166,8 @@ static void print_status(void) {
         bus_port_stats_t s;
         bus_get_stats(p, &s);
         if (s.in || s.out || s.dropped)
-            printf("port %s: in %lu, out %lu, dropped %lu\n", names[p], (unsigned long)s.in, (unsigned long)s.out,
-                   (unsigned long)s.dropped);
+            printf("port %s: in %lu, out %lu, dropped %lu, coalesced %lu\n", names[p], (unsigned long)s.in,
+                   (unsigned long)s.out, (unsigned long)s.dropped, (unsigned long)s.coalesced);
     }
     espnow_midi_info_t en;
     espnow_midi_get_info(&en);

@@ -29,6 +29,7 @@ typedef struct {
 
 typedef struct {
     uint32_t in, out, dropped;  // messages received from / written to the port, dropped on the way out
+    uint32_t coalesced;         // values replaced by a newer one while the output was busy (lib/merge)
 } bus_port_stats_t;
 
 // Start the bus task. The route matrix starts as router_init()'s default (everything to everything else).

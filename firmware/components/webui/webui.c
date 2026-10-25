@@ -186,6 +186,7 @@ static esp_err_t get_status(httpd_req_t *req) {
         cJSON_AddNumberToObject(p, "in", ps.in);
         cJSON_AddNumberToObject(p, "out", ps.out);
         cJSON_AddNumberToObject(p, "dropped", ps.dropped);
+        cJSON_AddNumberToObject(p, "coalesced", ps.coalesced);
         cJSON_AddBoolToObject(p, "up", bus_is_up(shown[i].port));
         cJSON_AddItemToArray(ports, p);
     }

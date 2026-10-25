@@ -217,6 +217,85 @@ static void test_random_interleaving_keeps_every_sysex_whole(void) {
     }
 }
 
+// A slow output: values coalesce to the newest per channel, in place; notes are never merged or reordered.
+static void test_bends_coalesce_per_channel(void) {
+    merge_init(&m, 500);
+    push(0, ump_m1_cv(0, 0xE1, 0, 64), 0);
+    push(0, ump_m1_cv(0, 0xE2, 0, 64), 0);  // another channel: its own value
+    push(0, ump_m1_cv(0, 0xE1, 10, 65), 0);
+    push(0, ump_m1_cv(0, 0xE1, 20, 66), 0);
+    push(0, ump_m1_cv(0, 0xE2, 5, 70), 0);
+    expect(ump_m1_cv(0, 0xE1, 20, 66), 0);  // the newest value, in the first one's place
+    expect(ump_m1_cv(0, 0xE2, 5, 70), 0);
+    expect_empty(0);
+    TEST_ASSERT_EQUAL(3, m.coalesced);
+}
+
+static void test_no_coalescing_across_a_note_on_the_same_channel(void) {
+    merge_init(&m, 500);
+    push(0, ump_m1_cv(0, 0xE1, 0, 70), 0);     // bend for the note
+    push(0, ump_m1_cv(0, 0x91, 50, 100), 0);  // note on
+    push(0, ump_m1_cv(0, 0xE1, 0, 72), 0);     // must stay after the note on
+    push(0, ump_m1_cv(0, 0x81, 50, 0), 0);
+    push(0, ump_m1_cv(0, 0xE1, 0, 64), 0);     // bend for the next note
+    push(0, ump_m1_cv(0, 0xE1, 0, 66), 0);     // coalesces with the one just before
+    expect(ump_m1_cv(0, 0xE1, 0, 70), 0);
+    expect(ump_m1_cv(0, 0x91, 50, 100), 0);
+    expect(ump_m1_cv(0, 0xE1, 0, 72), 0);
+    expect(ump_m1_cv(0, 0x81, 50, 0), 0);
+    expect(ump_m1_cv(0, 0xE1, 0, 66), 0);
+    expect_empty(0);
+    TEST_ASSERT_EQUAL(1, m.coalesced);
+}
+
+static void test_other_channels_in_between_do_not_block(void) {
+    merge_init(&m, 500);
+    push(0, ump_m1_cv(0, 0xE1, 0, 70), 0);
+    push(0, ump_m1_cv(0, 0x92, 55, 100), 0);  // channel 3: unrelated
+    push(0, ump_m1_cv(0, 0xE1, 0, 71), 0);
+    expect(ump_m1_cv(0, 0xE1, 0, 71), 0);
+    expect(ump_m1_cv(0, 0x92, 55, 100), 0);
+    expect_empty(0);
+}
+
+static void test_sources_and_sequenced_controllers_are_kept(void) {
+    merge_init(&m, 500);
+    push(0, ump_m1_cv(0, 0xE0, 0, 70), 0);
+    push(1, ump_m1_cv(0, 0xE0, 0, 71), 0);  // another source: not merged into source 0's value
+    push(0, ump_m1_cv(0, 0xB0, 101, 0), 0);  // RPN select + data entry: every one counts
+    push(0, ump_m1_cv(0, 0xB0, 100, 0), 0);
+    push(0, ump_m1_cv(0, 0xB0, 6, 48), 0);
+    push(0, ump_m1_cv(0, 0xB0, 6, 12), 0);
+    push(0, ump_m1_cv(0, 0xB0, 7, 10), 0);  // volume: a value
+    push(0, ump_m1_cv(0, 0xB0, 7, 90), 0);
+    push(0, ump_m1_cv(0, 0xB0, 10, 64), 0);  // pan: another controller, kept
+    expect(ump_m1_cv(0, 0xE0, 0, 70), 0);
+    expect(ump_m1_cv(0, 0xE0, 0, 71), 0);
+    expect(ump_m1_cv(0, 0xB0, 101, 0), 0);
+    expect(ump_m1_cv(0, 0xB0, 100, 0), 0);
+    expect(ump_m1_cv(0, 0xB0, 6, 48), 0);
+    expect(ump_m1_cv(0, 0xB0, 6, 12), 0);
+    expect(ump_m1_cv(0, 0xB0, 7, 90), 0);
+    expect(ump_m1_cv(0, 0xB0, 10, 64), 0);
+    expect_empty(0);
+}
+
+static void test_a_bend_flood_never_drops_a_note_off(void) {
+    merge_init(&m, 500);
+    for (int i = 0; i < 1000; i++) {  // the output writes nothing meanwhile
+        push(0, ump_m1_cv(0, 0xE1, i & 0x7F, 64), 0);
+        push(0, ump_m1_cv(0, 0xE2, i & 0x7F, 64), 0);
+        push(0, ump_m1_cv(0, 0xE3, i & 0x7F, 64), 0);
+    }
+    push(0, ump_m1_cv(0, 0x81, 50, 0), 0);
+    TEST_ASSERT_EQUAL(0, m.dropped);
+    expect(ump_m1_cv(0, 0xE1, 999 & 0x7F, 64), 0);
+    expect(ump_m1_cv(0, 0xE2, 999 & 0x7F, 64), 0);
+    expect(ump_m1_cv(0, 0xE3, 999 & 0x7F, 64), 0);
+    expect(ump_m1_cv(0, 0x81, 50, 0), 0);
+    expect_empty(0);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_passes_through_in_order);
@@ -227,5 +306,10 @@ int main(void) {
     RUN_TEST(test_timeout_closes_sysex_and_drops_its_rest);
     RUN_TEST(test_overflow_is_counted_not_blocking);
     RUN_TEST(test_random_interleaving_keeps_every_sysex_whole);
+    RUN_TEST(test_bends_coalesce_per_channel);
+    RUN_TEST(test_no_coalescing_across_a_note_on_the_same_channel);
+    RUN_TEST(test_other_channels_in_between_do_not_block);
+    RUN_TEST(test_sources_and_sequenced_controllers_are_kept);
+    RUN_TEST(test_a_bend_flood_never_drops_a_note_off);
     return UNITY_END();
 }

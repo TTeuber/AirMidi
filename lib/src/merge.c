@@ -10,7 +10,53 @@ void merge_init(merge_t *m, uint16_t timeout_ms) {
 
 static bool is_real_time(const ump_t *u) { return ump_mt(u) == UMP_MT_SYSTEM && ump_status(u) >= 0xF8; }
 
+// Channel voice messages whose latest value is all that counts. key: what a newer one replaces (status with
+// channel, plus the note or controller where there is one). 0 = not coalescable. MIDI 1.0 (MT 2) and MIDI 2.0
+// (MT 4) channel voice share the status byte's place in the first word.
+static uint32_t value_key(const ump_t *u) {
+    uint8_t mt = ump_mt(u);
+    if (mt != UMP_MT_M1_CV && mt != UMP_MT_M2_CV) return 0;
+    uint32_t w = u->w[0] & 0x0FFFFF00;  // group, status + channel, note / controller
+    switch (ump_status(u) & 0xF0) {
+        case 0xE0:  // pitch bend
+        case 0xD0:  // channel pressure
+            return (w & 0x0FFF0000) | 1;
+        case 0xA0:  // poly pressure: per note
+            return w | 1;
+        case 0xB0: {
+            uint8_t cc = ump_byte3(u);
+            bool sequenced = cc == 0 || cc == 32 || cc == 6 || cc == 38 || (cc >= 96 && cc <= 101) || cc >= 120;
+            return sequenced ? 0 : (w | 1);
+        }
+    }
+    return 0;
+}
+
+static bool same_channel(const ump_t *a, const ump_t *b) {
+    uint8_t ma = ump_mt(a), mb = ump_mt(b);
+    bool cv_a = ma == UMP_MT_M1_CV || ma == UMP_MT_M2_CV, cv_b = mb == UMP_MT_M1_CV || mb == UMP_MT_M2_CV;
+    return cv_a && cv_b && ((a->w[0] ^ b->w[0]) & 0x0F0F0000) == 0;  // group and channel
+}
+
+// Replace the newest queued value with the same key from the same source, if nothing for that channel from that
+// source came after it (a note on in between would then start at the newer bend, or a note off lose its place).
+static bool coalesce(merge_item_t *q, int n, int src, const ump_t *u) {
+    uint32_t key = value_key(u);
+    if (!key) return false;
+    for (int i = n - 1; i >= 0; i--) {
+        if (q[i].src != src || !same_channel(&q[i].u, u)) continue;
+        if (value_key(&q[i].u) != key) return false;
+        q[i].u = *u;
+        return true;
+    }
+    return false;
+}
+
 static void append(merge_t *m, merge_item_t *q, int *n, int src, const ump_t *u) {
+    if (coalesce(q, *n, src, u)) {
+        m->coalesced++;
+        return;
+    }
     if (*n == MERGE_QUEUE) {
         m->dropped++;
         return;
