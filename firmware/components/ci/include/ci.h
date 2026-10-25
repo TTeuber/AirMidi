@@ -21,6 +21,8 @@ typedef struct {
     char device[32];     // identity key of the device found ("" if none): manufacturer-family-model-version, hex
     const char *source;  // where the control list comes from: "midi-ci", "cache", "profile" or "" (none)
     uint32_t dropped;    // MIDI-CI messages lost between the bus and the CI task
+    const char *report;  // of the last MIDI Message Report: "" before the first, "asking", "ok", "refused",
+                         // "timeout", "not supported" (the device does not do Process Inquiry), "no device"
 } ci_status_t;
 
 // Mount the storage partition, register PORT_CI and start the CI task; the first scan runs 2 s after boot.
@@ -28,6 +30,10 @@ void ci_start(void);
 
 // Ask the device again (button short press, web UI). force: read everything even if the device is cached.
 void ci_scan(bool force);
+
+// Ask the device for a MIDI Message Report (M2-101 9): its current values come back over TRS as ordinary MIDI
+// messages, which the bus routes like any others (to the web page, a phone, ...). Runs once no scan is in progress.
+void ci_report(void);
 
 void ci_get_status(ci_status_t *out);
 

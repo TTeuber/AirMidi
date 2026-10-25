@@ -98,6 +98,27 @@ static void on_get(midici_responder_t *r, const midici_msg_t *m) {
         reply(r, m->src, pe.request_id, "{\"status\":404}", NULL, 0);
 }
 
+void midici_responder_set_report(midici_responder_t *r, uint8_t types, midici_report_fn fn) {
+    r->report_types = types;
+    r->report = fn;
+}
+
+// Inquiry: MIDI Message Report. The Reply names the requested types the device will send (never more), then the
+// values themselves, then the End; one Begin/End for a whole function block, not one per channel (M2-101 9.6).
+static void on_report(midici_responder_t *r, const midici_msg_t *m) {
+    midici_report_t q;
+    if (!midici_parse_report(m, &q)) return;
+    uint8_t types = q.channel & r->report_types;
+    size_t k = midici_report_reply(r->out, m->device_id, r->muid, m->src, 0, types, 0);
+    r->send(r->ctx, r->out, k);
+    if (types && q.data_control != MIDICI_REPORT_NONE) {
+        int channel = m->device_id <= 0x0F ? m->device_id : -1;
+        r->report(r->ctx, channel, types, q.data_control == MIDICI_REPORT_CHANGED);
+    }
+    k = midici_report_end(r->out, m->device_id, r->muid, m->src);
+    r->send(r->ctx, r->out, k);
+}
+
 void midici_responder_receive(midici_responder_t *r, const uint8_t *sx, size_t n) {
     midici_msg_t m;
     if (!midici_parse(sx, n, &m) || m.src == r->muid) return;
@@ -105,8 +126,8 @@ void midici_responder_receive(midici_responder_t *r, const uint8_t *sx, size_t n
         midici_discovery_t d;
         if (!midici_parse_discovery(&m, &d)) return;
         remember(r, m.src, d.max_sysex);
-        size_t k = midici_discovery_reply(r->out, r->muid, m.src, &r->ident, MIDICI_CAT_PE, MIDICI_RESPONDER_OUT,
-                                          d.output_path);
+        uint8_t cats = MIDICI_CAT_PE | (r->report ? MIDICI_CAT_PROCESS : 0);
+        size_t k = midici_discovery_reply(r->out, r->muid, m.src, &r->ident, cats, MIDICI_RESPONDER_OUT, d.output_path);
         r->send(r->ctx, r->out, k);
         return;
     }
@@ -125,13 +146,21 @@ void midici_responder_receive(midici_responder_t *r, const uint8_t *sx, size_t n
         case MIDICI_PE_GET:
             on_get(r, &m);
             break;
+        case MIDICI_PI_CAPS:
+            if (!r->report) goto nak;
+            k = midici_pi_caps_reply(r->out, r->muid, m.src, MIDICI_PI_MESSAGE_REPORT);
+            r->send(r->ctx, r->out, k);
+            break;
+        case MIDICI_REPORT:
+            if (!r->report) goto nak;
+            on_report(r, &m);
+            break;
         case 0x20:  // Profile Inquiry
         case 0x22:  // Set Profile On
         case 0x23:  // Set Profile Off
         case 0x36:  // Set Property Data
         case 0x38:  // Subscription
-        case 0x40:  // Process Inquiry Capabilities
-        case 0x41:  // MIDI Message Report
+        nak:
             k = midici_ack_nak(r->out, MIDICI_NAK, r->muid, m.src, m.sub2, MIDICI_NAK_NOT_SUPPORTED, 0,
                                m.sub2 >= 0x30 && m.sub2 < 0x40 && m.len ? m.data[0] : 0);
             r->send(r->ctx, r->out, k);

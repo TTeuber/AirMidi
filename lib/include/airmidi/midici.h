@@ -1,4 +1,5 @@
-// MIDI-CI (M2-101) messages: building and parsing the ones airmidi uses, Discovery and Property Exchange (M2-103).
+// MIDI-CI (M2-101) messages: building and parsing the ones airmidi uses, Discovery, Property Exchange (M2-103) and
+// Process Inquiry's MIDI Message Report (M2-101 9: a device reports its current values as ordinary MIDI messages).
 // Messages here are SysEx *contents*: the bytes between F0 and F7, starting with 7E. Multi-byte fields are 7-bit,
 // LSB first; a MUID is 28 bits in four bytes.
 #pragma once
@@ -26,7 +27,27 @@ enum {
     MIDICI_PE_CAPS_REPLY = 0x31,
     MIDICI_PE_GET = 0x34,
     MIDICI_PE_GET_REPLY = 0x35,
+    MIDICI_PI_CAPS = 0x40,        // Inquiry: Process Inquiry Capabilities
+    MIDICI_PI_CAPS_REPLY = 0x41,  // Reply to Process Inquiry Capabilities
+    MIDICI_REPORT = 0x42,         // Inquiry: MIDI Message Report
+    MIDICI_REPORT_REPLY = 0x43,   // Reply to MIDI Message Report (begin)
+    MIDICI_REPORT_END = 0x44,     // End of MIDI Message Report
 };
+
+// Process Inquiry Supported Features (M2-101 table 42).
+enum { MIDICI_PI_MESSAGE_REPORT = 1 << 0 };
+
+// MIDI Message Report: channel controller message types (M2-101 table 43) and Message Data Control (table 44).
+enum {
+    MIDICI_REPORT_PITCHBEND = 1 << 0,
+    MIDICI_REPORT_CC = 1 << 1,
+    MIDICI_REPORT_RPN = 1 << 2,
+    MIDICI_REPORT_NRPN = 1 << 3,
+    MIDICI_REPORT_PROGRAM = 1 << 4,
+    MIDICI_REPORT_CHPRESS = 1 << 5,
+};
+enum { MIDICI_REPORT_NONE = 0x00, MIDICI_REPORT_CHANGED = 0x01, MIDICI_REPORT_FULL = 0x7F };
+#define MIDICI_DEVICE_FUNCTION_BLOCK 0x7F  // device id: the whole function block (all channels)
 
 enum { MIDICI_CAT_PROFILES = 1 << 2, MIDICI_CAT_PE = 1 << 3, MIDICI_CAT_PROCESS = 1 << 4 };
 
@@ -85,6 +106,22 @@ typedef struct {
     const uint8_t *data;
     size_t data_len;
 } midici_pe_t;
+
+// Process Inquiry. Device id: a channel 0x00-0x0F, or MIDICI_DEVICE_FUNCTION_BLOCK.
+size_t midici_pi_caps(uint8_t *out, uint32_t src, uint32_t dst);                                    // 13 bytes
+size_t midici_pi_caps_reply(uint8_t *out, uint32_t src, uint32_t dst, uint8_t features);            // 14 bytes
+size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t data_control,
+                     uint8_t system, uint8_t channel, uint8_t note);                                 // 18 bytes
+size_t midici_report_reply(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t system,
+                           uint8_t channel, uint8_t note);                                           // 17 bytes
+size_t midici_report_end(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst);               // 13 bytes
+
+// An Inquiry: MIDI Message Report (data_control set) or its Reply (data_control 0xFF: the reply has none).
+typedef struct {
+    uint8_t data_control, system, channel, note;
+} midici_report_t;
+
+bool midici_parse_report(const midici_msg_t *m, midici_report_t *out);
 
 // The Property Exchange fields of a Get inquiry or reply. False if malformed.
 bool midici_parse_pe(const midici_msg_t *m, midici_pe_t *out);

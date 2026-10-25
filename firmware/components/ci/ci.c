@@ -43,7 +43,7 @@ typedef struct {
 static SemaphoreHandle_t lock;
 static device_t found;
 static char *profile;
-static ci_status_t status = {.result = "", .source = ""};
+static ci_status_t status = {.result = "", .source = "", .report = ""};
 static bool from_cache;
 
 // bus task -> CI task
@@ -58,6 +58,7 @@ static uint8_t *scan_buf;
 static bool force_fetch, store_ok;
 static uint32_t scan_started;
 static volatile int requested;  // 0 none, 1 scan, 2 scan and read everything
+static volatile bool report_requested;
 
 static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -250,6 +251,12 @@ static void cb_done(void *ctx, midici_done_t r) {
     ESP_LOGI(TAG, "scan: %s in %lu ms", names[r], (unsigned long)status.scan_ms);
 }
 
+static void cb_report(void *ctx, midici_report_done_t r, uint8_t types) {
+    static const char *names[] = {"ok", "refused", "timeout"};
+    status.report = names[r];
+    ESP_LOGI(TAG, "MIDI Message Report: %s (types %02x)", names[r], types);
+}
+
 // ---- the task ------------------------------------------------------------------------------------------------
 
 static void start_scan(bool force) {
@@ -257,8 +264,11 @@ static void start_scan(bool force) {
         status.result = "no memory";
         return;
     }
-    midici_initiator_cb_t cb = {
-        .send = cb_send, .on_device = cb_device, .on_resource = cb_resource, .on_done = cb_done};
+    midici_initiator_cb_t cb = {.send = cb_send,
+                                .on_device = cb_device,
+                                .on_resource = cb_resource,
+                                .on_done = cb_done,
+                                .on_report = cb_report};
     midici_initiator_init(&in, status.muid, &ident, &cb, scan_buf, SCAN_BUF);
     force_fetch = force;
     scan_started = now_ms();
@@ -280,6 +290,14 @@ static void ci_task(void *arg) {
             int r = requested;
             requested = 0;
             start_scan(r == 2);
+        }
+        if (report_requested && !midici_initiator_busy(&in)) {  // after a scan asked for at the same time
+            report_requested = false;
+            uint8_t types = MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_CC | MIDICI_REPORT_PROGRAM | MIDICI_REPORT_CHPRESS;
+            if (midici_initiator_report(&in, types, now))
+                status.report = "asking";
+            else
+                status.report = in.dev ? "not supported" : "no device";
         }
         status.scanning = midici_initiator_busy(&in);
         if (!status.scanning && scan_buf) free(scan_buf), scan_buf = NULL;  // 16 KB back between scans
@@ -315,6 +333,8 @@ void ci_start(void) {
 }
 
 void ci_scan(bool force) { requested = force ? 2 : (requested ? requested : 1); }
+
+void ci_report(void) { report_requested = true; }
 
 void ci_get_status(ci_status_t *out) {
     xSemaphoreTake(lock, portMAX_DELAY);

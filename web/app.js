@@ -308,6 +308,8 @@ async function loadDevice() {
   const skipped = all.length - dev.ctrls.length;
   $("#dev-msg").textContent = skipped > 0 ? `${skipped} controls not shown (hidden, per-note or not recognized)` : "";
   buildDevice();
+  // where the device's knobs are now (MIDI-CI MIDI Message Report): its values arrive as ordinary MIDI on /ws
+  if (fromCi) post("/api/ci/report", {}).catch(() => {});
 }
 
 // What a control looks like: a fader, a picker over named values, or a toggle.

@@ -25,6 +25,7 @@ bool Device::init(Synth *synth, uint32_t muid, Out out, void *ctx) {
     // manufacturer 7D 00 00 (educational / development), family 0, model 3 (the Mac stand-in is model 2), v0.1
     const midici_ident_t id = {{0x7D, 0, 0}, 0, 3, {0, 1, 0, 0}};
     ok &= midici_responder_init(&responder_, midici_muid(muid), &id, res_, n, sendSysex, this);
+    midici_responder_set_report(&responder_, MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_CC, report);
     return ok;
 }
 
@@ -35,6 +36,26 @@ void Device::sendSysex(void *ctx, const uint8_t *sx, size_t n) {
     d->out_(d->ctx_, sx, n);
     d->out_(d->ctx_, &f7, 1);
     d->ciReplies_++;
+}
+
+// The parameters live on channel 1 (the control list says so); other channels have nothing to report.
+void Device::report(void *ctx, int channel, uint8_t types, bool changedOnly) {
+    Device *d = static_cast<Device *>(ctx);
+    if (channel > 0) return;
+    if (types & MIDICI_REPORT_PITCHBEND) {
+        int v = (int)(8192.f + d->synth_->bendOf(0) / d->bendRange_[0] * 8192.f + 0.5f);
+        v = v < 0 ? 0 : v > 16383 ? 16383 : v;
+        if (!changedOnly || v != 8192) d->send3(0xE0, v & 0x7F, v >> 7);
+    }
+    if (types & MIDICI_REPORT_CC) {
+        for (int cc = 0; cc < 128; cc++) {  // index order
+            int p = paramForCc((uint8_t)cc);
+            if (p < 0) continue;
+            uint8_t v = valueToCc(p, d->synth_->param(p));
+            d->lastCc_[p] = v;
+            if (!changedOnly || v != kControls[p].def) d->send3(0xB0, (uint8_t)cc, v);
+        }
+    }
 }
 
 void Device::send3(uint8_t st, uint8_t d1, uint8_t d2) {

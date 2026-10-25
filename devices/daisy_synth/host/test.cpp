@@ -60,6 +60,9 @@ static void onResource(void *, const char *res, const char *id, int status, cons
 
 static void onDone(void *, midici_done_t r) { doneResult = r, done = true; }
 
+static int reportResult = -1, reportTypes = 0;
+static void onReport(void *, midici_report_done_t r, uint8_t types) { reportResult = (int)r, reportTypes = types; }
+
 // Hand the device's bytes to the initiator: whole SysEx messages only, channel messages are counted.
 static int channelMsgs = 0;
 static void pump(midici_initiator_t *in, Device &dev) {
@@ -84,7 +87,7 @@ static void scan() {
     printf("MIDI-CI scan:\n");
     static uint8_t buf[16 * 1024];
     midici_initiator_t in;
-    midici_initiator_cb_t cb = {nullptr, initiatorSend, onDevice, onResource, onDone};
+    midici_initiator_cb_t cb = {nullptr, initiatorSend, onDevice, onResource, onDone, onReport};
     const midici_ident_t box = {{0x7D, 0, 0}, 0, 1, {0, 1, 0, 0}};
     midici_initiator_init(&in, midici_muid(0x1234567), &box, &cb, buf, sizeof buf);
     midici_initiator_start(&in, nowMs);
@@ -104,6 +107,40 @@ static void scan() {
         fclose(f);
     }
     CHECK(got.size() == 3 + kMaps);  // ResourceList, DeviceInfo, AllCtrlList, the maps
+
+    // MIDI Message Report: the knobs' current values, not the control list's defaults
+    printf("MIDI Message Report:\n");
+    CHECK(midici_initiator_can_report(&in));
+    synth.setParam(kAttack, ccToValue(kAttack, 77));  // as if its knob had been turned
+    CHECK(midici_initiator_report(&in, MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_CC | MIDICI_REPORT_PROGRAM, nowMs));
+    for (uint8_t b : toDevice) dev.receive(b);
+    toDevice.clear();
+    std::vector<std::vector<uint8_t>> msgs;  // what the synth sent, in order: SysEx contents or channel messages
+    std::vector<uint8_t> cur;
+    bool open = false;
+    for (uint8_t b : fromDevice) {
+        if (b == 0xF0) open = true, cur.clear();
+        else if (b == 0xF7 && open) open = false, msgs.push_back(cur), midici_initiator_receive(&in, cur.data(), cur.size(), nowMs);
+        else if (open) cur.push_back(b);
+        else if (b & 0x80) msgs.push_back({b});
+        else if (!msgs.empty()) msgs.back().push_back(b);
+    }
+    fromDevice.clear();
+    CHECK(reportResult == MIDICI_REPORT_OK);
+    CHECK(reportTypes == (MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_CC));  // no Program Change on this synth
+    CHECK(msgs.size() == 2 + 1 + kParams);  // Reply, pitch bend, a CC per parameter, End
+    CHECK(msgs.front().size() > 3 && msgs.front()[3] == MIDICI_REPORT_REPLY);
+    CHECK(msgs.back().size() > 3 && msgs.back()[3] == MIDICI_REPORT_END);
+    CHECK(msgs[1] == (std::vector<uint8_t>{0xE0, 0, 64}));  // bend at the centre
+    int lastCc = -1, attack = -1;
+    for (size_t i = 2; i + 1 < msgs.size(); i++) {
+        CHECK(msgs[i].size() == 3 && msgs[i][0] == 0xB0 && msgs[i][1] > lastCc);  // ascending CC numbers
+        lastCc = msgs[i][1];
+        if (msgs[i][1] == kControls[kAttack].cc) attack = msgs[i][2];
+    }
+    CHECK(attack == 77);
+    printf("  %zu messages: Reply, bend, %d CCs, End; attack reported as %d\n", msgs.size(), kParams, attack);
+    synth.setParam(kAttack, ccToValue(kAttack, kControls[kAttack].def));
 }
 
 static void controls() {

@@ -4,7 +4,7 @@
 
 #include "airmidi/json_scan.h"
 
-enum { IDLE, DISCOVERY, CAPS, GET };
+enum { IDLE, DISCOVERY, CAPS, GET, REPORT };
 
 void midici_initiator_init(midici_initiator_t *in, uint32_t muid, const midici_ident_t *ident,
                            const midici_initiator_cb_t *cb, uint8_t *buf, size_t cap) {
@@ -83,13 +83,34 @@ static void finish_get(midici_initiator_t *in, int status, uint32_t now) {
         done(in, MIDICI_DONE_OK);
 }
 
+static void report_done(midici_initiator_t *in, midici_report_done_t r) {
+    in->state = IDLE;
+    if (in->cb.on_report) in->cb.on_report(in->cb.ctx, r, in->report_types);
+}
+
+bool midici_initiator_can_report(const midici_initiator_t *in) {
+    return in->state == IDLE && in->dev && (in->dev_categories & MIDICI_CAT_PROCESS);
+}
+
+bool midici_initiator_report(midici_initiator_t *in, uint8_t types, uint32_t now) {
+    if (!midici_initiator_can_report(in)) return false;
+    in->state = REPORT;
+    in->report_types = 0;
+    in->deadline = now + MIDICI_REPLY_WAIT_MS;
+    size_t n = midici_report(in->out, MIDICI_DEVICE_FUNCTION_BLOCK, in->muid, in->dev, MIDICI_REPORT_FULL, 0, types, 0);
+    in->cb.send(in->cb.ctx, in->out, n);
+    return true;
+}
+
 void midici_initiator_start(midici_initiator_t *in, uint32_t now) {
     in->state = DISCOVERY;
+    in->dev = 0;
+    in->dev_categories = 0;
     in->saw_device_without_pe = false;
     in->listed_ctrl_map = false;
     in->ngets = in->next = 0;
     in->deadline = now + MIDICI_DISCOVERY_WAIT_MS;
-    size_t n = midici_discovery(in->out, in->muid, &in->ident, MIDICI_CAT_PE, MIDICI_MAX_SYSEX, 0);
+    size_t n = midici_discovery(in->out, in->muid, &in->ident, MIDICI_CAT_PE | MIDICI_CAT_PROCESS, MIDICI_MAX_SYSEX, 0);
     in->cb.send(in->cb.ctx, in->out, n);
 }
 
@@ -139,6 +160,7 @@ void midici_initiator_receive(midici_initiator_t *in, const uint8_t *sx, size_t 
         }
         // the first device with Property Exchange wins: on a MIDI 1.0 cable there is one device
         in->dev = m.src;
+        in->dev_categories = d.categories;
         if (in->cb.on_device && !in->cb.on_device(in->cb.ctx, m.src, &d)) {
             done(in, MIDICI_DONE_CACHED);
             return;
@@ -151,6 +173,19 @@ void midici_initiator_receive(midici_initiator_t *in, const uint8_t *sx, size_t 
     }
     if (m.src != in->dev) return;
     midici_ack_t a;
+    if (in->state == REPORT) {
+        midici_report_t rep;
+        if (m.sub2 == MIDICI_REPORT_REPLY && midici_parse_report(&m, &rep)) {
+            in->report_types = rep.channel;
+            in->deadline = now + MIDICI_REPLY_WAIT_MS;  // the values may take a while at 31250 baud
+        } else if (m.sub2 == MIDICI_REPORT_END) {
+            report_done(in, MIDICI_REPORT_OK);
+        } else if (m.sub2 == MIDICI_NAK) {
+            midici_parse_ack(&m, &a);
+            if (a.original_sub2 == MIDICI_REPORT) report_done(in, MIDICI_REPORT_REFUSED);
+        }
+        return;
+    }
     if (in->state == CAPS) {
         if (m.sub2 == MIDICI_PE_CAPS_REPLY) {
             add_get(in, "ResourceList", "");
@@ -189,6 +224,9 @@ void midici_initiator_tick(midici_initiator_t *in, uint32_t now) {
             break;
         case GET:
             finish_get(in, MIDICI_STATUS_TIMEOUT, now);
+            break;
+        case REPORT:
+            report_done(in, MIDICI_REPORT_TIMEOUT);
             break;
     }
 }

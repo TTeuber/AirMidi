@@ -154,12 +154,32 @@ static void box_send(void *ctx, const uint8_t *sx, size_t n) {
     push(1, sx, n);
 }
 
+// What the device sent for Process Inquiry, in order: SysEx (its sub-id 2 and device id) and report calls (0).
+static struct {
+    uint8_t what, device_id;
+} events[16];
+static int nevents;
+static int report_channel;
+static uint8_t report_types_asked;
+static bool report_changed_only;
+
+static void log_event(uint8_t what, uint8_t device_id) {
+    if (nevents < 16) events[nevents].what = what, events[nevents].device_id = device_id, nevents++;
+}
+
+static void dev_report(void *ctx, int channel, uint8_t types, bool changed_only) {
+    (void)ctx;
+    report_channel = channel, report_types_asked = types, report_changed_only = changed_only;
+    log_event(0, 0);
+}
+
 static void dev_send(void *ctx, const uint8_t *sx, size_t n) {
     (void)ctx;
     int i = to_box_count++;
     if (n + 2 > largest_to_box) largest_to_box = n + 2;  // F0 and F7 count against the max SysEx size
     if (i == drop_to_box_index) return;
     if (sx[3] == MIDICI_PE_GET_REPLY) pe_sent++;
+    if (sx[3] >= MIDICI_PI_CAPS && sx[3] <= MIDICI_REPORT_END) log_event(sx[3], sx[1]);
     push(0, sx, n);
 }
 
@@ -172,6 +192,7 @@ static struct {
     int done;  // -1 while running
     bool fetch;
     int devices;
+    int report, report_types;  // -1 while a report runs
 } got;
 
 static bool on_device(void *ctx, uint32_t muid, const midici_discovery_t *d) {
@@ -198,6 +219,11 @@ static void on_resource(void *ctx, const char *resource, const char *res_id, int
 static void on_done(void *ctx, midici_done_t r) {
     (void)ctx;
     got.done = (int)r;
+}
+
+static void on_report(void *ctx, midici_report_done_t r, uint8_t types) {
+    (void)ctx;
+    got.report = (int)r, got.report_types = types;
 }
 
 static midici_initiator_t in;
@@ -246,8 +272,13 @@ static void setup_link(size_t buf_cap, bool with_responder) {
     table[0].json = device_info, table[1].json = ctrl_list, table[2].json = wave_map, table[3].json = lfo_map;
     const midici_ident_t dev_id = {{0x7D, 0, 0}, 0, 2, {0, 0, 1, 0}};
     TEST_ASSERT_TRUE(midici_responder_init(&dev, DEV_MUID, &dev_id, table, 4, dev_send, NULL));
-    midici_initiator_cb_t cb = {
-        .send = box_send, .on_device = on_device, .on_resource = on_resource, .on_done = on_done};
+    nevents = 0;
+    report_channel = -2;
+    midici_initiator_cb_t cb = {.send = box_send,
+                                .on_device = on_device,
+                                .on_resource = on_resource,
+                                .on_done = on_done,
+                                .on_report = on_report};
     midici_initiator_init(&in, BOX_MUID, &box, &cb, rxbuf, buf_cap);
 }
 
@@ -497,6 +528,121 @@ static void test_fuzz(void) {
     }
 }
 
+// ---- Process Inquiry: MIDI Message Report (M2-101 9) ---------------------------------------------------------
+
+static void test_report_messages_round_trip(void) {
+    uint8_t b[32];
+    midici_msg_t m;
+    midici_report_t r;
+    size_t n = midici_report(b, 0x03, BOX_MUID, DEV_MUID, MIDICI_REPORT_FULL, 0, MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, 0);
+    TEST_ASSERT_EQUAL(18, n);
+    TEST_ASSERT_TRUE(midici_parse(b, n, &m));
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT, m.sub2);
+    TEST_ASSERT_EQUAL_HEX8(0x03, m.device_id);  // channel 4
+    TEST_ASSERT_TRUE(midici_parse_report(&m, &r));
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_FULL, r.data_control);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, r.channel);
+    n = midici_report_reply(b, 0x7F, DEV_MUID, BOX_MUID, 0, MIDICI_REPORT_CC, 0);
+    TEST_ASSERT_EQUAL(17, n);
+    TEST_ASSERT_TRUE(midici_parse(b, n, &m) && midici_parse_report(&m, &r));
+    TEST_ASSERT_EQUAL_HEX8(0xFF, r.data_control);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_CC, r.channel);
+    TEST_ASSERT_EQUAL(13, midici_report_end(b, 0x7F, DEV_MUID, BOX_MUID));
+    TEST_ASSERT_EQUAL(14, midici_pi_caps_reply(b, DEV_MUID, BOX_MUID, MIDICI_PI_MESSAGE_REPORT));
+}
+
+static void run_report(uint32_t ms) {
+    got.report = -1;
+    got.done = 0;  // run() stops once a scan is done; a report is not a scan
+    uint32_t end = now + ms;
+    while (now < end && got.report < 0) {
+        if (qhead != qtail) {
+            wire_msg_t *m = &q[qhead];
+            qhead = (qhead + 1) % QLEN;
+            if (m->to_device && responder_present)
+                midici_responder_receive(&dev, m->b, m->n);
+            else if (!m->to_device)
+                midici_initiator_receive(&in, m->b, m->n, now);
+        }
+        now++;
+        midici_initiator_tick(&in, now);
+    }
+}
+
+static void test_report_after_a_scan(void) {
+    setup_link(sizeof rxbuf, true);
+    midici_responder_set_report(&dev, MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, dev_report);
+    midici_initiator_start(&in, now);
+    run(10000);
+    TEST_ASSERT_EQUAL(MIDICI_DONE_OK, got.done);
+    TEST_ASSERT_TRUE(midici_initiator_can_report(&in));  // the device said Process Inquiry in its Discovery Reply
+    nevents = 0;
+    TEST_ASSERT_TRUE(midici_initiator_report(&in, MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_PROGRAM, now));
+    TEST_ASSERT_FALSE(midici_initiator_report(&in, MIDICI_REPORT_CC, now));  // one at a time
+    run_report(5000);
+    TEST_ASSERT_EQUAL(MIDICI_REPORT_OK, got.report);
+    // the Reply names only what the device has (no Program Change), never more than asked
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, got.report_types);
+    // Reply, then the values, then End, one Begin/End for the whole function block
+    TEST_ASSERT_EQUAL(3, nevents);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_REPLY, events[0].what);
+    TEST_ASSERT_EQUAL_HEX8(0x7F, events[0].device_id);
+    TEST_ASSERT_EQUAL_HEX8(0, events[1].what);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_END, events[2].what);
+    TEST_ASSERT_EQUAL(-1, report_channel);  // function block: every channel
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, report_types_asked);
+    TEST_ASSERT_FALSE(report_changed_only);
+    TEST_ASSERT_TRUE(midici_initiator_can_report(&in));  // and again later
+}
+
+static void test_report_capabilities_and_one_channel(void) {
+    setup_link(sizeof rxbuf, true);
+    midici_responder_set_report(&dev, MIDICI_REPORT_CC, dev_report);
+    uint8_t m[32];
+    push(1, m, midici_pi_caps(m, BOX_MUID, DEV_MUID));
+    push(1, m, midici_report(m, 0x01, BOX_MUID, DEV_MUID, MIDICI_REPORT_CHANGED, 0, MIDICI_REPORT_CC, 0));
+    push(1, m, midici_report(m, 0x7F, BOX_MUID, DEV_MUID, MIDICI_REPORT_NONE, 0, MIDICI_REPORT_CC, 0));
+    while (qhead != qtail) {
+        wire_msg_t *w = &q[qhead];
+        qhead = (qhead + 1) % QLEN;
+        if (w->to_device) midici_responder_receive(&dev, w->b, w->n);
+    }
+    // caps reply; Reply + values + End for channel 2, changed only; Reply + End only for data control 0
+    TEST_ASSERT_EQUAL(6, nevents);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_PI_CAPS_REPLY, events[0].what);
+    TEST_ASSERT_EQUAL_HEX8(0x01, events[1].device_id);
+    TEST_ASSERT_EQUAL(1, report_channel);
+    TEST_ASSERT_TRUE(report_changed_only);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_END, events[3].what);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_REPLY, events[4].what);
+    TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT_END, events[5].what);
+}
+
+static void test_no_report_without_process_inquiry(void) {
+    setup_link(sizeof rxbuf, true);  // no report function: Discovery does not offer Process Inquiry
+    midici_initiator_start(&in, now);
+    run(10000);
+    TEST_ASSERT_EQUAL(MIDICI_DONE_OK, got.done);
+    TEST_ASSERT_FALSE(midici_initiator_can_report(&in));
+    TEST_ASSERT_FALSE(midici_initiator_report(&in, MIDICI_REPORT_CC, now));
+    // asked anyway: a NAK, and the initiator reports it refused
+    in.dev_categories |= MIDICI_CAT_PROCESS;
+    TEST_ASSERT_TRUE(midici_initiator_report(&in, MIDICI_REPORT_CC, now));
+    run_report(5000);
+    TEST_ASSERT_EQUAL(MIDICI_REPORT_REFUSED, got.report);
+}
+
+static void test_report_times_out(void) {
+    setup_link(sizeof rxbuf, true);
+    midici_responder_set_report(&dev, MIDICI_REPORT_CC, dev_report);
+    midici_initiator_start(&in, now);
+    run(10000);
+    responder_present = false;  // the device went away
+    TEST_ASSERT_TRUE(midici_initiator_report(&in, MIDICI_REPORT_CC, now));
+    run_report(MIDICI_REPLY_WAIT_MS + 100);
+    TEST_ASSERT_EQUAL(MIDICI_REPORT_TIMEOUT, got.report);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_json_finds_keys_at_any_depth_but_not_inside_strings);
@@ -520,5 +666,10 @@ int main(void) {
     RUN_TEST(test_responder_404_and_nak);
     RUN_TEST(test_responder_chunks_to_the_initiators_size);
     RUN_TEST(test_fuzz);
+    RUN_TEST(test_report_messages_round_trip);
+    RUN_TEST(test_report_after_a_scan);
+    RUN_TEST(test_report_capabilities_and_one_channel);
+    RUN_TEST(test_no_report_without_process_inquiry);
+    RUN_TEST(test_report_times_out);
     return UNITY_END();
 }

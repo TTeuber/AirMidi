@@ -2,6 +2,10 @@
 // MIDI-CI responder from lib/), MIDI 1.0 bytes for the DIN output out (the responder's replies, and the notes and
 // CCs of the kit's own buttons, pots and toggles, so the box's page follows the hardware).
 //
+// MIDI-CI MIDI Message Report (M2-101 9): asked for current values, it sends channel 1's pitch bend and every
+// parameter's CC with its current value (ascending CC number, as the spec orders them), so the box's page and the
+// phone show where the knobs are rather than the defaults the control list carries.
+//
 // MPE: the MPE Configuration Message (RPN 6 on channel 1) turns a lower zone on with that many member channels
 // (0 turns it off again); member channels then bend ±48 semitones and the manager ±2 until RPN 0 says otherwise.
 // Upper zones (manager on channel 16) are not supported.
@@ -43,6 +47,7 @@ class Device {
 
   private:
     static void sendSysex(void *ctx, const uint8_t *sx, size_t n);
+    static void report(void *ctx, int channel, uint8_t types, bool changedOnly);
     void dispatch();
     void send3(uint8_t st, uint8_t d1, uint8_t d2);
     void controlChange(uint8_t ch, uint8_t cc, uint8_t v);

@@ -18,11 +18,15 @@ uint32_t midici_muid(uint32_t r) {
     return r;
 }
 
-static size_t header(uint8_t *out, uint8_t sub2, uint32_t src, uint32_t dst) {
-    out[0] = 0x7E, out[1] = 0x7F, out[2] = 0x0D, out[3] = sub2, out[4] = MIDICI_VERSION;
+static size_t header_to(uint8_t *out, uint8_t device_id, uint8_t sub2, uint32_t src, uint32_t dst) {
+    out[0] = 0x7E, out[1] = device_id & 0x7F, out[2] = 0x0D, out[3] = sub2, out[4] = MIDICI_VERSION;
     put7x4(out + 5, src);
     put7x4(out + 9, dst);
     return MIDICI_HEADER;
+}
+
+static size_t header(uint8_t *out, uint8_t sub2, uint32_t src, uint32_t dst) {
+    return header_to(out, MIDICI_DEVICE_FUNCTION_BLOCK, sub2, src, dst);
 }
 
 bool midici_parse(const uint8_t *sx, size_t n, midici_msg_t *out) {
@@ -167,4 +171,51 @@ bool midici_parse_invalidate(const midici_msg_t *m, uint32_t *target) {
     if (m->len < 4) return false;
     *target = get7x4(m->data);
     return true;
+}
+
+// ---- Process Inquiry (M2-101 9) ------------------------------------------------------------------------------
+
+size_t midici_pi_caps(uint8_t *out, uint32_t src, uint32_t dst) { return header(out, MIDICI_PI_CAPS, src, dst); }
+
+size_t midici_pi_caps_reply(uint8_t *out, uint32_t src, uint32_t dst, uint8_t features) {
+    size_t n = header(out, MIDICI_PI_CAPS_REPLY, src, dst);
+    out[n++] = features & 0x7F;
+    return n;
+}
+
+size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t data_control,
+                     uint8_t system, uint8_t channel, uint8_t note) {
+    size_t n = header_to(out, device_id, MIDICI_REPORT, src, dst);
+    out[n++] = data_control & 0x7F;
+    out[n++] = system & 0x7F;
+    out[n++] = 0;  // reserved for other system messages
+    out[n++] = channel & 0x7F;
+    out[n++] = note & 0x7F;
+    return n;
+}
+
+size_t midici_report_reply(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t system,
+                           uint8_t channel, uint8_t note) {
+    size_t n = header_to(out, device_id, MIDICI_REPORT_REPLY, src, dst);
+    out[n++] = system & 0x7F;
+    out[n++] = 0;
+    out[n++] = channel & 0x7F;
+    out[n++] = note & 0x7F;
+    return n;
+}
+
+size_t midici_report_end(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst) {
+    return header_to(out, device_id, MIDICI_REPORT_END, src, dst);
+}
+
+bool midici_parse_report(const midici_msg_t *m, midici_report_t *out) {
+    if (m->sub2 == MIDICI_REPORT && m->len >= 5) {
+        out->data_control = m->data[0], out->system = m->data[1], out->channel = m->data[3], out->note = m->data[4];
+        return true;
+    }
+    if (m->sub2 == MIDICI_REPORT_REPLY && m->len >= 4) {
+        out->data_control = 0xFF, out->system = m->data[0], out->channel = m->data[2], out->note = m->data[3];
+        return true;
+    }
+    return false;
 }

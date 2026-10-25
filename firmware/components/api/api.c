@@ -527,7 +527,14 @@ static api_reply_t get_ci(const req_t *q) {
     cJSON_AddStringToObject(r, "device", cs.device);
     cJSON_AddStringToObject(r, "source", cs.source);
     cJSON_AddNumberToObject(r, "dropped", cs.dropped);
+    cJSON_AddStringToObject(r, "report", cs.report);
     return ok(r);
+}
+
+// The device's current values (MIDI-CI MIDI Message Report): they arrive as ordinary MIDI, like its own knob moves.
+static api_reply_t post_ci_report(const req_t *q) {
+    ci_report();
+    return empty(202);
 }
 
 typedef struct {
@@ -608,6 +615,7 @@ static const struct {
     {"GET", "/api/ci", get_ci},
     {"GET", "/api/ci/device", get_ci_device},
     {"POST", "/api/ci/scan", post_ci_scan},
+    {"POST", "/api/ci/report", post_ci_report},
     {"POST", "/api/ci/profile", post_ci_profile},
     {"DELETE", "/api/ci/profile", delete_ci_profile},
 };

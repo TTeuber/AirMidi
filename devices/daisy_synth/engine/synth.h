@@ -36,6 +36,7 @@ class Synth {
     void setParam(int p, float v) { param_[p] = clampf(v, 0.f, 1.f); }
     float param(int p) const { return param_[p]; }
     void bend(float semitones, uint8_t ch = 0) { bend_[ch & 15] = semitones; }
+    float bendOf(uint8_t ch) const { return bend_[ch & 15]; }
     void setMpe(bool on) { mpe_ = on; }
     bool mpe() const { return mpe_; }
 

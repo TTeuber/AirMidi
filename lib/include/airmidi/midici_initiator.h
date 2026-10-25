@@ -3,6 +3,10 @@
 // each CtrlMapList the AllCtrlList refers to (by "ctrlMapId"), whichever of them the ResourceList names. One
 // request at a time, the simplest thing every responder supports.
 //
+// After a scan it can ask the device for a MIDI Message Report (M2-101 9), if the device said in Discovery that it
+// does Process Inquiry: its current values come back as ordinary MIDI messages on the same link (the caller routes
+// those like any other), between a Reply and an End that the initiator follows.
+//
 // Pure logic: SysEx contents and the time go in, SysEx contents to send and the results come out through
 // callbacks. It never allocates; property data is collected in the caller's buffer.
 #pragma once
@@ -39,6 +43,12 @@ enum {
     MIDICI_STATUS_TOO_LARGE = 413,  // more data than the caller's buffer holds
 };
 
+typedef enum {
+    MIDICI_REPORT_OK,           // the device sent its values (Reply, values, End)
+    MIDICI_REPORT_REFUSED,      // it answered with a NAK
+    MIDICI_REPORT_TIMEOUT,      // no Reply, or no End, within MIDICI_REPLY_WAIT_MS
+} midici_report_done_t;
+
 typedef struct {
     void *ctx;
     // Send one MIDI-CI message (SysEx contents, no F0/F7).
@@ -50,6 +60,8 @@ typedef struct {
     void (*on_resource)(void *ctx, const char *resource, const char *res_id, int status, const uint8_t *data,
                         size_t len);
     void (*on_done)(void *ctx, midici_done_t result);
+    // A MIDI Message Report finished; types = what the device's Reply said it would send (MIDICI_REPORT_*).
+    void (*on_report)(void *ctx, midici_report_done_t result, uint8_t types);
 } midici_initiator_cb_t;
 
 typedef struct {
@@ -64,6 +76,8 @@ typedef struct {
     uint32_t deadline;
     // the device
     uint32_t dev;
+    uint8_t dev_categories;  // what it said it supports in its Discovery Reply (MIDICI_CAT_*)
+    uint8_t report_types;    // the Reply of the report in flight
     bool saw_device_without_pe;
     // the gets still to do; gets[next] is in flight while state is GET
     midici_get_t gets[MIDICI_MAX_GETS];
@@ -88,6 +102,11 @@ void midici_initiator_receive(midici_initiator_t *in, const uint8_t *sx, size_t 
 // Call at least every 100 ms: timeouts.
 void midici_initiator_tick(midici_initiator_t *in, uint32_t now_ms);
 bool midici_initiator_busy(const midici_initiator_t *in);
+// Ask the device found by the last scan for a full MIDI Message Report of these channel controller types
+// (MIDICI_REPORT_*), for the whole function block. False (nothing sent) while busy, with no device, or when the
+// device does not do Process Inquiry.
+bool midici_initiator_report(midici_initiator_t *in, uint8_t types, uint32_t now_ms);
+bool midici_initiator_can_report(const midici_initiator_t *in);
 // For a new MUID after MIDICI_DONE_INVALIDATED.
 void midici_initiator_set_muid(midici_initiator_t *in, uint32_t muid);
 

@@ -150,7 +150,45 @@ rescan at boot is then silent for the device, not because the scan is slow.
   over Network MIDI 2.0 (and the stand-in on the AudioFuse is not a device behind the AudioFuse to macOS, it is
   another client of the same Mac). Fixed by announcing the endpoint; that in turn exposed the loop above.
 
+## Protocol policy: what goes over TRS, and how (agreed 2026-10-24)
+
+Any MIDI synth must work on the box's jacks as it is; the user's own devices may do more, but only once both ends
+have said they can. In that order:
+
+1. **MIDI 1.0** on the wire, always. The box sends nothing a plain synth would misread: MIDI-CI is Universal SysEx
+   (7E ... 0D), which devices without MIDI-CI ignore.
+2. **Standard MIDI-CI** wherever it covers the need: Discovery, Property Exchange (DeviceInfo, AllCtrlList,
+   CtrlMapList), and Process Inquiry's MIDI Message Report for current values (below). Any MIDI-CI 1.2 device can
+   answer these, not only ours.
+3. **MIDI-CI's own extension point** for what the standards do not cover: manufacturer-specific Property Exchange
+   resources ("X-" names, listed in the device's ResourceList; M2-103), still SysEx over MIDI 1.0, only asked for
+   when listed. Presets, patch names, engine choice (sd_synth) belong here when they come.
+4. **No custom transport for now.** UMP over TRS (custom UART framing, negotiated through 3., with a heartbeat to
+   fall back to MIDI 1.0) was discussed and put off: MIDI-CI may cover everything needed, and MPE keeps the user's
+   synths playable from any MPE controller. Revisit only if something needs MIDI 2.0 on the wire.
+
+Identity: our devices use the non-commercial manufacturer id 7D 00 00; a product would need an MMA id.
+
+## Current values: MIDI Message Report (M2-101 9)
+
+A control list carries defaults, not where the knobs are. MIDI-CI 1.2's Process Inquiry asks a device for its
+current state, which it answers with ordinary MIDI messages between a Reply (begin) and an End:
+
+- `lib/midici`: the five messages (capabilities 40/41, inquiry 42, reply 43, end 44) and their parsing.
+- `lib/midici_responder`: offered when the device gives a report function (`midici_responder_set_report`); the
+  Discovery Reply then sets the Process Inquiry category bit. The Reply names only requested types the device has;
+  one Begin/End for a whole function block (device id 7F).
+- `lib/midici_initiator`: `midici_initiator_report()` after a scan, only if the device's Discovery Reply set the
+  Process Inquiry bit; follows Reply and End, a NAK, or a 3 s timeout (`on_report`).
+- `firmware/components/ci` + `POST /api/ci/report`: the box asks; the values reach the web page and phones like the
+  device's own knob moves (the bus routes them as any other TRS input). `GET /api/ci` says how the last one went.
+- `devices/daisy_synth`: reports channel 1's pitch bend and each parameter's CC, in ascending CC order (9.7.1).
+
+Tested: `test/test_midici.c` (5 cases: layout, after a scan, one channel and data control 0, a device without it,
+timeout), daisy_synth's host test (Reply, bend, 14 CCs in order, End, a turned knob reported), and on the hardware:
+the phone's synth page showed Attack at the 20 ms set before the app was restarted.
+
 ## Not done
 
-Subscriptions (live updates of a resource), Set Property Data, Profiles, Process Inquiry; MIDI-CI over BLE or the
+Subscriptions (live updates of a resource), Set Property Data, Profiles; MIDI-CI over BLE or the
 network from the box itself (the box only asks the TRS device); per-note controls on the page.
