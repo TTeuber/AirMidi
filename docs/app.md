@@ -137,11 +137,12 @@ and runs the same screens over HTTP. Only built if BLE setup turns out unreliabl
 
 Status (2026-10-24):
 - A0 done: plays well on the Pixel 9a; stuck notes and the slow interval found and fixed (decision log).
-- A1 done except the `id` in mDNS TXT / scan response (needed once A2 merges BLE and Wi-Fi sightings).
-  `tools/hil/ble_config_test.py` passes 19/19 from the Mac. Design note: `docs/design/config-over-ble.md`.
-- A2 in part: box screen over BLE or HTTP (status, mode, stored networks, Wi-Fi setup with the box's scan, phones),
-  pairing on first use. Still to do: settings editing, BLE and mDNS sightings merged, following the box into
-  Network mode (today: reconnect by address).
+- A1 done: `tools/hil/ble_config_test.py` passes 19/19 from the Mac; the box id (board_id) is in the scan response,
+  the mDNS TXT record and /api/status. Design note: `docs/design/config-over-ble.md`.
+- A2 written: one list entry per box (BLE + mDNS merged by id), box screen over BLE or HTTP (status, mode, stored
+  networks, Wi-Fi setup with the box's scan, phones, settings), pairing on first use, and the page follows the box
+  when a mode change or a restart moves it to the other transport. The list merge and following are not yet tried
+  on the phone (it was locked).
 
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.

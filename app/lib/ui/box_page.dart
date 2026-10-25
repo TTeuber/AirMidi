@@ -8,12 +8,24 @@ import '../link/config.dart';
 import '../link/link.dart';
 import 'strips_page.dart';
 
+/// Finds the box again on BLE or Wi-Fi after it left the link this page uses, and returns its page (null: not found).
+typedef Follow = Future<Widget?> Function(String id, {required bool toWifi});
+
 class BoxPage extends StatefulWidget {
   final String title;
+  final bool overBle;
   final ConfigClient config;
   final Future<MidiLink> Function() midi;
   final Future<void> Function() close;
-  const BoxPage({super.key, required this.title, required this.config, required this.midi, required this.close});
+  final Follow? follow;
+  const BoxPage(
+      {super.key,
+      required this.title,
+      required this.overBle,
+      required this.config,
+      required this.midi,
+      required this.close,
+      this.follow});
 
   @override
   State<BoxPage> createState() => _BoxPageState();
@@ -22,7 +34,7 @@ class BoxPage extends StatefulWidget {
 class _BoxPageState extends State<BoxPage> {
   Map<String, dynamic>? status, phones;
   List<String> networks = [];
-  String? error;
+  String? error, following;
   Timer? poll;
 
   ConfigClient get api => widget.config;
@@ -42,6 +54,7 @@ class _BoxPageState extends State<BoxPage> {
   }
 
   Future<void> _refresh({bool all = false}) async {
+    if (following != null) return;
     try {
       final s = await api.call('GET', '/api/status');
       if (all || phones == null) {
@@ -63,14 +76,46 @@ class _BoxPageState extends State<BoxPage> {
     }
   }
 
+  /// After a change that may restart the box or move it to the other transport: if this link still answers, stay;
+  /// otherwise find the box again (Wi-Fi when it went to Network mode, BLE otherwise) and swap this page for that.
+  Future<void> _afterChange({required bool toWifi}) async {
+    final id = status?['id'] as String?;
+    await Future.delayed(const Duration(seconds: 2)); // a restart is under way by then (it waits ~0.5 s)
+    try {
+      await api.call('GET', '/api/status');
+      return _refresh(all: true);
+    } catch (_) {
+      // gone from this link: follow it
+    }
+    if (id == null || widget.follow == null) {
+      setState(() => error = 'The box went away from this connection. Find it again in the box list.');
+      return;
+    }
+    setState(() => following = toWifi ? 'Waiting for the box on Wi-Fi' : 'Waiting for the box over Bluetooth');
+    try {
+      final page = await widget.follow!(id, toWifi: toWifi);
+      if (!mounted) return;
+      if (page != null) {
+        Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => page));
+        return;
+      }
+      setState(() => (following = null,
+          error = toWifi
+              ? 'The box did not show up on this Wi-Fi within 40 s. Has it joined a network (wi-fi below)?'
+              : 'The box did not show up over Bluetooth within 40 s.'));
+    } catch (e) {
+      if (mounted) setState(() => (following = null, error = '$e'));
+    }
+  }
+
   Future<void> _setMode(String mode) async {
     if (mode == 'network') {
       final ok = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
           title: const Text('Network mode'),
-          content: const Text('The box joins your Wi-Fi and turns Bluetooth off (it restarts). Reconnect to it over '
-              'Wi-Fi from the box list.'),
+          content: const Text('The box joins your Wi-Fi and, unless "Bluetooth in Network mode" is on in its '
+              'settings, turns Bluetooth off and restarts. The app follows it onto the Wi-Fi.'),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('cancel')),
             TextButton(onPressed: () => Navigator.pop(c, true), child: const Text('switch')),
@@ -79,7 +124,13 @@ class _BoxPageState extends State<BoxPage> {
       );
       if (ok != true) return;
     }
-    await _act(() => api.call('POST', '/api/mode', {'mode': mode}));
+    try {
+      await api.call('POST', '/api/mode', {'mode': mode});
+    } catch (e) {
+      setState(() => error = '$e');
+      return;
+    }
+    await _afterChange(toWifi: mode == 'network');
   }
 
   @override
@@ -90,6 +141,10 @@ class _BoxPageState extends State<BoxPage> {
       body: RefreshIndicator(
         onRefresh: () => _refresh(all: true),
         child: ListView(padding: const EdgeInsets.all(14), children: [
+          if (following != null) ...[
+            _banner(following!, good: true),
+            const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(color: cAc))),
+          ],
           if (error != null) _banner(error!),
           if (s != null) ..._state(s),
           const SizedBox(height: 18),
@@ -121,6 +176,17 @@ class _BoxPageState extends State<BoxPage> {
             _textButton('add another phone (2 min)', () => _act(() => api.call('POST', '/api/phones/window'))),
             _textButton('forget all phones', () => _act(() => api.call('DELETE', '/api/phones'))),
           ]),
+          const SizedBox(height: 22),
+          _heading('settings'),
+          _bigButton('settings', () async {
+            final restarts = await Navigator.of(context)
+                .push<bool>(MaterialPageRoute(builder: (_) => SettingsPage(api: api)));
+            if (restarts == true) {
+              await _afterChange(toWifi: !widget.overBle);
+            } else {
+              _refresh(all: true);
+            }
+          }),
         ]),
       ),
     );
@@ -139,7 +205,7 @@ class _BoxPageState extends State<BoxPage> {
           ),
       ]),
       const SizedBox(height: 14),
-      _row('firmware ${s['version']} · ${s['board']}'),
+      _row('firmware ${s['version']} · ${s['board']} · id ${s['id'] ?? '?'}'),
       _row(bat['usb'] == true ? 'on usb power' : 'battery ${bat['pct']} % (${bat['mv']} mV)'),
       _row('wi-fi ${wifi['state']}${(wifi['ip'] ?? '') != '' ? ' · ${wifi['ip']}' : ''}'
           '${(wifi['ssid'] ?? '') != '' ? ' · ${wifi['ssid']}' : ''}'),
@@ -252,6 +318,106 @@ class _WifiSetupPageState extends State<WifiSetupPage> {
         ],
         if (state == 'joined') _bigButton('done', () => Navigator.pop(context)),
       ]),
+    );
+  }
+}
+
+/// The box's settings (/api/settings). Saving the whole set; some changes restart the box (it says which), and the
+/// box page then follows it.
+class SettingsPage extends StatefulWidget {
+  final ConfigClient api;
+  const SettingsPage({super.key, required this.api});
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  Map<String, dynamic>? s;
+  final name = TextEditingController(), device = TextEditingController(), group = TextEditingController();
+  final timeout = TextEditingController();
+  String? message;
+  bool saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final r = await widget.api.call('GET', '/api/settings');
+      setState(() {
+        s = r;
+        name.text = r['name'] ?? '';
+        device.text = r['ble_device'] ?? '';
+        group.text = r['espnow_group'] ?? '';
+        timeout.text = '${r['sysex_timeout_ms'] ?? 500}';
+      });
+    } catch (e) {
+      setState(() => message = '$e');
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => (saving = true, message = null));
+    try {
+      final r = await widget.api.call('POST', '/api/settings', {
+        ...s!,
+        'name': name.text.trim(),
+        'ble_device': device.text.trim(),
+        'espnow_group': group.text.trim(),
+        'sysex_timeout_ms': int.tryParse(timeout.text.trim()) ?? -1,
+      });
+      if (!mounted) return;
+      Navigator.pop(context, r['restart'] == true);
+    } catch (e) {
+      setState(() => (saving = false, message = '$e'));
+    }
+  }
+
+  Widget _field(String label, TextEditingController c, String help, {TextInputType? type}) => Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: TextField(
+          controller: c,
+          keyboardType: type,
+          decoration: InputDecoration(labelText: label, helperText: help, helperMaxLines: 3),
+        ),
+      );
+
+  Widget _switch(String label, String key, String help) => SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        activeColor: cAc,
+        title: Text(label, style: const TextStyle(color: cN, fontSize: 14)),
+        subtitle: Text(help, style: const TextStyle(color: cGrey, fontSize: 12)),
+        value: s![key] == true,
+        onChanged: (v) => setState(() => s![key] = v),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('settings'), backgroundColor: cBg),
+      body: s == null
+          ? Center(child: message != null ? Text(message!) : const CircularProgressIndicator(color: cAc))
+          : ListView(padding: const EdgeInsets.all(14), children: [
+              if (message != null) _banner(message!),
+              _field('name', name, 'Letters, digits and "-". The Bluetooth name, the Wi-Fi host name and the Setup '
+                  'access point. Changing it restarts the box.'),
+              _field('bluetooth keyboard', device, 'A BLE MIDI keyboard or controller the box connects to by itself: '
+                  'its name or address, "*" for any, empty for none.'),
+              _switch('bluetooth in network mode', 'ble_in_network',
+                  'Keep Bluetooth on in Network mode. Costs network MIDI ~16 ms of latency (measured).'),
+              _switch('esp-now cable', 'espnow', 'A wireless MIDI cable to another airmidi box with the same group.'),
+              _field('esp-now group', group, 'Boxes with the same group find each other.'),
+              _field('sysex timeout (ms)', timeout, 'How long another source waits behind an unfinished SysEx.',
+                  type: TextInputType.number),
+              const SizedBox(height: 8),
+              saving
+                  ? const Center(child: CircularProgressIndicator(color: cAc))
+                  : _bigButton('save', _save),
+            ]),
     );
   }
 }
