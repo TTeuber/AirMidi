@@ -28,6 +28,7 @@ results = []
 
 
 def check(label, ok, detail=""):
+    ok = bool(ok)
     results.append(ok)
     print(f"  {'PASS' if ok else 'FAIL'}  {label}{': ' + str(detail) if detail != '' else ''}")
 
@@ -115,12 +116,21 @@ async def refused_checks():
     out = console("N", 12)
     out += console("P", 12)
     check("box back in Play mode", "mode: play" in out)
-    try:
-        async with BleConfig(name) as c:
-            status, s = await c.call("GET", "/api/status")
-            check("untrusted Mac refused (0x08)", False, f"got {status}")
-    except BleakError as e:
-        check("untrusted Mac refused (0x08)", "8" in str(e) or "authoriz" in str(e).lower(), str(e)[:80])
+    # The first write after the box's restart can meet a link macOS has not encrypted again yet (ATT 0x0F); macOS
+    # encrypts with the stored bond meanwhile, and the second write gets the box's own answer: 0x08.
+    errors = []
+    async with BleConfig(name) as c:
+        for _ in range(3):
+            try:
+                status, s = await c.call("GET", "/api/status")
+                errors.append(f"answered {status}")
+                break
+            except BleakError as e:
+                errors.append(str(e)[:60])
+                if "Encryption" not in str(e):
+                    break
+                await asyncio.sleep(2)
+    check("untrusted Mac refused (0x08)", "Authorization" in errors[-1] or "(8," in errors[-1], " / ".join(errors))
     console("S", 6)
     async with BleConfig(name) as c:
         status, s = await c.call("GET", "/api/status")

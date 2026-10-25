@@ -68,6 +68,11 @@ moment while the box tries a network on another channel. Phones on BLE are not a
   right one joined and was stored, both within 15 s; Network mode then joined it after the restart. The web
   regression test passed over HTTP against the refactored API (14/14).
 - The phone stayed trusted across software restarts with the window closed.
+- `tools/hil/ble_config_test.py` from the Mac (bleak): 19/19. Replies of every size (status: 2395 chars), 404 / 405 /
+  400 / 413, scan and try in Setup and in Play mode (scan 5.3 s with the radio coming on and going off), radio off
+  again afterwards, forgetting the phones, then after two software restarts the Mac refused: its first write meets
+  a link macOS has not encrypted again yet (ATT 0x0F), the next one the box's 0x08; Setup mode lets it back in.
+  macOS's cached name for the box can be an old one (`airmidi-7530`), so the tool matches the advertised name.
 - Connection interval: Android moves to 48.75 ms right after the link is encrypted. The box's 7.5-15 ms request at
   connect collided with that change (HCI 0x23, LL procedure collision), which is not a refusal: the box now asks again
   when the interval drifts above 15 ms (up to three times per connection) and only treats a real refusal as Apple's.

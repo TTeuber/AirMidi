@@ -137,9 +137,8 @@ and runs the same screens over HTTP. Only built if BLE setup turns out unreliabl
 
 Status (2026-10-24):
 - A0 done: plays well on the Pixel 9a; stuck notes and the slow interval found and fixed (decision log).
-- A1 done except two items: the `id` in mDNS TXT / scan response (needed once A2 merges BLE and Wi-Fi sightings),
-  and a run of `tools/hil/ble_config_test.py` (written; the Mac's Bluetooth was off, so the service was tested from
-  the phone instead). Design note: `docs/design/config-over-ble.md`.
+- A1 done except the `id` in mDNS TXT / scan response (needed once A2 merges BLE and Wi-Fi sightings).
+  `tools/hil/ble_config_test.py` passes 19/19 from the Mac. Design note: `docs/design/config-over-ble.md`.
 - A2 in part: box screen over BLE or HTTP (status, mode, stored networks, Wi-Fi setup with the box's scan, phones),
   pairing on first use. Still to do: settings editing, BLE and mDNS sightings merged, following the box into
   Network mode (today: reconnect by address).

@@ -20,13 +20,15 @@ LAST = 0x01
 
 
 class BleConfig:
-    def __init__(self, name, timeout=20):
+    def __init__(self, name, timeout=40):  # Setup mode advertises once a second
         self.name, self.timeout = name, timeout
         self.client, self.next_id = None, 1
         self.pending = {}  # id -> (bytearray, future)
 
     async def __aenter__(self):
-        dev = await BleakScanner.find_device_by_name(self.name, timeout=self.timeout)
+        # By the advertised name: CoreBluetooth's own name for a device can be a stale cached one.
+        dev = await BleakScanner.find_device_by_filter(
+            lambda d, adv: self.name in (adv.local_name, d.name), timeout=self.timeout)
         if not dev:
             raise RuntimeError(f"{self.name} not found over BLE")
         self.client = BleakClient(dev)
