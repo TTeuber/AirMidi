@@ -9,7 +9,7 @@ import '../link/link.dart';
 import 'strips_page.dart';
 
 /// Finds the box again on BLE or Wi-Fi after it left the link this page uses, and returns its page (null: not found).
-typedef Follow = Future<Widget?> Function(String id, {required bool toWifi});
+typedef Follow = Future<Widget?> Function(String id, {required bool toWifi, required DateTime since});
 
 class BoxPage extends StatefulWidget {
   final String title;
@@ -35,6 +35,8 @@ class _BoxPageState extends State<BoxPage> {
   Map<String, dynamic>? status, phones;
   List<String> networks = [];
   String? error, following;
+  bool changing = false; // a mode or settings change is being checked: polls that fail meanwhile are expected
+  bool closed = false;
   Timer? poll;
 
   ConfigClient get api => widget.config;
@@ -46,10 +48,20 @@ class _BoxPageState extends State<BoxPage> {
     poll = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
   }
 
+  // Once only, and before following: the page that replaces this one connects to the same BLE device id, and
+  // closing this link after that (in dispose) would disconnect it.
+  Future<void> _close() async {
+    if (closed) return;
+    closed = true;
+    poll?.cancel();
+    try {
+      await widget.close();
+    } catch (_) {}
+  }
+
   @override
   void dispose() {
-    poll?.cancel();
-    widget.close();
+    _close();
     super.dispose();
   }
 
@@ -63,7 +75,7 @@ class _BoxPageState extends State<BoxPage> {
       }
       if (mounted) setState(() => (status = s, error = null));
     } catch (e) {
-      if (mounted) setState(() => error = '$e');
+      if (mounted && following == null && !changing) setState(() => error = '$e');
     }
   }
 
@@ -80,20 +92,25 @@ class _BoxPageState extends State<BoxPage> {
   /// otherwise find the box again (Wi-Fi when it went to Network mode, BLE otherwise) and swap this page for that.
   Future<void> _afterChange({required bool toWifi}) async {
     final id = status?['id'] as String?;
+    changing = true;
     await Future.delayed(const Duration(seconds: 2)); // a restart is under way by then (it waits ~0.5 s)
     try {
       await api.call('GET', '/api/status');
+      changing = false;
       return _refresh(all: true);
     } catch (_) {
       // gone from this link: follow it
     }
+    changing = false;
+    final since = DateTime.now(); // the link is gone: only sightings from now on count
+    await _close();
     if (id == null || widget.follow == null) {
       setState(() => error = 'The box went away from this connection. Find it again in the box list.');
       return;
     }
     setState(() => following = toWifi ? 'Waiting for the box on Wi-Fi' : 'Waiting for the box over Bluetooth');
     try {
-      final page = await widget.follow!(id, toWifi: toWifi);
+      final page = await widget.follow!(id, toWifi: toWifi, since: since);
       if (!mounted) return;
       if (page != null) {
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => page));
@@ -126,9 +143,11 @@ class _BoxPageState extends State<BoxPage> {
     }
     try {
       await api.call('POST', '/api/mode', {'mode': mode});
-    } catch (e) {
-      setState(() => error = '$e');
+    } on ApiError catch (e) {
+      setState(() => error = '$e'); // the box answered: it did not switch
       return;
+    } catch (_) {
+      // no answer: the switch may still have happened (the box restarts right after answering), so look
     }
     await _afterChange(toWifi: mode == 'network');
   }

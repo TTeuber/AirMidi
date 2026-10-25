@@ -62,12 +62,22 @@ class Boxes {
     );
   }
 
-  /// The box [id] went away from the transport we used (a mode change, a restart): find it again, BLE first unless
-  /// it went to Network mode. Null if it did not come back in time.
-  Future<Widget?> follow(String id, {required bool toWifi}) async {
-    final s = await discovery.waitFor(id, ble: !toWifi);
+  /// The box [id] went away from the transport we used at [since] (a mode change, a restart): find it again, on
+  /// Wi-Fi if it went to Network mode, over BLE otherwise. Null if it did not come back within ~40 s.
+  Future<Widget?> follow(String id, {required bool toWifi, required DateTime since}) async {
+    final end = DateTime.now().add(const Duration(seconds: 40));
+    final s = await discovery.waitFor(id, ble: !toWifi, since: since);
     if (s == null) return null;
-    return toWifi ? openWifi(s.host!, s.name) : openBle(s.bleDevice!, s.name);
+    // The sighting can come before the box answers (mDNS keeps a box that restarted on the same address; BLE
+    // advertises before everything has started): try until it does.
+    while (true) {
+      try {
+        return toWifi ? await openWifi(s.host!, s.name) : await openBle(s.bleDevice!, s.name);
+      } catch (_) {
+        if (DateTime.now().isAfter(end)) return null;
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    }
   }
 }
 

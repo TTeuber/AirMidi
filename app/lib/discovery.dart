@@ -130,9 +130,17 @@ class Discovery extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// Wait (up to [timeout]) for the box with [id] to be reachable over BLE ([ble]) or on Wi-Fi.
-  Future<Sighting?> waitFor(String id, {required bool ble, Duration timeout = const Duration(seconds: 40)}) async {
-    bool ready() => boxes[id] != null && (ble ? boxes[id]!.onBle : boxes[id]!.onWifi);
+  /// Wait (up to [timeout]) for the box with [id] to be reachable over BLE ([ble]) or on Wi-Fi. For BLE only an
+  /// advertisement heard after [since] counts: one from before a restart would send us to a box that is going down.
+  Future<Sighting?> waitFor(String id,
+      {required bool ble, DateTime? since, Duration timeout = const Duration(seconds: 40)}) async {
+    bool ready() {
+      final s = boxes[id];
+      if (s == null) return false;
+      if (!ble) return s.onWifi;
+      return s.onBle && (since == null || s.bleSeen!.isAfter(since));
+    }
+
     if (ready()) return boxes[id];
     final done = Completer<Sighting?>();
     void check() {

@@ -161,8 +161,12 @@ class HttpConfigClient implements ConfigClient {
   Future<Map<String, dynamic>> call(String method, String path, [Object? body]) async {
     final req = await _http.openUrl(method, Uri.parse('http://$host$path'));
     if (body != null) {
+      final bytes = body is List<int> ? body : utf8.encode(jsonEncode(body));
       req.headers.contentType = ContentType.json;
-      req.add(body is List<int> ? body : utf8.encode(jsonEncode(body)));
+      req.contentLength = bytes.length; // without it Dart sends the body chunked, which the box's server resets
+      req.add(bytes);
+    } else if (method != 'GET') {
+      req.contentLength = 0;
     }
     final res = await req.close().timeout(const Duration(seconds: 10));
     final text = await res.transform(utf8.decoder).join();
