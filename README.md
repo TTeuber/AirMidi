@@ -99,9 +99,11 @@ One note per module, with the reasoning, the alternatives considered and what th
 - [midi-ci.md](docs/design/midi-ci.md): MIDI-CI Discovery and Property Exchange, the generated play page
 - [ota.md](docs/design/ota.md): flash layout, signed updates, self-test and rollback, releases
 - [board-and-settings.md](docs/design/board-and-settings.md): the board layer and the settings store
+- [config-over-ble.md](docs/design/config-over-ble.md): one JSON API for HTTP and BLE, trusted phones, Wi-Fi setup from a phone
 - [testing.md](docs/design/testing.md): the test rig and CI
 - [measurements.md](docs/measurements.md): every number in this README, with its method
 - [plan.md](docs/plan.md): the development plan and a decision log of every choice and measured result
+- [app.md](docs/app.md): the Android app (`app/`): plan, phases and its decision log
 
 ## Layout
 

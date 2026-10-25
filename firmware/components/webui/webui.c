@@ -1,35 +1,26 @@
 #include "webui.h"
 
+#include "api.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include "ble_midi.h"
-#include "board.h"
 #include "bus.h"
 #include "cJSON.h"
-#include "ci.h"
-#include "esp_app_desc.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
-#include "espnow_midi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "net.h"
-#include "net_midi.h"
-#include "nvs_settings.h"
 #include "ota.h"
-#include "power.h"
-#include "rtp_midi.h"
-#include "uart_midi.h"
 
 static const char *TAG = "web";
 
-static webui_hooks_t hooks;
 static httpd_handle_t server;
 
 // ---- static files (gzipped at build time, see CMakeLists.txt) -----------------------------------------------
@@ -82,26 +73,6 @@ static esp_err_t send_error(httpd_req_t *req, const char *status, const char *me
     return send_json(req, root);
 }
 
-// Read a small JSON request body (settings, wifi, mode).
-static cJSON *read_json(httpd_req_t *req) {
-    if (req->content_len <= 0 || req->content_len > 1024) return NULL;
-    char buf[1025];
-    int got = 0;
-    while (got < req->content_len) {
-        int n = httpd_req_recv(req, buf + got, req->content_len - got);
-        if (n <= 0) return NULL;
-        got += n;
-    }
-    buf[got] = 0;
-    return cJSON_Parse(buf);
-}
-
-static airmidi_mode_t mode_from_name(const char *s) {
-    for (int m = 0; m < AIRMIDI_MODE_COUNT; m++)
-        if (s && !strcmp(s, airmidi_mode_name(m))) return m;
-    return AIRMIDI_MODE_COUNT;
-}
-
 static void restart_soon(void *arg) { esp_restart(); }
 
 static void restart_after(uint32_t ms) {
@@ -111,313 +82,6 @@ static void restart_after(uint32_t ms) {
 }
 
 static volatile uint32_t ws_dropped;  // words for the pages that did not fit (one that cannot keep up)
-
-// ---- /api/status ---------------------------------------------------------------------------------------------
-
-static esp_err_t get_status(httpd_req_t *req) {
-    cJSON *r = cJSON_CreateObject();
-    settings_t s;
-    nvs_settings_get(&s);
-    const esp_app_desc_t *app = esp_app_get_description();
-    cJSON_AddStringToObject(r, "name", s.name);
-    cJSON_AddStringToObject(r, "version", app->version);
-    cJSON_AddStringToObject(r, "board", board()->name);
-    cJSON_AddNumberToObject(r, "uptime_ms", (double)(esp_timer_get_time() / 1000));
-    cJSON_AddStringToObject(r, "reset_reason", ota_reset_reason());
-    cJSON_AddStringToObject(r, "mode", airmidi_mode_name(s.mode));
-    cJSON_AddNumberToObject(r, "heap", esp_get_free_heap_size());
-
-    cJSON *w = cJSON_AddObjectToObject(r, "wifi");
-    char ip[16], ssid[33];
-    net_ip(ip);
-    net_ssid(ssid);
-    cJSON_AddStringToObject(w, "state", net_state_name(net_state()));
-    cJSON_AddStringToObject(w, "ip", ip);
-    cJSON_AddStringToObject(w, "ssid", ssid);
-    cJSON_AddNumberToObject(w, "rssi", net_rssi());
-
-    cJSON *b = cJSON_AddObjectToObject(r, "battery");
-    cJSON_AddBoolToObject(b, "usb", power_on_usb());
-    cJSON_AddNumberToObject(b, "mv", power_cell_mv());
-    cJSON_AddNumberToObject(b, "pct", power_percent());
-    cJSON_AddBoolToObject(b, "low", power_low());
-
-    cJSON *ble = cJSON_AddArrayToObject(r, "ble");
-    for (int i = 0; i < 2; i++) {
-        ble_midi_slot_stats_t st;
-        ble_midi_get_stats(i, &st);
-        cJSON *c = cJSON_CreateObject();
-        cJSON_AddStringToObject(c, "state", !st.connected ? "idle" : st.subscribed ? "playing" : "connected");
-        cJSON_AddNumberToObject(c, "interval_ms", st.connected ? st.interval_x125 * 1.25 : 0);
-        cJSON_AddNumberToObject(c, "mtu", st.mtu);
-        cJSON_AddItemToArray(ble, c);
-    }
-
-    ble_midi_central_info_t bc;
-    ble_midi_central_info(&bc);
-    cJSON *dv = cJSON_AddObjectToObject(r, "device");
-    cJSON_AddStringToObject(dv, "state", ble_midi_central_state_name(bc.state));
-    cJSON_AddStringToObject(dv, "target", bc.target);
-    cJSON_AddStringToObject(dv, "name", bc.name);
-    cJSON_AddNumberToObject(dv, "interval_ms", bc.stats.connected ? bc.stats.interval_x125 * 1.25 : 0);
-
-    uart_midi_stats_t t;
-    uart_midi_get_stats(&t);
-    cJSON *trs = cJSON_AddObjectToObject(r, "trs");
-    cJSON_AddNumberToObject(trs, "rx", t.rx_bytes);
-    cJSON_AddNumberToObject(trs, "tx", t.tx_bytes);
-    cJSON_AddNumberToObject(trs, "rx_dropped", t.rx_dropped_bytes);
-    cJSON_AddNumberToObject(trs, "tx_dropped", t.tx_dropped);
-
-    // The ports this board has (CI is internal).
-    static const struct {
-        int port;
-        const char *name;
-    } shown[] = {{PORT_TRS, "trs"},    {PORT_BLE_0, "ble1"}, {PORT_BLE_1, "ble2"},   {PORT_BLE_CENTRAL, "bledev"},
-                 {PORT_NET_0, "net1"}, {PORT_NET_1, "net2"}, {PORT_RTP_0, "rtp1"},   {PORT_RTP_1, "rtp2"},
-                 {PORT_WEB, "web"},    {PORT_USB, "usb"},    {PORT_ESPNOW, "espnow"}};
-    cJSON *ports = cJSON_AddArrayToObject(r, "ports");
-    for (size_t i = 0; i < sizeof shown / sizeof shown[0]; i++) {
-        bus_port_stats_t ps;
-        bus_get_stats(shown[i].port, &ps);
-        if (shown[i].port == PORT_WEB) ps.dropped += ws_dropped;
-        cJSON *p = cJSON_CreateObject();
-        cJSON_AddStringToObject(p, "name", shown[i].name);
-        cJSON_AddNumberToObject(p, "in", ps.in);
-        cJSON_AddNumberToObject(p, "out", ps.out);
-        cJSON_AddNumberToObject(p, "dropped", ps.dropped);
-        cJSON_AddNumberToObject(p, "coalesced", ps.coalesced);
-        cJSON_AddBoolToObject(p, "up", bus_is_up(shown[i].port));
-        cJSON_AddItemToArray(ports, p);
-    }
-
-    cJSON *net = cJSON_AddArrayToObject(r, "net");
-    for (int i = 0; i < NM2_SESSIONS; i++) {
-        net_midi_session_info_t ni;
-        net_midi_get_info(i, &ni);
-        cJSON *c = cJSON_CreateObject();
-        cJSON_AddBoolToObject(c, "active", ni.active);
-        cJSON_AddStringToObject(c, "peer", ni.peer);
-        cJSON_AddStringToObject(c, "ip", ni.ip);
-        cJSON_AddNumberToObject(c, "protocol", ni.protocol);
-        cJSON_AddNumberToObject(c, "rx", ni.stats.rx_cmds);
-        cJSON_AddNumberToObject(c, "lost", ni.stats.rx_lost);
-        cJSON_AddNumberToObject(c, "recovered", ni.stats.rx_recovered);
-        cJSON_AddNumberToObject(c, "tx", ni.stats.tx_cmds);
-        cJSON_AddNumberToObject(c, "retransmitted", ni.stats.tx_retransmitted);
-        cJSON_AddItemToArray(net, c);
-    }
-
-    espnow_midi_info_t en;
-    espnow_midi_get_info(&en);
-    cJSON *ej = cJSON_AddObjectToObject(r, "espnow");
-    cJSON_AddBoolToObject(ej, "on", en.running);
-    cJSON_AddNumberToObject(ej, "channel", en.channel);
-    cJSON *peers = cJSON_AddArrayToObject(ej, "peers");
-    for (int i = 0; i < en.n_peers; i++) cJSON_AddItemToArray(peers, cJSON_CreateString(en.peers[i]));
-    cJSON_AddNumberToObject(ej, "rx", en.stats.rx_frames);
-    cJSON_AddNumberToObject(ej, "lost", en.stats.rx_lost);
-    cJSON_AddNumberToObject(ej, "dups", en.stats.rx_dups);
-    cJSON_AddNumberToObject(ej, "tx", en.stats.tx_frames);
-    cJSON_AddNumberToObject(ej, "hellos", en.stats.rx_hellos);
-    cJSON_AddNumberToObject(ej, "bad", en.stats.rx_bad);
-
-    cJSON *rtp = cJSON_AddArrayToObject(r, "rtp");
-    for (int i = 0; i < RTPMIDI_SESSIONS; i++) {
-        rtp_midi_session_info_t ri;
-        rtp_midi_get_info(i, &ri);
-        cJSON *c = cJSON_CreateObject();
-        cJSON_AddBoolToObject(c, "active", ri.active);
-        cJSON_AddStringToObject(c, "peer", ri.peer);
-        cJSON_AddStringToObject(c, "ip", ri.ip);
-        cJSON_AddNumberToObject(c, "rx", ri.stats.rx_packets);
-        cJSON_AddNumberToObject(c, "lost", ri.stats.rx_lost);
-        cJSON_AddNumberToObject(c, "repairs", ri.stats.rx_repairs);
-        cJSON_AddBoolToObject(c, "resumed", ri.resumed);
-        cJSON_AddBoolToObject(c, "syncing", ri.syncing);
-        cJSON_AddNumberToObject(c, "bad", ri.stats.rx_bad);
-        cJSON_AddNumberToObject(c, "late", ri.stats.rx_late);
-        cJSON_AddNumberToObject(c, "tx", ri.stats.tx_packets);
-        cJSON_AddItemToArray(rtp, c);
-    }
-
-    ci_status_t cs;
-    ci_get_status(&cs);
-    cJSON *ci = cJSON_AddObjectToObject(r, "ci");
-    cJSON_AddBoolToObject(ci, "scanning", cs.scanning);
-    cJSON_AddStringToObject(ci, "result", cs.result);
-    cJSON_AddStringToObject(ci, "device", cs.device);
-    cJSON_AddStringToObject(ci, "source", cs.source);
-
-    ota_info_t oi;
-    ota_get_info(&oi);
-    ota_coredump_t cd;
-    ota_coredump_info(&cd);
-    cJSON *o = cJSON_AddObjectToObject(r, "ota");
-    cJSON_AddStringToObject(o, "running", oi.running);
-    cJSON_AddStringToObject(o, "state", oi.state);
-    cJSON_AddStringToObject(o, "rolled_back", oi.rolled_back);
-    ota_fetch_status_t fs;
-    ota_fetch_status(&fs);
-    cJSON *f = cJSON_AddObjectToObject(o, "fetch");
-    cJSON_AddStringToObject(f, "state", fs.state);
-    cJSON_AddNumberToObject(f, "percent", fs.percent);
-    cJSON_AddStringToObject(f, "error", fs.error);
-    cJSON *c = cJSON_AddObjectToObject(o, "coredump");
-    cJSON_AddBoolToObject(c, "present", cd.present);
-    cJSON_AddNumberToObject(c, "size", cd.size);
-    cJSON_AddStringToObject(c, "task", cd.task);
-    return send_json(req, r);
-}
-
-// ---- /api/ble: BLE MIDI devices around, for choosing the one to connect to ----------------------------------
-
-static esp_err_t get_ble(httpd_req_t *req) {
-    ble_midi_central_info_t ci;
-    ble_midi_central_info(&ci);
-    cJSON *r = cJSON_CreateObject();
-    cJSON_AddStringToObject(r, "state", ble_midi_central_state_name(ci.state));
-    cJSON_AddStringToObject(r, "target", ci.target);
-    cJSON_AddStringToObject(r, "name", ci.name);
-    cJSON_AddBoolToObject(r, "scanning", ci.listing);
-    cJSON *list = cJSON_AddArrayToObject(r, "found");
-    ble_midi_found_t f[BLE_MIDI_FOUND_MAX];
-    int n = ble_midi_found(f, BLE_MIDI_FOUND_MAX);
-    for (int i = 0; i < n; i++) {
-        cJSON *d = cJSON_CreateObject();
-        cJSON_AddStringToObject(d, "name", f[i].name);
-        cJSON_AddStringToObject(d, "address", f[i].address);
-        cJSON_AddNumberToObject(d, "rssi", f[i].rssi);
-        cJSON_AddItemToArray(list, d);
-    }
-    return send_json(req, r);
-}
-
-static esp_err_t post_ble_scan(httpd_req_t *req) {
-    if (!ble_midi_ready()) return send_error(req, "409 Conflict", "Bluetooth is off in this mode");
-    ble_midi_scan_list();
-    return send_json(req, cJSON_CreateObject());
-}
-
-// ---- /api/settings, /api/mode --------------------------------------------------------------------------------
-
-static cJSON *settings_json(const settings_t *s) {
-    cJSON *r = cJSON_CreateObject();
-    cJSON_AddStringToObject(r, "name", s->name);
-    cJSON_AddStringToObject(r, "mode", airmidi_mode_name(s->mode));
-    cJSON_AddNumberToObject(r, "sysex_timeout_ms", s->sysex_timeout_ms);
-    cJSON_AddBoolToObject(r, "ble_in_network", s->ble_in_network);
-    cJSON_AddStringToObject(r, "ble_device", s->ble_device);
-    cJSON_AddBoolToObject(r, "espnow", s->espnow);
-    cJSON_AddStringToObject(r, "espnow_group", s->espnow_group);
-    return r;
-}
-
-static esp_err_t get_settings(httpd_req_t *req) {
-    settings_t s;
-    nvs_settings_get(&s);
-    return send_json(req, settings_json(&s));
-}
-
-// Takes the full settings object; changing the name restarts the box (BLE name, mDNS host, access point).
-static esp_err_t post_settings(httpd_req_t *req) {
-    cJSON *in = read_json(req);
-    if (!in) return send_error(req, "400 Bad Request", "expected a JSON object");
-    settings_t old, s;
-    nvs_settings_get(&old);
-    s = old;
-    const cJSON *name = cJSON_GetObjectItem(in, "name");
-    const cJSON *timeout = cJSON_GetObjectItem(in, "sysex_timeout_ms");
-    if (cJSON_IsString(name)) {
-        memset(s.name, 0, sizeof s.name);
-        strncpy(s.name, name->valuestring, sizeof s.name - 1);
-        if (strlen(name->valuestring) > SETTINGS_NAME_MAX) s.name[0] = 0;  // fails the check below
-    }
-    if (cJSON_IsNumber(timeout)) s.sysex_timeout_ms = timeout->valuedouble > 65535 ? 0 : timeout->valueint;
-    const cJSON *ble_net = cJSON_GetObjectItem(in, "ble_in_network");
-    if (cJSON_IsBool(ble_net)) s.ble_in_network = cJSON_IsTrue(ble_net);
-    const cJSON *dev = cJSON_GetObjectItem(in, "ble_device");
-    if (cJSON_IsString(dev)) {
-        memset(s.ble_device, 0, sizeof s.ble_device);
-        strncpy(s.ble_device, dev->valuestring, sizeof s.ble_device - 1);
-        if (strlen(dev->valuestring) > SETTINGS_DEVICE_MAX) s.ble_device[0] = 1;  // fails the check below
-    }
-    const cJSON *espnow = cJSON_GetObjectItem(in, "espnow");
-    if (cJSON_IsBool(espnow)) s.espnow = cJSON_IsTrue(espnow);
-    const cJSON *group = cJSON_GetObjectItem(in, "espnow_group");
-    if (cJSON_IsString(group)) {
-        memset(s.espnow_group, 0, sizeof s.espnow_group);
-        strncpy(s.espnow_group, group->valuestring, sizeof s.espnow_group - 1);
-        if (strlen(group->valuestring) > SETTINGS_GROUP_MAX) s.espnow_group[0] = 0;  // fails the check below
-    }
-    cJSON_Delete(in);
-    const char *why = settings_check(&s);
-    if (why) return send_error(req, "400 Bad Request", why);
-    if (nvs_settings_set(&s) != ESP_OK) return send_error(req, "500 Internal Server Error", "could not store");
-    if (strcmp(s.ble_device, old.ble_device)) ble_midi_set_device(s.ble_device);  // applies without a restart
-    bool restart = strcmp(s.name, old.name) != 0 || s.sysex_timeout_ms != old.sysex_timeout_ms ||
-                   s.espnow != old.espnow || strcmp(s.espnow_group, old.espnow_group) ||
-                   (s.mode == AIRMIDI_MODE_NETWORK && s.ble_in_network != old.ble_in_network);
-    cJSON *r = cJSON_CreateObject();
-    cJSON_AddItemToObject(r, "settings", settings_json(&s));
-    cJSON_AddBoolToObject(r, "restart", restart);
-    if (restart) restart_after(500);  // the reply goes out first
-    return send_json(req, r);
-}
-
-static esp_err_t post_mode(httpd_req_t *req) {
-    cJSON *in = read_json(req);
-    airmidi_mode_t m = mode_from_name(in ? cJSON_GetStringValue(cJSON_GetObjectItem(in, "mode")) : NULL);
-    cJSON_Delete(in);
-    if (m == AIRMIDI_MODE_COUNT) return send_error(req, "400 Bad Request", "mode is play, network or setup");
-    httpd_resp_sendstr(req, "{}");  // answer before the network goes away
-    hooks.set_mode(m);
-    return ESP_OK;
-}
-
-// ---- /api/wifi -----------------------------------------------------------------------------------------------
-
-static esp_err_t get_wifi(httpd_req_t *req) {
-    char ssids[NET_MAX_NETWORKS][33];
-    int n = net_networks(ssids, NET_MAX_NETWORKS);
-    cJSON *r = cJSON_CreateObject();
-    cJSON *a = cJSON_AddArrayToObject(r, "networks");
-    for (int i = 0; i < n; i++) cJSON_AddItemToArray(a, cJSON_CreateString(ssids[i]));
-    return send_json(req, r);
-}
-
-static esp_err_t post_wifi(httpd_req_t *req) {
-    cJSON *in = read_json(req);
-    const char *ssid = in ? cJSON_GetStringValue(cJSON_GetObjectItem(in, "ssid")) : NULL;
-    const char *pass = in ? cJSON_GetStringValue(cJSON_GetObjectItem(in, "pass")) : NULL;
-    esp_err_t e = ssid ? net_add_network(ssid, pass ? pass : "") : ESP_ERR_INVALID_ARG;
-    cJSON_Delete(in);
-    if (e == ESP_ERR_INVALID_ARG) return send_error(req, "400 Bad Request", "network name 1-32, password 0-64 bytes");
-    if (e) return send_error(req, "500 Internal Server Error", esp_err_to_name(e));
-    return get_wifi(req);
-}
-
-static esp_err_t delete_wifi(httpd_req_t *req) {
-    char query[128], ssid[100];
-    if (httpd_req_get_url_query_str(req, query, sizeof query) != ESP_OK ||
-        httpd_query_key_value(query, "ssid", ssid, sizeof ssid) != ESP_OK)
-        return send_error(req, "400 Bad Request", "?ssid= missing");
-    // query values arrive URL-encoded
-    char plain[sizeof ssid];
-    size_t k = 0;
-    for (size_t i = 0; ssid[i] && k < sizeof plain - 1; i++) {
-        if (ssid[i] == '%' && ssid[i + 1] && ssid[i + 2]) {
-            char hex[3] = {ssid[i + 1], ssid[i + 2], 0};
-            plain[k++] = (char)strtol(hex, NULL, 16);
-            i += 2;
-        } else {
-            plain[k++] = ssid[i] == '+' ? ' ' : ssid[i];
-        }
-    }
-    plain[k] = 0;
-    if (net_remove_network(plain) != ESP_OK) return send_error(req, "404 Not Found", "no such network");
-    return get_wifi(req);
-}
 
 // ---- /api/update, /api/coredump ------------------------------------------------------------------------------
 
@@ -446,37 +110,6 @@ static esp_err_t post_update(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// {"base": "..."} optional: where to look instead of the configured release URL (tests use a local server).
-static void read_base(httpd_req_t *req, char *base, size_t len) {
-    base[0] = 0;
-    cJSON *in = read_json(req);
-    const char *b = in ? cJSON_GetStringValue(cJSON_GetObjectItem(in, "base")) : NULL;
-    if (b) snprintf(base, len, "%s", b);
-    cJSON_Delete(in);
-}
-
-static esp_err_t post_update_check(httpd_req_t *req) {
-    char base[160], err[64] = "";
-    read_base(req, base, sizeof base);
-    ota_manifest_t m;
-    if (ota_check(base, &m, err, sizeof err) != ESP_OK) return send_error(req, "502 Bad Gateway", err);
-    cJSON *r = cJSON_CreateObject();
-    cJSON_AddStringToObject(r, "current", esp_app_get_description()->version);
-    cJSON_AddStringToObject(r, "latest", m.version);
-    cJSON_AddBoolToObject(r, "newer", m.newer);
-    return send_json(req, r);
-}
-
-static esp_err_t post_update_install(httpd_req_t *req) {
-    char base[160];
-    read_base(req, base, sizeof base);
-    esp_err_t e = ota_install_start(base);
-    if (e == ESP_ERR_INVALID_STATE) return send_error(req, "409 Conflict", "a download is already running");
-    if (e) return send_error(req, "500 Internal Server Error", esp_err_to_name(e));
-    httpd_resp_set_status(req, "202 Accepted");
-    return httpd_resp_sendstr(req, "{}");
-}
-
 static bool chunk_sink(void *ctx, const void *data, size_t len) {
     return httpd_resp_send_chunk(ctx, data, len) == ESP_OK;
 }
@@ -488,72 +121,38 @@ static esp_err_t get_coredump(httpd_req_t *req) {
     return httpd_resp_send_chunk(req, NULL, 0);
 }
 
-static esp_err_t delete_coredump(httpd_req_t *req) {
-    ota_coredump_erase();
-    return httpd_resp_sendstr(req, "{}");
-}
+// ---- /api/...: everything JSON goes through api_call() (components/api), the same as the BLE config service ----
 
-// ---- /api/ci: MIDI-CI ----------------------------------------------------------------------------------------
-
-static esp_err_t get_ci(httpd_req_t *req) {
-    ci_status_t cs;
-    ci_get_status(&cs);
-    cJSON *r = cJSON_CreateObject();
-    char muid[8];
-    cJSON_AddBoolToObject(r, "scanning", cs.scanning);
-    cJSON_AddStringToObject(r, "result", cs.result);
-    cJSON_AddNumberToObject(r, "scan_ms", cs.scan_ms);
-    snprintf(muid, sizeof muid, "%07lX", (unsigned long)cs.muid);
-    cJSON_AddStringToObject(r, "muid", muid);
-    snprintf(muid, sizeof muid, "%07lX", (unsigned long)cs.device_muid);
-    cJSON_AddStringToObject(r, "device_muid", cs.device[0] ? muid : "");
-    cJSON_AddStringToObject(r, "device", cs.device);
-    cJSON_AddStringToObject(r, "source", cs.source);
-    cJSON_AddNumberToObject(r, "dropped", cs.dropped);
-    return send_json(req, r);
-}
-
-static bool send_sink(void *ctx, const char *text, size_t len) { return httpd_resp_send(ctx, text, len) == ESP_OK; }
-
-// {"info": DeviceInfo, "controls": AllCtrlList, "maps": {id: CtrlMapList}, "profile": the uploaded profile}
-static esp_err_t get_ci_device(httpd_req_t *req) {
-    httpd_resp_set_type(req, "application/json");
-    if (!ci_write_device(send_sink, req)) return send_error(req, "500 Internal Server Error", "out of memory");
-    return ESP_OK;
-}
-
-static esp_err_t post_ci_scan(httpd_req_t *req) {
-    cJSON *in = read_json(req);
-    ci_scan(cJSON_IsTrue(cJSON_GetObjectItem(in, "force")));
-    cJSON_Delete(in);
-    httpd_resp_set_status(req, "202 Accepted");
-    return httpd_resp_sendstr(req, "{}");
-}
-
-static esp_err_t post_ci_profile(httpd_req_t *req) {
-    if (req->content_len <= 0 || req->content_len > 16384)
-        return send_error(req, "413 Payload Too Large", "16 KB at most");
-    char *buf = malloc(req->content_len);
-    if (!buf) return send_error(req, "500 Internal Server Error", "out of memory");
-    int got = 0;
-    while (got < req->content_len) {
-        int n = httpd_req_recv(req, buf + got, req->content_len - got);
-        if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
-        if (n <= 0) break;
-        got += n;
+static esp_err_t api_handler(httpd_req_t *req) {
+    static const char *methods[] = {[HTTP_GET] = "GET", [HTTP_POST] = "POST", [HTTP_DELETE] = "DELETE"};
+    if (req->content_len > API_BODY_MAX) return send_error(req, "413 Payload Too Large", "16 KB at most");
+    char *body = NULL;
+    if (req->content_len > 0) {
+        body = malloc(req->content_len);
+        if (!body) return send_error(req, "500 Internal Server Error", "out of memory");
+        int got = 0;
+        while (got < req->content_len) {
+            int n = httpd_req_recv(req, body + got, req->content_len - got);
+            if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
+            if (n <= 0) {
+                free(body);
+                return ESP_FAIL;
+            }
+            got += n;
+        }
     }
-    esp_err_t e = got == req->content_len ? ci_set_profile(buf, got) : ESP_FAIL;
-    free(buf);
-    if (e == ESP_ERR_INVALID_ARG)
-        return send_error(req, "400 Bad Request", "expected a control list: [...] or {\"controls\": [...]}");
-    if (e) return send_error(req, "500 Internal Server Error", esp_err_to_name(e));
-    return httpd_resp_sendstr(req, "{}");
+    api_reply_t r = api_call(methods[req->method], req->uri, body, req->content_len > 0 ? req->content_len : 0);
+    free(body);
+    if (!r.json) return send_error(req, "500 Internal Server Error", "out of memory");
+    httpd_resp_set_status(req, api_status_line(r.status));
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t e = httpd_resp_sendstr(req, r.json);
+    free(r.json);
+    if (r.then) r.then(r.then_arg);  // answered first: a mode switch may take the network away
+    return e;
 }
 
-static esp_err_t delete_ci_profile(httpd_req_t *req) {
-    ci_set_profile(NULL, 0);
-    return httpd_resp_sendstr(req, "{}");
-}
+uint32_t webui_ws_dropped(void) { return ws_dropped; }
 
 // ---- /ws: the control surface's MIDI, as UMP ----------------------------------------------------------------
 // Binary frames, each a run of UMP words, big-endian. From the browser they go on the bus as PORT_WEB; what the
@@ -677,9 +276,9 @@ static const bus_output_ops_t web_ops = {.write = web_write, .flush = web_flush}
 
 // ---- server --------------------------------------------------------------------------------------------------
 
-void webui_start(const webui_hooks_t *h) {
-    hooks = *h;
+void webui_start(void) {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
+    cfg.uri_match_fn = httpd_uri_match_wildcard;  // "/api/*"
     cfg.max_uri_handlers = 28;
     cfg.stack_size = 6144;
     cfg.max_open_sockets = 7;     // + listen + control = 9 of CONFIG_LWIP_MAX_SOCKETS (16, see sdkconfig.defaults)
@@ -695,28 +294,17 @@ void webui_start(const webui_hooks_t *h) {
             .uri = files[i].path, .method = HTTP_GET, .handler = serve_file, .user_ctx = (void *)&files[i]};
         httpd_register_uri_handler(server, &u);
     }
-    const httpd_uri_t api[] = {
-        {.uri = "/api/status", .method = HTTP_GET, .handler = get_status},
-        {.uri = "/api/settings", .method = HTTP_GET, .handler = get_settings},
-        {.uri = "/api/settings", .method = HTTP_POST, .handler = post_settings},
-        {.uri = "/api/mode", .method = HTTP_POST, .handler = post_mode},
-        {.uri = "/api/wifi", .method = HTTP_GET, .handler = get_wifi},
-        {.uri = "/api/wifi", .method = HTTP_POST, .handler = post_wifi},
-        {.uri = "/api/wifi", .method = HTTP_DELETE, .handler = delete_wifi},
+    // The binary ones first (the server takes the first match), then every other /api/ path to api_handler.
+    const httpd_uri_t binary[] = {
         {.uri = "/api/update", .method = HTTP_POST, .handler = post_update},
         {.uri = "/api/coredump", .method = HTTP_GET, .handler = get_coredump},
-        {.uri = "/api/coredump", .method = HTTP_DELETE, .handler = delete_coredump},
-        {.uri = "/api/update/check", .method = HTTP_POST, .handler = post_update_check},
-        {.uri = "/api/update/install", .method = HTTP_POST, .handler = post_update_install},
-        {.uri = "/api/ble", .method = HTTP_GET, .handler = get_ble},
-        {.uri = "/api/ble/scan", .method = HTTP_POST, .handler = post_ble_scan},
-        {.uri = "/api/ci", .method = HTTP_GET, .handler = get_ci},
-        {.uri = "/api/ci/device", .method = HTTP_GET, .handler = get_ci_device},
-        {.uri = "/api/ci/scan", .method = HTTP_POST, .handler = post_ci_scan},
-        {.uri = "/api/ci/profile", .method = HTTP_POST, .handler = post_ci_profile},
-        {.uri = "/api/ci/profile", .method = HTTP_DELETE, .handler = delete_ci_profile},
     };
-    for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
+    for (size_t i = 0; i < sizeof binary / sizeof binary[0]; i++) httpd_register_uri_handler(server, &binary[i]);
+    for (httpd_method_t m = HTTP_DELETE; m <= HTTP_POST; m++) {  // DELETE 0, GET 1, HEAD 2, POST 3
+        if (m == HTTP_HEAD) continue;
+        httpd_uri_t u = {.uri = "/api/*", .method = m, .handler = api_handler};
+        httpd_register_uri_handler(server, &u);
+    }
     httpd_uri_t ws = {.uri = "/ws",
                       .method = HTTP_GET,
                       .handler = ws_handler,

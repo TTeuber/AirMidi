@@ -1,6 +1,7 @@
 #include "net.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -11,6 +12,7 @@
 #include "esp_netif_sntp.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
 #include "mdns.h"
 #include "nvs.h"
 
@@ -26,6 +28,17 @@ static char ip_text[16];
 static int network_index, attempts;
 static bool wifi_running;
 static esp_timer_handle_t retry_timer;
+static bool radio_only;  // Play mode: Wi-Fi radio on (not joined) for ESP-NOW
+
+// Setup from a phone: a scan or one join attempt, outside Network mode (see net.h).
+#define PROBE_TIMEOUT_US (20 * 1000 * 1000)
+static portMUX_TYPE probe_lock = portMUX_INITIALIZER_UNLOCKED;
+static net_probe_t probe;
+static net_found_t found[NET_SCAN_MAX];
+static int n_found;
+static bool probe_radio;  // the probe turned the radio on, and turns it off when done
+static char probe_pass[65];
+static esp_timer_handle_t probe_timer;
 
 // ---- stored networks -----------------------------------------------------------------------------------------
 
@@ -128,18 +141,22 @@ static void retry(void *arg) {
 }
 
 static bool sntp_started;
-static bool radio_only;  // Play mode: Wi-Fi radio on (not joined) for ESP-NOW
 
 bool net_time_valid(void) { return time(NULL) > 1700000000; }  // 2023: anything earlier is the clock's reset value
 
+static bool probe_event(esp_event_base_t base, int32_t id, void *data);
+static void probe_cancel(void);
+
 static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
+    if (probe_event(base, id, data)) return;
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         if (mode == AIRMIDI_MODE_NETWORK) join_next();  // in Play mode the radio may be on for ESP-NOW alone
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *d = data;
+        if (mode != AIRMIDI_MODE_NETWORK || !wifi_running) return;  // a phone's try leaving again (Setup: the AP's
+                                                                    // address stays in ip_text)
         ESP_LOGW(TAG, "not joined (reason %d)", d->reason);
         ip_text[0] = 0;
-        if (mode != AIRMIDI_MODE_NETWORK || !wifi_running) return;
         state = NET_JOINING;
         if (++attempts >= RETRIES_PER_NETWORK) attempts = 0, network_index++;  // try the next stored network
         esp_timer_start_once(retry_timer, RETRY_DELAY_US);
@@ -183,6 +200,7 @@ static void limit_tx_power(void) {
 }
 
 void net_set_mode(airmidi_mode_t m) {
+    probe_cancel();
     mode = m;
     stop_wifi();
     if (m == AIRMIDI_MODE_NETWORK) {
@@ -217,6 +235,237 @@ void net_set_mode(airmidi_mode_t m) {
 
 void net_keep_radio_on(bool on) { radio_only = on; }
 
+// ---- setup from a phone: scan, one join attempt (see net.h) --------------------------------------------------
+
+static const char *probe_names[] = {"idle", "scanning", "scanned", "joining", "joined", "failed"};
+const char *net_probe_state_name(net_probe_state_t s) { return probe_names[s]; }
+
+static void set_probe(net_probe_state_t st, const char *reason) {
+    taskENTER_CRITICAL(&probe_lock);
+    probe.state = st;
+    if (reason) snprintf(probe.reason, sizeof probe.reason, "%s", reason);
+    taskEXIT_CRITICAL(&probe_lock);
+}
+
+// Radio for a probe. Setup: add the station to the access point. Play: on, as a station (unless ESP-NOW has it on
+// already). Returns whether the station still has to start (STA_START follows).
+static esp_err_t probe_radio_on(bool *starting) {
+    *starting = false;
+    if (mode == AIRMIDI_MODE_NETWORK) return ESP_ERR_INVALID_STATE;
+    if (mode == AIRMIDI_MODE_SETUP) {
+        wifi_mode_t m;
+        esp_wifi_get_mode(&m);
+        if (m == WIFI_MODE_APSTA) return ESP_OK;
+        *starting = true;  // stays APSTA afterwards: switching back would restart the access point under the page
+        return esp_wifi_set_mode(WIFI_MODE_APSTA);
+    }
+    if (wifi_running) return ESP_OK;
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_err_t e = esp_wifi_start();
+    if (e) return e;
+    limit_tx_power();
+    probe_radio = wifi_running = true;
+    *starting = true;
+    return ESP_OK;
+}
+
+static void probe_radio_off(void) {
+    if (!probe_radio) return;
+    probe_radio = false;
+    wifi_running = false;
+    esp_wifi_stop();
+}
+
+// The attempt is over (joined, failed or timed out): leave the network again and put the radio back.
+static void probe_finish(void) {
+    esp_timer_stop(probe_timer);
+    memset(probe_pass, 0, sizeof probe_pass);
+    esp_wifi_disconnect();
+    probe_radio_off();
+}
+
+static const char *reason_text(int r) {
+    switch (r) {
+        case WIFI_REASON_NO_AP_FOUND:
+            return "network not found (out of range, or 5 GHz only)";
+        case WIFI_REASON_AUTH_FAIL:
+        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+        case WIFI_REASON_HANDSHAKE_TIMEOUT:
+            return "wrong password";
+        case WIFI_REASON_NO_AP_FOUND_W_COMPATIBLE_SECURITY:
+        case WIFI_REASON_NO_AP_FOUND_IN_AUTHMODE_THRESHOLD:
+            return "the network's security is one the box does not support";
+        default:
+            return NULL;
+    }
+}
+
+static void collect_scan(void) {
+    uint16_t n = 0;
+    esp_wifi_scan_get_ap_num(&n);
+    if (n > 32) n = 32;
+    wifi_ap_record_t *recs = n ? calloc(n, sizeof *recs) : NULL;
+    if (n && (!recs || esp_wifi_scan_get_ap_records(&n, recs) != ESP_OK)) n = 0;
+    net_found_t list[NET_SCAN_MAX];
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+        const char *name = (const char *)recs[i].ssid;
+        if (!name[0]) continue;  // hidden
+        int j = 0;
+        while (j < k && strcmp(list[j].ssid, name)) j++;
+        if (j < k) {  // the same name from another access point: keep the strongest
+            if (recs[i].rssi > list[j].rssi) list[j].rssi = recs[i].rssi;
+            continue;
+        }
+        if (k == NET_SCAN_MAX) continue;
+        snprintf(list[k].ssid, sizeof list[k].ssid, "%s", name);
+        list[k].rssi = recs[i].rssi;
+        list[k].secure = recs[i].authmode != WIFI_AUTH_OPEN;
+        k++;
+    }
+    free(recs);
+    for (int i = 1; i < k; i++)  // strongest first (insertion sort, at most 20)
+        for (int j = i; j > 0 && list[j].rssi > list[j - 1].rssi; j--) {
+            net_found_t t = list[j];
+            list[j] = list[j - 1], list[j - 1] = t;
+        }
+    taskENTER_CRITICAL(&probe_lock);
+    memcpy(found, list, k * sizeof list[0]);
+    n_found = k;
+    taskEXIT_CRITICAL(&probe_lock);
+}
+
+static int probe_attempts;
+
+// Events while a probe runs; true when the probe took the event (the normal handling must not see it).
+static bool probe_event(esp_event_base_t base, int32_t id, void *data) {
+    net_probe_state_t st = probe.state;
+    if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
+        if (st != NET_PROBE_SCANNING) return false;
+        collect_scan();
+        esp_timer_stop(probe_timer);
+        set_probe(NET_PROBE_SCANNED, NULL);
+        probe_radio_off();
+        ESP_LOGI(TAG, "scan: %d networks", n_found);
+        return true;
+    }
+    if (st != NET_PROBE_JOINING) return false;
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+        return true;
+    }
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+        const wifi_event_sta_disconnected_t *d = data;
+        if (++probe_attempts < 2 && d->reason != WIFI_REASON_NO_AP_FOUND) {
+            esp_wifi_connect();  // one more go: a first association sometimes fails for no reason
+            return true;
+        }
+        char why[64];
+        const char *t = reason_text(d->reason);
+        if (t)
+            snprintf(why, sizeof why, "%s", t);
+        else
+            snprintf(why, sizeof why, "not joined (reason %d)", d->reason);
+        ESP_LOGW(TAG, "trying \"%s\": %s", probe.ssid, why);
+        set_probe(NET_PROBE_FAILED, why);
+        probe_finish();
+        return true;
+    }
+    if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t *e = data;
+        taskENTER_CRITICAL(&probe_lock);
+        snprintf(probe.ip, sizeof probe.ip, IPSTR, IP2STR(&e->ip_info.ip));
+        taskEXIT_CRITICAL(&probe_lock);
+        ESP_LOGI(TAG, "trying \"%s\": joined (%s), network stored", probe.ssid, probe.ip);
+        net_add_network(probe.ssid, probe_pass);
+        set_probe(NET_PROBE_JOINED, NULL);
+        probe_finish();
+        return true;
+    }
+    return false;
+}
+
+static void probe_timeout(void *arg) {
+    if (probe.state == NET_PROBE_JOINING) {
+        set_probe(NET_PROBE_FAILED, "no answer from the network in 20 s");
+        probe_finish();
+    } else if (probe.state == NET_PROBE_SCANNING) {
+        set_probe(NET_PROBE_FAILED, "the scan did not finish");
+        probe_radio_off();
+    }
+}
+
+static bool probe_busy(void) { return probe.state == NET_PROBE_SCANNING || probe.state == NET_PROBE_JOINING; }
+
+// A mode change in the middle of a probe: the radio is about to be set up afresh.
+static void probe_cancel(void) {
+    if (!probe_timer || !probe_busy()) return;
+    esp_timer_stop(probe_timer);
+    memset(probe_pass, 0, sizeof probe_pass);
+    probe_radio = false;  // net_set_mode stops the radio itself
+    set_probe(NET_PROBE_FAILED, "the box changed mode");
+}
+
+esp_err_t net_scan_start(void) {
+    if (probe_busy()) return ESP_ERR_INVALID_STATE;
+    bool starting;
+    esp_err_t e = probe_radio_on(&starting);
+    if (e) return e;
+    set_probe(NET_PROBE_SCANNING, "");
+    e = esp_wifi_scan_start(&(wifi_scan_config_t){.show_hidden = false}, false);
+    if (e) {
+        set_probe(NET_PROBE_FAILED, esp_err_to_name(e));
+        probe_radio_off();
+        return e;
+    }
+    esp_timer_start_once(probe_timer, PROBE_TIMEOUT_US);
+    return ESP_OK;
+}
+
+int net_scan_results(net_found_t *out, int max) {
+    taskENTER_CRITICAL(&probe_lock);
+    int n = n_found < max ? n_found : max;
+    memcpy(out, found, n * sizeof found[0]);
+    taskEXIT_CRITICAL(&probe_lock);
+    return n;
+}
+
+esp_err_t net_try_network(const char *ssid, const char *pass) {
+    if (!ssid || !*ssid || strlen(ssid) > 32 || (pass && strlen(pass) > 64)) return ESP_ERR_INVALID_ARG;
+    if (probe_busy()) return ESP_ERR_INVALID_STATE;
+    if (mode == AIRMIDI_MODE_NETWORK) return ESP_ERR_INVALID_STATE;
+    taskENTER_CRITICAL(&probe_lock);
+    snprintf(probe.ssid, sizeof probe.ssid, "%s", ssid);
+    probe.ip[0] = probe.reason[0] = 0;
+    probe.state = NET_PROBE_JOINING;
+    taskEXIT_CRITICAL(&probe_lock);
+    snprintf(probe_pass, sizeof probe_pass, "%s", pass ? pass : "");
+    probe_attempts = 0;
+    wifi_config_t wc = {0};
+    memcpy(wc.sta.ssid, ssid, strlen(ssid));
+    memcpy(wc.sta.password, probe_pass, strlen(probe_pass));
+    wc.sta.threshold.authmode = probe_pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+    wc.sta.pmf_cfg.capable = true;
+    bool starting;
+    esp_err_t e = probe_radio_on(&starting);
+    if (!e) e = esp_wifi_set_config(WIFI_IF_STA, &wc);
+    if (!e && !starting) e = esp_wifi_connect();  // otherwise on STA_START
+    if (e) {
+        set_probe(NET_PROBE_FAILED, esp_err_to_name(e));
+        probe_finish();
+        return e;
+    }
+    ESP_LOGI(TAG, "trying \"%s\"", ssid);
+    esp_timer_start_once(probe_timer, PROBE_TIMEOUT_US);
+    return ESP_OK;
+}
+
+void net_probe(net_probe_t *out) {
+    taskENTER_CRITICAL(&probe_lock);
+    *out = probe;
+    taskEXIT_CRITICAL(&probe_lock);
+}
+
 uint8_t net_ap_channel(void) {
     wifi_ap_record_t ap;
     return state == NET_CONNECTED && esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.primary : 0;
@@ -236,6 +485,8 @@ void net_start(airmidi_mode_t m, const char *name) {
     esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL);
     const esp_timer_create_args_t ta = {.callback = retry, .name = "wifi_retry"};
     ESP_ERROR_CHECK(esp_timer_create(&ta, &retry_timer));
+    const esp_timer_create_args_t pa = {.callback = probe_timeout, .name = "wifi_probe"};
+    ESP_ERROR_CHECK(esp_timer_create(&pa, &probe_timer));
 
     ESP_ERROR_CHECK(mdns_init());
     mdns_hostname_set(host);

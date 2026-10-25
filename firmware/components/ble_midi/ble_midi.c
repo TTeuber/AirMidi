@@ -6,6 +6,7 @@
 
 #include "airmidi/blemidi.h"
 #include "airmidi/midi1.h"
+#include "ble_config.h"
 #include "ble_update.h"
 #include "bus.h"
 #include "esp_log.h"
@@ -493,6 +494,7 @@ static int gap_event(struct ble_gap_event *e, void *arg) {
         }
         case BLE_GAP_EVENT_DISCONNECT: {
             ble_update_disconnected(e->disconnect.conn.conn_handle);
+            ble_config_disconnected(e->disconnect.conn.conn_handle);
             slot_t *s = slot_by_conn(e->disconnect.conn.conn_handle);
             if (s) {
                 ESP_LOGI(TAG, "slot %d disconnected (reason 0x%x)", (int)(s - slots), e->disconnect.reason);
@@ -605,6 +607,8 @@ void ble_midi_start(const char *name, const char *device) {
     ESP_ERROR_CHECK(ble_gatts_add_svcs(services));
     ESP_ERROR_CHECK(ble_gatts_count_cfg(ble_update_services));  // firmware update over BLE (ble_update.h)
     ESP_ERROR_CHECK(ble_gatts_add_svcs(ble_update_services));
+    ESP_ERROR_CHECK(ble_gatts_count_cfg(ble_config_services));  // the JSON API over BLE (ble_config.h)
+    ESP_ERROR_CHECK(ble_gatts_add_svcs(ble_config_services));
     ble_store_config_init();
     ble_npl_callout_init(&retry_timer, nimble_port_get_dflt_eventq(), on_retry, NULL);
     ble_npl_event_init(&control_ev, on_control, NULL);

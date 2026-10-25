@@ -6,6 +6,8 @@
 #include <stdlib.h>
 
 #include "airmidi/settings.h"
+#include "api.h"
+#include "ble_config.h"
 #include "ble_midi.h"
 #include "board.h"
 #include "bus.h"
@@ -103,6 +105,17 @@ static void set_mode(airmidi_mode_t mode) {
     net_set_mode(mode);
     if (mode == AIRMIDI_MODE_NETWORK) start_network_midi();
     if (ble_running) ble_midi_set_slow_advertising(mode != AIRMIDI_MODE_PLAY);
+    // Setup mode is the pairing window for phones (ble_config.h): open while in it, shut on the way out.
+    if (mode == AIRMIDI_MODE_SETUP)
+        ble_config_set_window(BLE_CONFIG_WINDOW_FOREVER);
+    else if (ble_config_window_left() == BLE_CONFIG_WINDOW_FOREVER)
+        ble_config_set_window(0);
+}
+
+// The BLE config service answers with the same API as the web page.
+static ble_config_reply_t ble_api(const char *method, const char *path, const char *body, size_t len) {
+    api_reply_t r = api_call(method, path, body, len);
+    return (ble_config_reply_t){.status = r.status, .json = r.json, .then = r.then, .then_arg = r.then_arg};
 }
 
 // Console 'E': the ESP-NOW cable on or off (for boxes without the web UI at hand). Restarts: the radio's state at
@@ -218,7 +231,16 @@ void app_main(void) {
     if (s.espnow) espnow_midi_start(s.name, s.espnow_group);
     if (ble_running) ble_midi_set_slow_advertising(s.mode != AIRMIDI_MODE_PLAY);
     if (s.mode == AIRMIDI_MODE_NETWORK) start_network_midi();
-    webui_start(&(webui_hooks_t){.set_mode = set_mode});
+    api_init(&(api_hooks_t){.set_mode = set_mode, .web_dropped = webui_ws_dropped});
+    webui_start();
+    ble_config_start(ble_api);
+    // Pairing window for a new phone: Setup mode, or 2 min after the box was switched on or reset by hand (not after
+    // its own restarts, which a mode change or a settings change causes).
+    esp_reset_reason_t why = esp_reset_reason();
+    if (s.mode == AIRMIDI_MODE_SETUP)
+        ble_config_set_window(BLE_CONFIG_WINDOW_FOREVER);
+    else if (why == ESP_RST_POWERON || why == ESP_RST_EXT)
+        ble_config_set_window(120);
     power_start();
     ui_start(on_button);
     // A freshly updated image proves itself before it is kept: radio stack up, settings readable, still running
