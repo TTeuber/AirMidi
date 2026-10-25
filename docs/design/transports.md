@@ -67,8 +67,10 @@ keeps filling up to the MTU instead of being sent small, so a burst turns into a
 buffer takes any attribute size (512 bytes): the first version had 252 and silently dropped the 253-byte writes a
 256-byte MTU allows.
 
-Connection parameters: the box asks for 11.25-26.25 ms, the range Apple's accessory guidelines accept for MIDI
-(min >= 11.25 ms, max >= min + 15 ms); macOS's MIDI driver then sets 7.5 ms on its own (spike S2). Received BLE
+Connection parameters: the box first asks for BLE MIDI's 7.5-15 ms. Apple's accessory guidelines (min >= 11.25 ms
+for MIDI, max >= min + 15 ms) reject that, and the box then asks for 11.25-26.25 ms, which they accept; macOS's
+MIDI driver sets 7.5 ms on its own anyway (spike S2). Android takes the slow end of what it is offered: with only
+the Apple range a Pixel 9a settled at 26.25 ms (2026-10-24), a bend every 26 ms. Received BLE
 MIDI timestamps are ignored: messages go out as soon as they arrive. Scheduling by timestamp would remove the
 connection-interval jitter (up to 7.5 ms) at the cost of a fixed delay of about the same size; for live playing
 the lower latency wins. Measured numbers are in [measurements.md](../measurements.md).
