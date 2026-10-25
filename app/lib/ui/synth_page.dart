@@ -1,0 +1,206 @@
+// The synth behind the box: its controls as its MIDI-CI control list describes them (read by the box over TRS), drawn
+// as faders, pickers and toggles. Moving one sends its CC through the box; the synth's own knobs move them back.
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../link/config.dart';
+import '../link/link.dart';
+import '../synth/controls.dart';
+import 'strips_page.dart';
+
+class SynthPage extends StatefulWidget {
+  final ConfigClient config;
+  final MidiLink link;
+  const SynthPage({super.key, required this.config, required this.link});
+
+  @override
+  State<SynthPage> createState() => _SynthPageState();
+}
+
+class _SynthPageState extends State<SynthPage> {
+  Device? device;
+  String? message;
+  bool scanning = false;
+  StreamSubscription<List<int>>? sub;
+  final dirty = <Control>{};
+  Timer? sendTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    sub = widget.link.incoming.listen((m) {
+      if (device?.receive(m) == true && mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    sub?.cancel();
+    sendTimer?.cancel();
+    _flush();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final d = Device.fromApi(await widget.config.call('GET', '/api/ci/device'));
+      setState(() {
+        device = d;
+        message = d.controls.isEmpty
+            ? 'No controls: the box has not found a MIDI-CI device on its TRS jacks. Check the cables and rescan.'
+            : null;
+      });
+    } catch (e) {
+      setState(() => message = '$e');
+    }
+  }
+
+  // Ask the box to read the device again (Discovery + Property Exchange over TRS, under a second).
+  Future<void> _rescan() async {
+    setState(() => (scanning = true, message = 'asking the device on TRS'));
+    try {
+      await widget.config.call('POST', '/api/ci/scan', {'force': true});
+      for (var i = 0; i < 40; i++) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        final s = await widget.config.call('GET', '/api/ci');
+        if (s['scanning'] != true) break;
+      }
+      await _load();
+    } catch (e) {
+      setState(() => message = '$e');
+    } finally {
+      if (mounted) setState(() => scanning = false);
+    }
+  }
+
+  // A drag moves a value many times a frame; what goes out is the newest value per control every 15 ms.
+  void _set(Control c, int v) {
+    v = v.clamp(c.lo, c.hi);
+    if (v == c.value) return;
+    setState(() => c.value = v);
+    dirty.add(c);
+    sendTimer ??= Timer(const Duration(milliseconds: 15), () {
+      sendTimer = null;
+      _flush();
+    });
+  }
+
+  void _flush() {
+    if (dirty.isEmpty) return;
+    final msgs = [for (final c in dirty) Device.message(c)];
+    dirty.clear();
+    widget.link.send(msgs).catchError((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final d = device;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(d == null || d.name.isEmpty ? 'synth' : d.name),
+        backgroundColor: cBg,
+        actions: [
+          TextButton(onPressed: scanning ? null : _rescan, child: Text(scanning ? 'scanning' : 'rescan')),
+        ],
+      ),
+      body: ListView(padding: const EdgeInsets.all(14), children: [
+        if (message != null)
+          Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(message!, style: const TextStyle(color: cN))),
+        if (d != null) ...[
+          for (final c in d.controls.where((c) => d.kind(c) == Kind.fader)) _fader(d, c),
+          const SizedBox(height: 8),
+          for (final c in d.controls.where((c) => d.kind(c) == Kind.select)) _select(d, c),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final c in d.controls.where((c) => d.kind(c) == Kind.toggle)) _toggle(c),
+          ]),
+          if (d.hidden > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Text('${d.hidden} controls not shown (hidden, per-note or not supported yet)',
+                  style: const TextStyle(color: cGrey, fontSize: 12)),
+            ),
+          const Padding(
+            padding: EdgeInsets.only(top: 14),
+            child: Text('Values start at the synth\'s defaults (MIDI-CI does not say where its knobs are) and follow '
+                'as soon as you or the synth move them. Double-tap a fader for its default.',
+                style: TextStyle(color: cGrey, fontSize: 12)),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  // A tile that fills to its value (the forslike tile): drag sideways, the whole width is the whole range.
+  Widget _fader(Device d, Control c) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: LayoutBuilder(builder: (context, box) {
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragUpdate: (e) =>
+                _set(c, c.value + (e.delta.dx / box.maxWidth * (c.hi - c.lo)).round()),
+            onDoubleTap: () => _set(c, c.def),
+            onHorizontalDragEnd: (_) {
+              if (c.type == 'pBend') _set(c, 0x80000000); // a bend springs back
+            },
+            child: SizedBox(
+              height: 52,
+              child: Stack(children: [
+                Container(color: stripHues[0].base.withValues(alpha: 0.18)),
+                FractionallySizedBox(widthFactor: d.fraction(c), child: Container(color: stripHues[0].base)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(children: [
+                    Expanded(child: Text(c.title, style: const TextStyle(color: cN, fontSize: 15))),
+                    Text(d.shown(c), style: const TextStyle(color: cN, fontSize: 15)),
+                  ]),
+                ),
+              ]),
+            ),
+          );
+        }),
+      );
+
+  Widget _select(Device d, Control c) {
+    final opts = d.options(c), on = d.nearestOption(c);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(c.title, style: const TextStyle(color: cN, fontSize: 13)),
+        const SizedBox(height: 6),
+        Wrap(spacing: 6, runSpacing: 6, children: [
+          for (var j = 0; j < opts.length; j++) _cell(opts[j].title, j == on, () => _set(c, opts[j].value)),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _toggle(Control c) {
+    final on = c.value >= 0x80000000;
+    if (c.typeHint == 'momentary') {
+      return GestureDetector(
+        onTapDown: (_) => _set(c, kMax32),
+        onTapUp: (_) => _set(c, 0),
+        onTapCancel: () => _set(c, 0),
+        child: _box(c.title, on),
+      );
+    }
+    return GestureDetector(onTap: () => _set(c, on ? 0 : kMax32), child: _box(c.title, on));
+  }
+
+  Widget _cell(String label, bool on, VoidCallback onTap) =>
+      GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: _box(label, on, minWidth: 64));
+
+  Widget _box(String label, bool on, {double minWidth = 96}) => Container(
+        constraints: BoxConstraints(minWidth: minWidth),
+        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: on ? stripHues[2].base : Colors.transparent,
+          border: Border.all(color: on ? stripHues[2].base : cGrey),
+        ),
+        child: Text(label, style: TextStyle(color: on ? cBg : cN, fontSize: 14)),
+      );
+}

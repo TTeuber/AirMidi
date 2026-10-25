@@ -15,6 +15,9 @@ const kBleMidiChar = '7772e5db-3868-4112-a1a9-f2669d106bf3';
 abstract class MidiLink {
   String get label;
 
+  /// MIDI 1.0 messages from the box (what it routes to this phone: the device's own CCs when its knobs move).
+  Stream<List<int>> get incoming;
+
   /// Hands [msgs] to the link; completes once the link has taken them (the send loop waits for this before it
   /// takes the next batch).
   Future<void> send(List<List<int>> msgs);
@@ -57,6 +60,25 @@ class BleMidiLink implements MidiLink {
   final BleBox box;
   BleMidiLink(this.box);
 
+  StreamController<List<int>>? _in;
+  StreamSubscription<Uint8List>? _sub;
+
+  // Subscribed on first use and kept: the box routes to a BLE port only while its notifications are on.
+  @override
+  Stream<List<int>> get incoming {
+    _in ??= StreamController<List<int>>.broadcast(onListen: () {
+      if (_sub != null) return;
+      final parser = Midi1Parser();
+      _sub = UniversalBle.characteristicValueStream(box.deviceId, kBleMidiChar).listen((p) {
+        for (final m in parser.feed(bleMidiBytes(p))) {
+          _in!.add(m);
+        }
+      });
+      UniversalBle.subscribeNotifications(box.deviceId, kBleMidiService, kBleMidiChar).catchError((_) {});
+    });
+    return _in!.stream;
+  }
+
   @override
   String get label => '${box.name} · ble · mtu ${box.mtu}';
 
@@ -76,7 +98,11 @@ class BleMidiLink implements MidiLink {
 class WsMidiLink implements MidiLink {
   final String host;
   final WebSocketChannel _ch;
+  final _in = StreamController<List<int>>.broadcast();
   WsMidiLink._(this.host, this._ch);
+
+  @override
+  Stream<List<int>> get incoming => _in.stream;
 
   @override
   String get label => '$host · wi-fi';
@@ -84,8 +110,11 @@ class WsMidiLink implements MidiLink {
   static Future<WsMidiLink> connect(String host) async {
     final ch = WebSocketChannel.connect(Uri.parse('ws://$host/ws'));
     await ch.ready.timeout(const Duration(seconds: 5));
-    ch.stream.listen((_) {}, onError: (_) {}); // the box sends what is routed to the page; the strips ignore it
-    return WsMidiLink._(host, ch);
+    final link = WsMidiLink._(host, ch);
+    ch.stream.listen((frame) {
+      if (frame is List<int>) umpToMidi1(frame).forEach(link._in.add); // binary frames: UMP words
+    }, onError: (_) {});
+    return link;
   }
 
   @override

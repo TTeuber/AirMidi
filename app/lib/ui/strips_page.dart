@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import '../link/config.dart';
 import '../link/link.dart';
 import '../play/player.dart';
 import '../strips/strips.dart';
+import 'synth_page.dart';
 
 const cBg = Color(0xFF090C0F), cN = Color(0xFFA5B0B6), cGrey = Color(0xFF636363), cAc = Color(0xFFE9C944);
 const stripHues = [
@@ -22,6 +24,7 @@ class Settings {
   int count = 3;
   List<int> tuning = defaultTuning(3);
   bool snap = false, legato = true;
+  bool showStats = false; // the link's numbers above the bar (for measuring)
   double assist = 0, pull = 150; // 0..100, ms
   int key = 7;
   String scale = 'off';
@@ -31,7 +34,8 @@ class Settings {
 
 class StripsPage extends StatefulWidget {
   final MidiLink? link;
-  const StripsPage({super.key, this.link});
+  final ConfigClient? config; // for the synth page (the box's MIDI-CI device); null without a box
+  const StripsPage({super.key, this.link, this.config});
 
   @override
   State<StripsPage> createState() => _StripsPageState();
@@ -128,7 +132,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
       body: SafeArea(
         child: Stack(children: [
           LayoutBuilder(builder: (context, box) {
-            L = layout(0, _readH, box.maxWidth, box.maxHeight - _readH - _barH, s.layout);
+            L = layout(0, _readH, box.maxWidth, box.maxHeight - _readH - _barH - (s.showStats ? _statsH : 0), s.layout);
             return Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: _down,
@@ -138,27 +142,31 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
               child: CustomPaint(size: Size(box.maxWidth, box.maxHeight), painter: _Painter(this)),
             );
           }),
+          if (s.showStats)
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: _barH,
+              height: _statsH,
+              child: Text(
+                '${widget.link?.label ?? 'no box'}\n'
+                '${st.batches}/s · ${st.messages} msg/s · '
+                'send ${st.sendMsMean.toStringAsFixed(1)}/${st.sendMsMax.toStringAsFixed(1)} · '
+                'wait ${st.waitMsMean.toStringAsFixed(1)}/${st.waitMsMax.toStringAsFixed(1)} ms'
+                '${player.stats.errors > 0 ? ' · ${player.stats.errors} errors' : ''}',
+                style: const TextStyle(color: cN, fontSize: 10, height: 1.4),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           Positioned(
-            left: 0,
-            right: 0,
+            left: 4,
+            right: 4,
             bottom: 0,
             height: _barH,
             child: Row(children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 10),
-                  child: Text(
-                    '${widget.link?.label ?? 'no box'}\n'
-                    '${st.batches}/s · ${st.messages} msg/s · '
-                    'send ${st.sendMsMean.toStringAsFixed(1)}/${st.sendMsMax.toStringAsFixed(1)} · '
-                    'wait ${st.waitMsMean.toStringAsFixed(1)}/${st.waitMsMax.toStringAsFixed(1)} ms'
-                    '${player.stats.errors > 0 ? ' · ${player.stats.errors} errors' : ''}',
-                    style: const TextStyle(color: cN, fontSize: 10, height: 1.4),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
+              _barButton('box', () => Navigator.of(context).maybePop()),
+              _barButton('synth', _openSynth, enabled: widget.config != null && widget.link != null),
               _barButton(showSettings ? 'done' : 'layout', () => setState(() => showSettings = !showSettings)),
             ]),
           ),
@@ -168,20 +176,30 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
     );
   }
 
-  // A big target: the whole bar height and a generous width respond, not just the word.
-  Widget _barButton(String label, VoidCallback onTap) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          width: 112,
-          height: _barH,
-          child: Center(
-            child: Container(
-              width: 96,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(border: Border.all(color: cAc, width: 1.5)),
-              child: Text(label, style: const TextStyle(color: cAc, fontSize: 15)),
+  static const _statsH = 30.0;
+
+  Future<void> _openSynth() async {
+    setState(() => showSettings = false);
+    player.handleAll(strings.clear()); // fingers off the strips while the page is up
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => SynthPage(config: widget.config!, link: widget.link!)));
+  }
+
+  // A third of the bar each; the whole bar height responds, not just the word.
+  Widget _barButton(String label, VoidCallback onTap, {bool enabled = true}) => Expanded(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: enabled ? onTap : null,
+          child: SizedBox(
+            height: _barH,
+            child: Center(
+              child: Container(
+                height: 40,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(border: Border.all(color: enabled ? cAc : cGrey, width: 1.5)),
+                child: Text(label, style: TextStyle(color: enabled ? cAc : cGrey, fontSize: 15)),
+              ),
             ),
           ),
         ),
@@ -266,6 +284,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
         Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
           _toggle('snap', s.snap, (v) => setState(() => s.snap = v)),
           _toggle('legato', s.legato, (v) => setState(() => s.legato = v)),
+          _toggle('link stats', s.showStats, (v) => setState(() => s.showStats = v)),
           _cell('all off', false, () => player.allOff(), width: 80),
         ]),
       ]),

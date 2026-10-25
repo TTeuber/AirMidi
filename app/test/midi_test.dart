@@ -113,4 +113,39 @@ void main() {
       [0xE1, 0, 64]
     ]), [0x20, 0x91, 50, 100, 0x20, 0xE1, 0, 64]);
   });
+
+  test('BLE MIDI in: header and timestamps out, running status kept', () {
+    // header, ts, CC 74 64, ts, (running status) 75 10, ts, real-time clock, ts, note on
+    final bytes = bleMidiBytes([0x80, 0x81, 0xB0, 74, 64, 0x82, 75, 10, 0x83, 0xF8, 0x84, 0x90, 60, 100]);
+    expect(bytes, [0xB0, 74, 64, 75, 10, 0xF8, 0x90, 60, 100]);
+    final p = Midi1Parser();
+    expect(p.feed(bytes), [
+      [0xB0, 74, 64],
+      [0xB0, 75, 10],
+      [0x90, 60, 100]
+    ]);
+    expect(bleMidiBytes([0x10, 1, 2]), isEmpty); // not a BLE MIDI packet
+  });
+
+  test('parser: SysEx skipped, running status across calls, program change', () {
+    final p = Midi1Parser();
+    expect(p.feed([0xF0, 0x7E, 1, 2, 0xF7, 0xC3]), isEmpty);
+    expect(p.feed([5, 6]), [
+      [0xC3, 5],
+      [0xC3, 6]
+    ]);
+  });
+
+  test('UMP in: MIDI 1.0 words as they are, MIDI 2.0 scaled', () {
+    final m = umpToMidi1([
+      0x20, 0xB0, 74, 64, // MIDI 1.0 CC
+      0x40, 0xB0, 71, 0, 0x80, 0, 0, 0, // MIDI 2.0 CC, half
+      0x40, 0xE0, 0, 0, 0x80, 0, 0, 0, // MIDI 2.0 pitch bend, centre
+    ]);
+    expect(m, [
+      [0xB0, 74, 64],
+      [0xB0, 71, 64],
+      [0xE0, 0, 64]
+    ]);
+  });
 }

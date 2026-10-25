@@ -171,7 +171,8 @@ class _BoxPageState extends State<BoxPage> {
             try {
               final link = await widget.midi();
               if (!context.mounted) return;
-              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => StripsPage(link: link)));
+              await Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => StripsPage(link: link, config: api)));
             } catch (e) {
               setState(() => error = '$e');
             }
