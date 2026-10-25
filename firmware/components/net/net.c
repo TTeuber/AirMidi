@@ -500,7 +500,8 @@ void net_start(airmidi_mode_t m, const char *name) {
 }
 
 void net_add_service(const char *type, const char *proto, uint16_t port) {
-    mdns_service_add(host, type, proto, port, NULL, 0);
+    mdns_txt_item_t txt[] = {{"id", board_id()}};  // the same box as the one with this id over BLE
+    mdns_service_add(host, type, proto, port, txt, 1);
 }
 
 net_state_t net_state(void) { return state; }

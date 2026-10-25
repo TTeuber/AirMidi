@@ -21,6 +21,12 @@ typedef struct {
 // The board this firmware was built for (Kconfig AIRMIDI_BOARD).
 const board_t *board(void);
 
+// The box's id: six hex digits from the chip's base MAC. The same box shows it over BLE (scan response,
+// manufacturer data FFFF "am" + 3 bytes), mDNS (TXT id=) and /api/status, so the app can tell that a box it sees
+// over BLE and one it sees on Wi-Fi are the same. The name can be changed; this cannot.
+const char *board_id(void);
+void board_id_bytes(uint8_t out[3]);
+
 // Board-specific setup that has to happen before the radio starts (C6: power the RF switch and pick the ceramic
 // antenna). Leaves the LED off and the button an input with pull-up.
 void board_init(void);

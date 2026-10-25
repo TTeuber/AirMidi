@@ -1,5 +1,9 @@
 #include "board.h"
 
+#include <stdio.h>
+
+#include "esp_mac.h"
+
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 
@@ -63,4 +67,22 @@ void board_init(void) {
     gpio_config_t btn = {
         .pin_bit_mask = 1ULL << the_board.button, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
     gpio_config(&btn);
+}
+
+// The Wi-Fi station MAC's last three bytes. (Not the default MAC: on the C6 that reads as the 8-byte EUI-64 of its
+// 802.15.4 radio, ff:fe in the middle.) 8 bytes of buffer all the same, for any chip that writes more.
+void board_id_bytes(uint8_t out[3]) {
+    uint8_t mac[8] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    out[0] = mac[3], out[1] = mac[4], out[2] = mac[5];
+}
+
+const char *board_id(void) {
+    static char id[7];
+    if (!id[0]) {
+        uint8_t b[3];
+        board_id_bytes(b);
+        snprintf(id, sizeof id, "%02x%02x%02x", b[0], b[1], b[2]);
+    }
+    return id;
 }

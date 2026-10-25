@@ -105,6 +105,7 @@ static api_reply_t get_status(const req_t *q) {
     nvs_settings_get(&s);
     const esp_app_desc_t *app = esp_app_get_description();
     cJSON_AddStringToObject(r, "name", s.name);
+    cJSON_AddStringToObject(r, "id", board_id());
     cJSON_AddStringToObject(r, "version", app->version);
     cJSON_AddStringToObject(r, "board", board()->name);
     cJSON_AddNumberToObject(r, "uptime_ms", (double)(esp_timer_get_time() / 1000));

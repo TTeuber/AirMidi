@@ -7,6 +7,7 @@
 #include "airmidi/blemidi.h"
 #include "airmidi/midi1.h"
 #include "ble_config.h"
+#include "board.h"
 #include "ble_update.h"
 #include "bus.h"
 #include "esp_log.h"
@@ -562,8 +563,8 @@ static int gap_event(struct ble_gap_event *e, void *arg) {
 
 static void advertise(void) {
     if (!free_peripheral_slot() || ble_gap_adv_active()) return;
-    // The advertisement (31 bytes) holds the flags and the 128-bit service UUID; the name goes in the scan
-    // response.
+    // The advertisement (31 bytes) holds the flags and the 128-bit service UUID; the name and the box's id
+    // (board_id(): manufacturer data with the testing company id FFFF, "am", 3 bytes) go in the scan response.
     struct ble_hs_adv_fields f = {0};
     f.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     f.uuids128 = (ble_uuid128_t *)&midi_svc_uuid;
@@ -574,6 +575,10 @@ static void advertise(void) {
     rsp.name = (uint8_t *)dev_name;
     rsp.name_len = strlen(dev_name);
     rsp.name_is_complete = 1;
+    uint8_t mfg[7] = {0xFF, 0xFF, 'a', 'm'};
+    board_id_bytes(mfg + 4);
+    rsp.mfg_data = mfg;
+    rsp.mfg_data_len = sizeof mfg;
     ble_gap_adv_rsp_set_fields(&rsp);
     struct ble_gap_adv_params p = {.conn_mode = BLE_GAP_CONN_MODE_UND,
                                    .disc_mode = BLE_GAP_DISC_MODE_GEN,
