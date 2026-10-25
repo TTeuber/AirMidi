@@ -74,6 +74,7 @@ struct Debug
     float    cpuAvg, cpuMax;
     float    pots[8];
     uint32_t buttons, sw17, sw18, rxBytes, txBytes, ciReplies, muid, voices;
+    uint32_t rxRestarts; // MIDI IN listening restarted after a line error (see KeepListening)
 } volatile dbg;
 volatile uint32_t dbgNote = 0;
 
@@ -84,6 +85,29 @@ void RxCallback(uint8_t* data, size_t size, void*, UartHandler::Result res)
     for(size_t i = 0; i < size; i++)
         rxRing[(rxHead + i) % kRxRing] = data[i];
     rxHead = rxHead + size;
+}
+
+// MIDI IN can stop for good after a UART error: on an overrun the HAL clears the DMA request and aborts the DMA
+// stream, and the error callback (which would tell libDaisy) only runs once that abort completes, which it never
+// did here. libDaisy then still says it is listening while nothing arrives. A glitch on the line causes it (the
+// box resetting, a cable plugged in while running): found 2026-10-24 with overrun + noise flags set, DMA receive
+// off, 7540 bytes in and then nothing, audio still running. So the main loop looks at the UART itself, and when its
+// DMA request is off it stops and starts listening again. A byte or two of the glitch is lost, nothing after it.
+// The new start is refused while the aborted DMA stream is still busy (thousands of tries in a row, measured), so
+// tries are 2 ms apart and only a start that took is counted.
+void KeepListening()
+{
+    static uint32_t lastTry = 0;
+    if(uart.IsListening() && (USART1->CR3 & USART_CR3_DMAR))
+        return;
+    const uint32_t us = System::GetUs();
+    if(us - lastTry < 2000)
+        return;
+    lastTry = us;
+    uart.DmaListenStop(); // stops the DMA, puts the HAL's receive state back to ready
+    USART1->ICR = USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_FECF | USART_ICR_PECF;
+    if(uart.DmaListenStart(rxDma, sizeof(rxDma), RxCallback, nullptr) == UartHandler::Result::OK)
+        dbg.rxRestarts = dbg.rxRestarts + 1;
 }
 
 void PumpTx()
@@ -385,6 +409,7 @@ int main()
         }
 #endif
 
+        KeepListening();
         while(rxTail != rxHead)
         {
             device.receive(rxRing[rxTail++ % kRxRing]);

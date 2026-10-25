@@ -110,3 +110,11 @@ each member channel gets its own voice and pitch bend (±48 semitones, or what R
 bend (±2) moves every voice, and glide between voices is off. A count of 0 turns MPE off again, back to one bend
 for all channels. The airmidi app's strips send this on connect. Bends are smoothed over ~3 ms so the 10-15 ms
 steps of a BLE link do not zipper. Checked in `host/test.cpp` ("mpe").
+
+## MIDI IN after a line glitch
+
+A UART error (the box resetting, a cable plugged in while running) used to stop MIDI IN for good while the audio
+went on: libDaisy only learns of the error once the HAL's DMA abort completes, which it did not, so it kept
+"listening" to a dead UART. The main loop now checks the UART's DMA request bit and restarts listening when it is
+off (`KeepListening` in src/main.cpp; `dbg.rxRestarts` counts it). Checked over SWD by clearing the DMA request
+bit while notes arrive: one restart per forced overrun, notes play again right after.
