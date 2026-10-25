@@ -103,10 +103,10 @@ void KeepListening()
     static uint32_t lastTry = 0;
     if(uart.IsListening() && (USART1->CR3 & USART_CR3_DMAR))
         return;
-    const uint32_t us = System::GetUs();
-    if(us - lastTry < 2000)
+    const uint32_t tick = System::GetTick(); // not GetUs(): see the main loop
+    if(tick - lastTry < System::GetTickFreq() / 500)
         return;
-    lastTry = us;
+    lastTry = tick;
     uart.DmaListenStop();
     USART1->ICR = USART_ICR_ORECF | USART_ICR_NECF | USART_ICR_FECF | USART_ICR_PECF;
     uart.Init(uartConfig);
@@ -388,7 +388,11 @@ int main()
         pots[i].smooth = pots[i].anchor = hw.adc.GetMuxFloat(0, i);
     hw.StartAudio(AudioCallback);
 
-    uint32_t nextScan = System::GetUs(), lastLed = 0;
+    // Scans are timed in raw timer ticks (200 MHz, wrapping at 2^32), not System::GetUs(): that is the tick count
+    // divided by 200, so it wraps at 21.47 s rather than at 2^32, and the last scan before the wrap set a next time
+    // GetUs() never reached again. The knobs, toggles and keys stopped 21 s after power-up (found 2026-10-24).
+    const uint32_t ticksPerUs = System::GetTickFreq() / 1000000;
+    uint32_t       nextScan   = System::GetTick(), lastLed = 0;
 #ifdef WHINE_TEST
     const uint32_t testStart = System::GetNow() + 2000;
     int            applied   = -1;
@@ -421,10 +425,10 @@ int main()
         }
         dbg.ciReplies = device.ciReplies();
 
-        const uint32_t us = System::GetUs();
-        if((int32_t)(us - nextScan) >= 0 && scans)
+        const uint32_t tick = System::GetTick();
+        if((int32_t)(tick - nextScan) >= 0 && scans)
         {
-            nextScan = us + NextScanGap();
+            nextScan = tick + NextScanGap() * ticksPerUs;
             ScanPots(device.takeRemote());
             ScanToggles();
             ScanKeys(now);
