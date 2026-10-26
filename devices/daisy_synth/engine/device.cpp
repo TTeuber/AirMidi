@@ -22,8 +22,9 @@ bool Device::init(Synth *synth, uint32_t muid, Out out, void *ctx) {
         ok &= buildCtrlMap(kMapIds[i], maps_[i], sizeof maps_[i]) > 0;
         res_[n++] = {"CtrlMapList", kMapIds[i], maps_[i]};
     }
-    // manufacturer 7D 00 00 (educational / development), family 0, model 3 (the Mac stand-in is model 2), v0.1
-    const midici_ident_t id = {{0x7D, 0, 0}, 0, 3, {0, 1, 0, 0}};
+    // manufacturer 7D 00 00 (educational / development), family 0, model 3 (the Mac stand-in is model 2), v0.2: a new
+    // version whenever the controls change (the box caches the lists by this identity)
+    const midici_ident_t id = {{0x7D, 0, 0}, 0, 3, {0, 2, 0, 0}};
     ok &= midici_responder_init(&responder_, midici_muid(muid), &id, res_, n, sendSysex, this);
     midici_responder_set_report(&responder_, MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_CC, report);
     return ok;

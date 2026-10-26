@@ -11,7 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 Device daisy() =>
     Device.fromApi(jsonDecode(File('test/fixtures/daisy_synth_api.json').readAsStringSync()) as Map<String, dynamic>);
 
-String names(Section s) => [for (final i in s.items) i is Envelope ? 'ENV' : (i as Control).title].join(',');
+String names(Section s) =>
+    [for (final i in s.items) i is Envelope ? 'ENV' : (i is XyPad ? 'XY' : (i as Control).title)].join(',');
 
 Map<String, dynamic> ctl(String title, int cc, {String? path, String? map}) => {
       'title': title,
@@ -25,20 +26,28 @@ Map<String, dynamic> ctl(String title, int cc, {String? path, String? map}) => {
     };
 
 void main() {
-  test('daisy_synth: sections by path, the four env controls as one envelope', () {
+  test('daisy_synth: sections by path; cutoff + resonance a pad, each ADSR an envelope', () {
     final s = sections(daisy());
-    expect(s.map((x) => x.title), ['filter', 'env', 'fx', 'osc']);
-    expect(names(s[0]), 'Cutoff,Resonance,Env Amt');
-    expect(names(s[1]), 'ENV');
-    final env = s[1].items.single as Envelope;
-    expect([for (final c in env.controls) c.title], ['Attack', 'Decay', 'Sustain', 'Release']);
-    expect(env.title, '');
+    expect(s.map((x) => x.title), ['filter', 'amp', 'fx', 'osc']);
+    expect(names(s[0]), 'XY,Env Amt,ENV');
+    final pad = s[0].items[0] as XyPad, fenv = s[0].items[2] as Envelope;
+    expect([pad.x.title, pad.y.title], ['Cutoff', 'Resonance']);
+    expect([for (final c in fenv.controls) c.title], ['Filter Attack', 'Filter Decay', 'Filter Sustain', 'Filter Release']);
+    expect(fenv.title, ''); // /filter/env in section filter: nothing more to say
+    final amp = s[1].items.single as Envelope;
+    expect([for (final c in amp.controls) c.title], ['Amp Attack', 'Amp Decay', 'Amp Sustain', 'Amp Release']);
     expect(names(s[3]), 'Wave,Glide,Detune,Vibrato,Glide Time,Bend');
+  });
+
+  test('graphics off: the same sections, every control on its own', () {
+    final s = sections(daisy(), widgets: false);
+    expect(s.map((x) => x.title), ['filter', 'amp', 'fx', 'osc']);
+    expect(names(s[0]), 'Cutoff,Resonance,Env Amt,Filter Attack,Filter Decay,Filter Sustain,Filter Release');
   });
 
   test('ties in priority keep the device\'s order', () {
     final d = daisy();
-    expect(d.controls.take(5).map((c) => c.title), ['Cutoff', 'Resonance', 'Env Amt', 'Attack', 'Decay']);
+    expect(d.controls.take(5).map((c) => c.title), ['Cutoff', 'Resonance', 'Env Amt', 'Amp Attack', 'Amp Decay']);
   });
 
   test('two envelopes under one section, named by their group', () {
@@ -78,7 +87,7 @@ void main() {
 
   test('times between the named points, on a log scale', () {
     final d = daisy();
-    final attack = d.controls.firstWhere((c) => c.title == 'Attack');
+    final attack = d.controls.firstWhere((c) => c.title == 'Amp Attack');
     attack.value = 0;
     expect(seconds(d, attack), closeTo(0.001, 1e-9));
     attack.value = kMax32;
@@ -87,19 +96,45 @@ void main() {
     expect(seconds(d, attack), closeTo(0.020, 1e-9));
     attack.value = (1607128832 + 2098696448) ~/ 2; // halfway from 20 to 50 ms: the geometric mean
     expect(seconds(d, attack), closeTo(0.0316, 1e-3));
-    final sustain = d.controls.firstWhere((c) => c.title == 'Sustain');
+    final sustain = d.controls.firstWhere((c) => c.title == 'Amp Sustain');
     expect(seconds(d, sustain), isNull); // no map
   });
 
   test('the synth\'s own curve agrees with the interpolation', () {
     // daisy_synth: attack = 1 ms * 2^(11.55 x) (engine/controls.cpp attackSec)
     final d = daisy();
-    final attack = d.controls.firstWhere((c) => c.title == 'Attack');
+    final attack = d.controls.firstWhere((c) => c.title == 'Amp Attack');
     for (final x in [0.1, 0.37, 0.5, 0.83]) {
       attack.value = (x * kMax32).round();
       final want = 0.001 * math.pow(2, 11.55 * x);
       expect(seconds(d, attack)! / want, closeTo(1, 0.01), reason: 'x=$x');
     }
+  });
+
+  test('frequencies between the named points: the cutoff', () {
+    final d = daisy();
+    final cutoff = d.controls.firstWhere((c) => c.title == 'Cutoff');
+    // (not up to the top: the synth's top is 20.48 kHz, its last point is named "20k")
+    for (final x in [0.0, 0.3, 0.5, 0.77]) {
+      cutoff.value = (x * kMax32).round();
+      final want = 20 * math.pow(2, 10 * x); // engine/controls.cpp cutoffHz
+      expect(hertz(d, cutoff)! / want, closeTo(1, 0.01), reason: 'x=$x');
+    }
+    expect([for (final t in ['500Hz', '1.2k', '20 kHz', '3s']) hertzOf(t)], [500, 1200, 20000, null]);
+    expect([for (final hz in [480.0, 1234.0, 12400.0]) formatHertz(hz)], ['480 Hz', '1.2 kHz', '12 kHz']);
+  });
+
+  test('wave shapes from value names', () {
+    expect([for (final t in ['Saw', 'Sawtooth', 'Square', 'Tri', 'Sine', 'Pulse', 'Noise', 'Super']) waveShapeOf(t)], [
+      WaveShape.saw,
+      WaveShape.saw,
+      WaveShape.square,
+      WaveShape.triangle,
+      WaveShape.sine,
+      WaveShape.pulse,
+      WaveShape.noise,
+      null,
+    ]);
   });
 
   test('time names', () {

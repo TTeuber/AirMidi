@@ -19,6 +19,9 @@ class SynthState extends ChangeNotifier {
 
   SynthState(this.config);
 
+  /// The page draws envelopes, XY pads and wave icons (true) or every control as a plain fader or picker.
+  bool widgets = true;
+
   /// The control list, read once; [force] reads it again (after a rescan) and keeps the values of the controls that
   /// are still there.
   Future<void> load({bool force = false}) async {

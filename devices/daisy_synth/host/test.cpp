@@ -341,12 +341,40 @@ static void render() {
     CHECK(peak < 1.f && peak > 0.1f);
 }
 
+// ---- filter envelope -------------------------------------------------------------------------------------------------
+
+// The amp and the filter each follow their own envelope: a slow filter attack under a fast amp attack.
+static void filterEnv() {
+    printf("filter envelope:\n");
+    send({0xB0, 86, 100});  // Filter Attack 0.55 s (attackSec(100 / 127))
+    send({0xB0, 73, 0});    // Amp Attack 1 ms
+    send({0xB0, 89, 0});    // Filter Sustain 0
+    runMs(50);              // the parameters' smoothing settles
+    send({0x90, 64, 100});
+    runMs(100);
+    int v = voiceOf(64, 0);
+    CHECK(v >= 0);
+    float amp = synth.voiceLevel(v), flt = synth.voiceFilterLevel(v);
+    printf("  100 ms in: amp %.2f, filter %.2f\n", amp, flt);
+    CHECK(amp > 0.5f);                  // decaying from its peak toward 0.71
+    CHECK(flt > 0.12f && flt < 0.24f);  // 0.1 / 0.55 of the way up
+    runMs(1500);
+    flt = synth.voiceFilterLevel(v);
+    CHECK(flt < 0.5f);  // past its peak, decaying toward its own sustain of 0
+    send({0x80, 64, 0});
+    runMs(3000);
+    CHECK(voiceOf(64, 0) < 0 && synth.voiceFilterLevel(v) == 0.f);
+    for (int p : {kFAttack, kAttack, kFSustain}) synth.setParam(p, ccToValue(p, kControls[p].def));
+    printf("  %s\n", failures ? "failed" : "ok");
+}
+
 int main() {
     synth.init(48000.f, echoMem, roomMem);
     CHECK(dev.init(&synth, 0x2A2A2A2, deviceOut, nullptr));
     scan();
     controls();
     mpe();
+    filterEnv();
     render();
     printf("%s\n", failures ? "FAILED" : "all ok");
     return failures ? 1 : 0;

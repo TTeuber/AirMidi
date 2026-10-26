@@ -60,13 +60,13 @@ void Synth::apply(const Cmd &c) {
         case kSustainOff:
             sustain_ = false;
             for (Voice &v : v_)
-                if (v.held) v.held = false, v.stage = v.stage ? 3 : 0;
+                if (v.held) v.held = false, v.stage = v.stage ? 3 : 0, v.fstage = 3;
             break;
         case kAllOff:
             sustain_ = false;
             for (Voice &v : v_) {
                 v.gate = v.held = false;
-                if (v.stage) v.stage = 3;
+                if (v.stage) v.stage = 3, v.fstage = 3;
             }
             break;
     }
@@ -93,7 +93,7 @@ void Synth::start(uint8_t note, uint8_t vel, uint8_t ch) {
         v.ph2 = 0.37f;  // the second oscillator starts out of phase: no doubled attack while detune is low
         v.tri1 = -1.f, v.tri2 = 4.f * 0.37f - 1.f;  // where a triangle is at those phases
         v.f.reset();
-        v.env = 0.f;
+        v.env = v.fenv = 0.f;
     }
     v.pitch = glide ? lastPitch_ : (float)note;
     v.target = (float)note;
@@ -104,6 +104,7 @@ void Synth::start(uint8_t note, uint8_t vel, uint8_t ch) {
     v.gate = true;
     v.held = false;
     v.stage = 1;  // the attack starts from the current level, so a retriggered or stolen voice does not click
+    v.fstage = 1;
     v.age = ++clock_;
     lastPitch_ = (float)note;
 }
@@ -116,7 +117,7 @@ void Synth::release(uint8_t note, uint8_t ch) {
         if (sustain_)
             v.held = true;
         else
-            v.stage = 3;
+            v.stage = 3, v.fstage = 3;
     }
 }
 
@@ -140,6 +141,11 @@ void Synth::render(float *outL, float *outR, int n) {
     const float decCoef = tauCoef(timeSec(sm_[kDecay]) / 3.f, sr_);  // the time reads as "down to 5 %"
     const float relCoef = tauCoef(timeSec(sm_[kRelease]) / 3.f, sr_);
     const float sus = sm_[kSustain];
+    // the filter's envelope at the control rate (sr / kSub)
+    const float fAtkInc = kSub / (attackSec(sm_[kFAttack]) * sr_);
+    const float fDecCoef = tauCoef(timeSec(sm_[kFDecay]) / 3.f, sr_ / kSub);
+    const float fRelCoef = tauCoef(timeSec(sm_[kFRelease]) / 3.f, sr_ / kSub);
+    const float fSus = sm_[kFSustain];
 
     lfo_ += kSub * 5.5f / sr_;
     if (lfo_ >= 1.f) lfo_ -= 1.f;
@@ -162,7 +168,19 @@ void Synth::render(float *outL, float *outR, int n) {
         const float played = v.pitch + v.bend;
         float hz = 440.f * exp2f2((played + vib - 69.f) * (1.f / 12.f));
         float dt1 = clampf(hz * down / sr_, 0.f, 0.45f), dt2 = clampf(hz * up / sr_, 0.f, 0.45f);
-        float oct = envOct * v.env * (0.6f + 0.4f * v.vel) + 0.5f * (played - 60.f) * (1.f / 12.f);
+        switch (v.fstage) {
+            case 1:
+                v.fenv += fAtkInc;
+                if (v.fenv >= 1.f) v.fenv = 1.f, v.fstage = 2;
+                break;
+            case 2:
+                v.fenv = fSus + (v.fenv - fSus) * fDecCoef;
+                break;
+            case 3:
+                v.fenv *= fRelCoef;
+                break;
+        }
+        float oct = envOct * v.fenv * (0.6f + 0.4f * v.vel) + 0.5f * (played - 60.f) * (1.f / 12.f);
         v.f.set(base * exp2f2(oct), q, sr_);
         const float amp = kVoiceGain * (0.35f + 0.65f * v.vel);
 
@@ -186,7 +204,8 @@ void Synth::render(float *outL, float *outR, int n) {
         }
         if (v.stage == 3 && v.env < 1e-4f) {
             v.stage = 0;
-            v.env = 0.f;
+            v.env = v.fenv = 0.f;
+            v.fstage = 0;
             v.note = -1;
             v.held = false;
         }

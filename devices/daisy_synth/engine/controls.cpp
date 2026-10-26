@@ -8,27 +8,32 @@
 namespace syn {
 
 // Sound Controllers where GM2 has one (74 brightness, 71 timbre, 73 attack, 75 decay, 72 release, 70 variation),
-// 91/94 effect depths, 65/5 portamento, 1 mod wheel; undefined CCs (79, 85, 92 is tremolo, so 93 for echo) for the rest.
+// 91/94 effect depths, 65/5 portamento, 1 mod wheel; undefined CCs (79, 85, 92 is tremolo, so 93 for echo; 86, 87, 89,
+// 90 for the filter envelope) for the rest.
 const Control kControls[kParams] = {
     {"Cutoff", "/filter/cutoff", 74, 64, 1, nullptr, "cutoff"},
     {"Resonance", "/filter/resonance", 71, 30, 1, nullptr, nullptr},
     {"Env Amt", "/filter/envAmount", 79, 64, 1, nullptr, nullptr},
-    {"Attack", "/env/attack", 73, 0, 1, nullptr, "attack"},
-    {"Decay", "/env/decay", 75, 70, 1, nullptr, "time"},
-    {"Sustain", "/env/sustain", 85, 90, 1, nullptr, nullptr},
-    {"Release", "/env/release", 72, 64, 1, nullptr, "time"},
+    {"Amp Attack", "/amp/env/attack", 73, 0, 1, nullptr, "attack"},
+    {"Amp Decay", "/amp/env/decay", 75, 70, 1, nullptr, "time"},
+    {"Amp Sustain", "/amp/env/sustain", 85, 90, 1, nullptr, nullptr},
+    {"Amp Release", "/amp/env/release", 72, 64, 1, nullptr, "time"},
     {"Space", "/fx/space", 91, 40, 1, nullptr, nullptr},
     {"Detune", "/osc/detune", 94, 40, 2, nullptr, nullptr},
     {"Vibrato", "/osc/vibrato", 1, 0, 2, nullptr, nullptr},
     {"Glide Time", "/osc/glideTime", 5, 40, 2, nullptr, nullptr},
     {"Echo", "/fx/echo", 93, 0, 2, nullptr, nullptr},
+    {"Filter Attack", "/filter/env/attack", 86, 0, 2, nullptr, "attack"},
+    {"Filter Decay", "/filter/env/decay", 87, 70, 2, nullptr, "time"},
+    {"Filter Sustain", "/filter/env/sustain", 89, 90, 2, nullptr, nullptr},
+    {"Filter Release", "/filter/env/release", 90, 64, 2, nullptr, "time"},
     {"Wave", "/osc/wave", 70, 0, 1, "valueSelect", "wave"},
     {"Glide", "/osc/glide", 65, 0, 1, "toggle", nullptr},
 };
 
 const char *const kDeviceInfo =
     "{\"manufacturerId\":[125,0,0],\"manufacturer\":\"Daisy\",\"familyId\":[0,0],\"family\":\"airmidi demo\","
-    "\"modelId\":[3,0],\"model\":\"Poly Synth\",\"versionId\":[0,1,0,0],\"version\":\"0.1\"}";
+    "\"modelId\":[3,0],\"model\":\"Poly Synth\",\"versionId\":[0,2,0,0],\"version\":\"0.2\"}";
 
 const char *const kMapIds[kMaps] = {"wave", "cutoff", "attack", "time"};
 

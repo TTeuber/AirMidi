@@ -171,6 +171,13 @@ Status (2026-10-24):
   (`lib/synth/groups.dart`, `ui/envelope_editor.dart`): peak = attack, decay corner = decay across and sustain up/down,
   sustain end = sustain, last point = release; times between the synth's named points on a log scale. Tried on the
   kit through the box: release set to 420 ms came back from the synth's report as 440 ms (its 7-bit CC step).
+- XY pad and wave icons (2026-10-26): cutoff + resonance under one path become a pad (`ui/xy_pad.dart`, a 2-pole
+  low-pass curve with its peak at the dot), a picker of wave names shows icons (`ui/wave_icon.dart`); "graphics" in
+  the synth page's bar turns all widgets off for comparison. daisy_synth 0.2 has a filter envelope of its own, so
+  the page shows two envelopes. Faders and widgets show values between the named points (`display`). Tried on the
+  kit: pad and filter attack moved, the report read back 2.7 kHz / 54 / 960 ms. A rescan now asks for the values
+  again (it cut off the report that was under way). With the widgets on most of the page claims its touches, so
+  the page scrolls only from the faders, headings and readouts.
 - Direct to a computer (2026-10-26, "Without a box" above): USB tried end to end (the Mac logged the setup once, the
   note with its bend first, 114 bends of a slide, the note off; back and reopen works). The user played Logic over
   both USB and BLE, both work.
@@ -208,3 +215,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-26 | Computers and other MIDI devices through Android's MIDI service (BLE and USB), straight to the strips; no setup repeat on those links | user: the app as a wireless controller for the Mac without the box; Android's BLE MIDI driver asks for the fast interval, the BLE plugin cannot; USB MIDI comes for free |
 | 2026-10-26 | A system doc (docs/system): roles, tiers 0-2, messages not transports, the instrument checklist, `paramPath` conventions for widgets; plugins get their description over a side channel, control through the DAW | user: one documented MIDI system, the box one piece of it, for hardware and JUCE plugins |
 | 2026-10-26 | Synth page in sections by `paramPath`; ADSR groups become an envelope editor (path first, then titles like "Amp Attack") | user: reusable widgets instead of a slider per parameter; standard M2-117 data, no extension needed |
+| 2026-10-26 | XY pad for cutoff + resonance, wave icons, a graphics on/off switch; daisy_synth gets a separate filter envelope (CCs 86, 87, 89, 90; v0.2) | user: more widgets to try, and to compare the page with and without them |

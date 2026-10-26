@@ -18,11 +18,11 @@
   "model": "Poly Synth",
   "versionId": [
    0,
-   1,
+   2,
    0,
    0
   ],
-  "version": "0.1"
+  "version": "0.2"
  },
  "controls": [
   {
@@ -60,7 +60,7 @@
    "paramPath": "/filter/envAmount"
   },
   {
-   "title": "Attack",
+   "title": "Amp Attack",
    "channel": 1,
    "ctrlType": "cc",
    "ctrlIndex": [
@@ -68,11 +68,11 @@
    ],
    "priority": 1,
    "default": 0,
-   "paramPath": "/env/attack",
+   "paramPath": "/amp/env/attack",
    "ctrlMapId": "attack"
   },
   {
-   "title": "Decay",
+   "title": "Amp Decay",
    "channel": 1,
    "ctrlType": "cc",
    "ctrlIndex": [
@@ -80,11 +80,11 @@
    ],
    "priority": 1,
    "default": 2367304704,
-   "paramPath": "/env/decay",
+   "paramPath": "/amp/env/decay",
    "ctrlMapId": "time"
   },
   {
-   "title": "Sustain",
+   "title": "Amp Sustain",
    "channel": 1,
    "ctrlType": "cc",
    "ctrlIndex": [
@@ -92,10 +92,10 @@
    ],
    "priority": 1,
    "default": 3043677696,
-   "paramPath": "/env/sustain"
+   "paramPath": "/amp/env/sustain"
   },
   {
-   "title": "Release",
+   "title": "Amp Release",
    "channel": 1,
    "ctrlType": "cc",
    "ctrlIndex": [
@@ -103,7 +103,7 @@
    ],
    "priority": 1,
    "default": 2164392960,
-   "paramPath": "/env/release",
+   "paramPath": "/amp/env/release",
    "ctrlMapId": "time"
   },
   {
@@ -160,6 +160,53 @@
    "priority": 2,
    "default": 0,
    "paramPath": "/fx/echo"
+  },
+  {
+   "title": "Filter Attack",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    86
+   ],
+   "priority": 2,
+   "default": 0,
+   "paramPath": "/filter/env/attack",
+   "ctrlMapId": "attack"
+  },
+  {
+   "title": "Filter Decay",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    87
+   ],
+   "priority": 2,
+   "default": 2367304704,
+   "paramPath": "/filter/env/decay",
+   "ctrlMapId": "time"
+  },
+  {
+   "title": "Filter Sustain",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    89
+   ],
+   "priority": 2,
+   "default": 3043677696,
+   "paramPath": "/filter/env/sustain"
+  },
+  {
+   "title": "Filter Release",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    90
+   ],
+   "priority": 2,
+   "default": 2164392960,
+   "paramPath": "/filter/env/release",
+   "ctrlMapId": "time"
   },
   {
    "title": "Wave",

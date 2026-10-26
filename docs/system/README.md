@@ -99,20 +99,23 @@ M2-117 defines `paramPath` as a JSON Pointer that groups controls ("/Oscillator/
 it to group controls and to pick a widget. Our conventions, so every instrument's paths match:
 
 - Lower camel case segments; one group per function: `/filter/cutoff`, `/env/attack`, `/osc/wave`.
-- Several of one kind get a name or number segment: `/env/amp/attack`, `/env/filter/attack`, `/osc/1/wave`.
+- Several of one kind get a name or number segment: `/amp/env/attack`, `/filter/env/attack`, `/osc/1/wave`. An
+  editor titles a widget with its group's segments after the section, leaving out a bare `env`.
 - An editor matches the last segment case-insensitively. These groups get their own widget:
 
 | a group with | widget | state |
 |---|---|---|
 | `attack`, `decay`, `sustain`, `release` (optional `delay`, `hold`) | envelope editor: drag the corners, times from the CtrlMapLists | in the app |
-| `cutoff`, `resonance` | XY pad | idea |
+| `cutoff`, `resonance` | XY pad: cutoff across, resonance up, a low-pass curve behind the dot | in the app |
 | `rate`, `depth` (optional `wave`) | LFO | idea |
 
-Everything else is drawn as faders, toggles and pickers as now, under a heading from its group. Without a
+A picker whose value names are wave shapes (saw, square, triangle, sine, pulse, noise) draws icons. Everything else is
+drawn as faders, toggles and pickers as now, under a heading from its section. The app's "graphics" switch turns the
+widgets off, to compare. Without a
 `paramPath` an editor can still try the title ("Amp Attack"), and falls back to a flat list.
 
-daisy_synth already sends these paths: `/env/attack` ... `/env/release`, with time maps on attack, decay and
-release.
+daisy_synth sends `/filter/cutoff`, `/filter/resonance`, `/filter/env/*`, `/amp/env/*`, with time maps on every
+attack, decay and release and named frequencies on the cutoff.
 
 ## Identity
 

@@ -1,6 +1,6 @@
 // The synth behind the box: its controls as its MIDI-CI control list describes them (read by the box over TRS), drawn
-// as faders, pickers and toggles, in sections by their control paths, and an envelope editor where four of them make
-// one (lib/synth/groups.dart). Moving one sends its CC through the box; the synth's own knobs move them back. The
+// as faders, pickers and toggles, in sections by their control paths, with an envelope editor, an XY pad and wave
+// icons where the controls make one (lib/synth/groups.dart; "graphics" turns those off). Moving one sends its CC through the box; the synth's own knobs move them back. The
 // values live in SynthState (owned by the box screen), so they are still there the next time the page opens.
 import 'dart:async';
 
@@ -12,6 +12,8 @@ import '../synth/groups.dart';
 import '../synth/state.dart';
 import 'envelope_editor.dart';
 import 'strips_page.dart';
+import 'wave_icon.dart';
+import 'xy_pad.dart';
 
 class SynthPage extends StatefulWidget {
   final SynthState synth;
@@ -72,6 +74,7 @@ class _SynthPageState extends State<SynthPage> {
       }
       scanMessage = null;
       await widget.synth.load(force: true);
+      await widget.synth.askCurrent(); // a rescan cuts off a report that was under way
     } catch (e) {
       scanMessage = '$e';
     } finally {
@@ -106,6 +109,11 @@ class _SynthPageState extends State<SynthPage> {
         title: Text(d == null || d.name.isEmpty ? 'synth' : d.name),
         backgroundColor: cBg,
         actions: [
+          // graphics on/off: to compare the page with and without its widgets
+          TextButton(
+            onPressed: () => setState(() => widget.synth.widgets = !widget.synth.widgets),
+            child: Text('graphics', style: TextStyle(color: widget.synth.widgets ? cAc : cGrey)),
+          ),
           TextButton(onPressed: scanning ? null : _rescan, child: Text(scanning ? 'scanning' : 'rescan')),
         ],
       ),
@@ -113,7 +121,7 @@ class _SynthPageState extends State<SynthPage> {
         if (message != null)
           Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(message!, style: const TextStyle(color: cN))),
         if (d != null) ...[
-          for (final s in sections(d)) ..._section(d, s),
+          for (final s in sections(d, widgets: widget.synth.widgets)) ..._section(d, s),
           if (d.hidden > 0)
             Padding(
               padding: const EdgeInsets.only(top: 14),
@@ -125,7 +133,7 @@ class _SynthPageState extends State<SynthPage> {
             child: Text(
                 widget.synth.report == 'ok'
                     ? 'Values read from the synth (MIDI-CI MIDI Message Report) and kept in step with its knobs. '
-                        'Double-tap a fader for its default.'
+                        'Double-tap a fader or a handle for its default.'
                     : 'This synth does not report its current values (${widget.synth.report ?? 'asking'}): they start '
                         'at its defaults and follow as soon as you or the synth move them. Double-tap a fader for '
                         'its default.',
@@ -139,7 +147,10 @@ class _SynthPageState extends State<SynthPage> {
   // A section: its heading (the first path segment), then faders and envelopes in the list's order, pickers, toggles.
   List<Widget> _section(Device d, Section s) {
     final controls = s.items.whereType<Control>();
-    final toggles = [for (final c in controls) if (d.kind(c) == Kind.toggle) _toggle(c)];
+    final toggles = [
+      for (final c in controls)
+        if (d.kind(c) == Kind.toggle) _toggle(c)
+    ];
     return [
       if (s.title.isNotEmpty)
         Padding(
@@ -149,6 +160,8 @@ class _SynthPageState extends State<SynthPage> {
       for (final i in s.items)
         if (i is Envelope)
           EnvelopeEditor(device: d, env: i, onSet: _set)
+        else if (i is XyPad)
+          XyPadEditor(device: d, pad: i, onSet: _set)
         else if (i is Control && d.kind(i) == Kind.fader)
           _fader(d, i),
       for (final c in controls)
@@ -168,8 +181,7 @@ class _SynthPageState extends State<SynthPage> {
         child: LayoutBuilder(builder: (context, box) {
           return GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onHorizontalDragUpdate: (e) =>
-                _set(c, c.value + (e.delta.dx / box.maxWidth * (c.hi - c.lo)).round()),
+            onHorizontalDragUpdate: (e) => _set(c, c.value + (e.delta.dx / box.maxWidth * (c.hi - c.lo)).round()),
             onDoubleTap: () => _set(c, c.def),
             onHorizontalDragEnd: (_) {
               if (c.type == 'pBend') _set(c, 0x80000000); // a bend springs back
@@ -184,7 +196,7 @@ class _SynthPageState extends State<SynthPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: Row(children: [
                       Expanded(child: Text(c.title, style: const TextStyle(color: cN, fontSize: 15))),
-                      Text(d.shown(c), style: const TextStyle(color: cN, fontSize: 15)),
+                      Text(display(d, c), style: const TextStyle(color: cN, fontSize: 15)),
                     ]),
                   ),
                 ),
@@ -196,13 +208,19 @@ class _SynthPageState extends State<SynthPage> {
 
   Widget _select(Device d, Control c) {
     final opts = d.options(c), on = d.nearestOption(c);
+    final shapes = [for (final o in opts) waveShapeOf(o.title)];
+    final icons = widget.synth.widgets && shapes.every((s) => s != null);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(c.title, style: const TextStyle(color: cN, fontSize: 13)),
         const SizedBox(height: 6),
         Wrap(spacing: 6, runSpacing: 6, children: [
-          for (var j = 0; j < opts.length; j++) _cell(opts[j].title, j == on, () => _set(c, opts[j].value)),
+          for (var j = 0; j < opts.length; j++)
+            if (icons)
+              _iconCell(shapes[j]!, j == on, () => _set(c, opts[j].value))
+            else
+              _cell(opts[j].title, j == on, () => _set(c, opts[j].value)),
         ]),
       ]),
     );
@@ -220,6 +238,20 @@ class _SynthPageState extends State<SynthPage> {
     }
     return GestureDetector(onTap: () => _set(c, on ? 0 : kMax32), child: _box(c.title, on));
   }
+
+  Widget _iconCell(WaveShape shape, bool on, VoidCallback onTap) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 72,
+          height: 44,
+          decoration: BoxDecoration(
+            color: on ? stripHues[2].base : Colors.transparent,
+            border: Border.all(color: on ? stripHues[2].base : cGrey),
+          ),
+          child: Center(child: WaveIcon(shape, color: on ? cBg : cN)),
+        ),
+      );
 
   Widget _cell(String label, bool on, VoidCallback onTap) =>
       GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: _box(label, on, minWidth: 64));

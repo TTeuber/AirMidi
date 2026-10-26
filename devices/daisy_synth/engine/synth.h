@@ -1,5 +1,5 @@
 // An eight-voice subtractive synth: two detuned oscillators (saw, square or triangle), a resonant low-pass with
-// keyboard tracking, one ADSR for the filter and the amp, glide, vibrato, then chorus, echo and reverb.
+// keyboard tracking, an ADSR each for the filter and the amp, glide, vibrato, then chorus, echo and reverb.
 //
 // Threads: noteOn/noteOff/sustain/allNotesOff/setParam/bend/setMpe are called from one thread (the main loop);
 // process() runs in the audio callback. Note events cross over through a single-producer ring, parameters and
@@ -45,6 +45,7 @@ class Synth {
     // For the LEDs: the note voice i plays (-1 if silent) and its envelope level.
     int voiceNote(int i) const { return v_[i].note; }
     float voiceLevel(int i) const { return v_[i].env; }
+    float voiceFilterLevel(int i) const { return v_[i].fenv; }  // for the tests
     // For the tests: the pitch voice i sounds now (note + glide + bend, no vibrato) and its channel.
     float voicePitch(int i) const { return v_[i].pitch + v_[i].bend; }
     int voiceChannel(int i) const { return v_[i].ch; }
@@ -60,8 +61,10 @@ class Synth {
         uint32_t age = 0;
         float pitch = 60.f, target = 60.f;  // semitones
         float ph1 = 0.f, ph2 = 0.f, tri1 = 0.f, tri2 = 0.f;
-        int stage = 0;  // 0 idle, 1 attack, 2 decay/sustain, 3 release
+        int stage = 0;  // amp envelope: 0 idle, 1 attack, 2 decay/sustain, 3 release
         float env = 0.f;
+        int fstage = 0;  // filter envelope, the same stages, stepped once per sub-block
+        float fenv = 0.f;
         Svf f;
     };
 

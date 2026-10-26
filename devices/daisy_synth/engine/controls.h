@@ -21,6 +21,10 @@ enum Param : uint8_t {
     kVibrato,
     kGlideTime,
     kEcho,
+    kFAttack,  // the filter's own envelope
+    kFDecay,
+    kFSustain,
+    kFRelease,
     // switches: kWave = SW18 (three positions), kGlide = SW17
     kWave,
     kGlide,

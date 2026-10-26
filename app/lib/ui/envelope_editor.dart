@@ -75,10 +75,7 @@ class _EnvelopeEditorState extends State<EnvelopeEditor> {
 
   void _up() => setState(() => (active = null, last = null));
 
-  String _time(Control c) {
-    final s = seconds(widget.device, c);
-    return s == null ? '${(widget.device.fraction(c) * 100).round()}' : formatSeconds(s);
-  }
+  String _time(Control c) => display(widget.device, c);
 
   @override
   Widget build(BuildContext context) {
@@ -86,7 +83,7 @@ class _EnvelopeEditorState extends State<EnvelopeEditor> {
     final readouts = [
       ('attack', _time(e.attack), Handle.attack),
       ('decay', _time(e.decay), Handle.decay),
-      ('sustain', '${(widget.device.fraction(e.sustain) * 100).round()}', Handle.sustain),
+      ('sustain', display(widget.device, e.sustain), Handle.sustain),
       ('release', _time(e.release), Handle.release),
     ];
     return Padding(

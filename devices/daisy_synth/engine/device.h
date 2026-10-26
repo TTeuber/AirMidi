@@ -73,7 +73,7 @@ class Device {
 
     midici_responder_t responder_;
     midici_resource_t res_[2 + kMaps];
-    char ctrlList_[3072];
+    char ctrlList_[4096];  // 2.6 KB with 18 controls
     char maps_[kMaps][1024];
 };
 

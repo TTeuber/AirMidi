@@ -20,29 +20,34 @@ devices/daisy_synth/build.sh flash    # libDaisy in ~/Developer/libDaisy (LIBDAI
 devices/daisy_synth/host/build.sh     # desktop check: MIDI-CI scan by lib/midici_initiator, CC mapping, demo.wav
 ```
 
-104 KB of the Seed's 128 KB internal flash. CPU at 480 MHz (the audio callback): 14 % idle (the reverb), 33 % with all eight voices; the main loop spends
+106 KB of the Seed's 128 KB internal flash. CPU at 480 MHz (the audio callback): 14 % idle (the reverb), 33 % with all eight voices; the main loop spends
 its spare time on the steady load (see Noise).
 
 ## The sound
 
 Two oscillators per voice (saw, square or triangle, detuned against each other) -> 12 dB resonant low-pass
-(keyboard tracking, envelope amount scaled by velocity) -> amp. One ADSR drives both filter and amp. Glide, vibrato
+(keyboard tracking, its own ADSR scaled by Env Amt and velocity) -> amp with its ADSR. Glide, vibrato
 (mod wheel), pitch bend +-2 semitones, sustain pedal. Master: always-on chorus, ping-pong echo (360 ms), reverb.
 
 | control | CC | on the kit | page |
 |---|---|---|---|
-| Cutoff | 74 | VR1 | fader, named 20Hz .. 20k |
-| Resonance | 71 | VR2 | fader |
+| Cutoff | 74 | VR1 | XY pad across, named 20Hz .. 20k |
+| Resonance | 71 | VR2 | XY pad up |
 | Env Amt | 79 | VR3 | fader (0 .. 7 octaves) |
-| Attack | 73 | VR4 | fader, 1ms .. 3s |
-| Decay | 75 | VR5 | fader, 5ms .. 6s |
-| Sustain | 85 | VR6 | fader |
-| Release | 72 | VR7 | fader, 5ms .. 6s |
+| Amp Attack | 73 | VR4 | envelope, 1ms .. 3s |
+| Amp Decay | 75 | VR5 | envelope, 5ms .. 6s |
+| Amp Sustain | 85 | VR6 | envelope |
+| Amp Release | 72 | VR7 | envelope, 5ms .. 6s |
+| Filter Attack, Decay, Sustain, Release | 86, 87, 89, 90 | | envelope, the amp's ranges |
 | Space (reverb) | 91 | VR8 | fader |
 | Detune, Vibrato, Glide Time, Echo | 94, 1, 5, 93 | | faders |
-| Wave | 70 | SW18: one end saw, middle square, other end triangle | picker |
+| Wave | 70 | SW18: one end saw, middle square, other end triangle | picker (icons in the app) |
 | Glide | 65 | SW17 | toggle |
 | Bend | pitch bend | | fader, springs back |
+
+"Page" is the box's web page; the app draws the envelopes and the XY pad from the control paths
+(docs/system/README.md, "Control paths"), and the web page shows those controls as faders. Version 0.2 (2026-10-26)
+added the filter envelope; the version is in Discovery, so the box reads the new list instead of its cache.
 
 The synth listens on every channel and sends on channel 1. CC 64 is the sustain pedal, CC 120/123 silence it.
 
