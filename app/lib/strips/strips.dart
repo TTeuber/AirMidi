@@ -12,10 +12,7 @@ const kNames = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b']
 const _addOrder = [50, 55, 59, 64, 45, 40];
 List<int> defaultTuning(int n) => (_addOrder.take(n).toList()..sort());
 
-/// Fret markers like a guitar neck, by fret (rows below the open note): one mark, two at the octaves. The neck goes on
-/// past 24 and below 0 when the view moves, so the marks repeat every 12 frets; the open string has none.
-int fretMarks(int fret) => fret == 0 ? 0 : const {3: 1, 5: 1, 7: 1, 9: 1, 0: 2}[_pc(fret)] ?? 0;
-const _markerCol = 6.0, _edge = 1.0; // mm: the marker column at the left edge, and the space either side of it
+const _edge = 1.0; // mm left free at either side of the screen
 
 int _pc(int m) => ((m % 12) + 12) % 12;
 String noteName(int m) => kNames[_pc(m)] + ((m / 12).floor() - 1).toString();
@@ -71,14 +68,14 @@ class Strip {
   const Strip(this.i, this.base, this.x, this.w);
 }
 
-/// Every length in px. The strips live in the area right of the marker column; strips wider than it scroll.
+/// Every length in px. Strips wider than their area scroll.
 class StripLayout {
   final List<Strip> strips;
-  final double top, bottom, row, gap, markerX;
+  final double top, bottom, row, gap;
   final double areaL, areaR; // the strips' area; strips outside it are clipped
   final double fitWidth; // the strip width that fills the area exactly
   final double view, pxPerMm;
-  const StripLayout(this.strips, this.top, this.bottom, this.row, this.gap, this.markerX,
+  const StripLayout(this.strips, this.top, this.bottom, this.row, this.gap,
       {required this.areaL, required this.areaR, required this.fitWidth, this.view = 0, this.pxPerMm = kPxPerMm});
 
   double pitchAt(Strip s, double y) => s.base + view + (y - top) / row - 0.5;
@@ -102,8 +99,8 @@ class StripLayout {
 
 /// field: (x, y, w, h) in px. Strips that fit sit centred in the area; wider ones start at its left edge, scrolled.
 StripLayout layout(double fx, double fy, double fw, double fh, LayoutSettings s, [double pxPerMm = kPxPerMm]) {
-  final gap = s.gap * pxPerMm, col = _markerCol * pxPerMm, edge = _edge * pxPerMm;
-  final areaL = fx + edge + col + edge, areaR = fx + fw - edge, areaW = areaR - areaL;
+  final gap = s.gap * pxPerMm, edge = _edge * pxPerMm;
+  final areaL = fx + edge, areaR = fx + fw - edge, areaW = areaR - areaL;
   final n = s.tuning.length;
   final fit = n == 0 ? 0.0 : (areaW - (n - 1) * gap) / n;
   final w = s.width == null ? fit : s.width! * pxPerMm, total = n * w + (n - 1) * gap;
@@ -111,7 +108,7 @@ StripLayout layout(double fx, double fy, double fw, double fh, LayoutSettings s,
       ? areaL + (areaW - total) / 2
       : areaL - (s.scroll * pxPerMm).clamp(0.0, total - areaW);
   final strips = [for (var i = 0; i < n; i++) Strip(i, s.tuning[i], x0 + i * (w + gap), w)];
-  return StripLayout(strips, fy, fy + fh, s.row * pxPerMm, gap, fx + edge + col / 2,
+  return StripLayout(strips, fy, fy + fh, s.row * pxPerMm, gap,
       areaL: areaL, areaR: areaR, fitWidth: fit, view: s.view, pxPerMm: pxPerMm);
 }
 
@@ -192,11 +189,23 @@ LayoutSettings moved(StripLayout L, LayoutSettings s, PinchStep p) {
   return s.copyWith(row: row, width: () => width, view: view.clamp(lo, hi), scroll: scroll);
 }
 
-/// Where a move ends: rows back on whole semitones, and a width close to the fitting one becomes "fit".
-LayoutSettings settled(StripLayout L, LayoutSettings s) {
-  final w = s.width;
-  final fit = w != null && (w - L.fitWidth / L.pxPerMm).abs() < 0.8;
-  return s.copyWith(view: s.view.roundToDouble(), width: fit ? () => null : null, scroll: fit ? 0 : null);
+/// Where the fingers lift in move mode: rows back on whole semitones.
+LayoutSettings settled(LayoutSettings s) => s.copyWith(view: s.view.roundToDouble());
+
+/// Where move mode ends: a whole number of strips fills the screen, no slivers at the edges. The count is the one
+/// nearest to what is on screen now (all of them = "fit"), within the width range; the scroll lands on a strip.
+LayoutSettings quantized(StripLayout L, LayoutSettings s) {
+  final n = L.strips.length, areaW = L.areaR - L.areaL, mm = L.pxPerMm;
+  if (n == 0) return s;
+  double widthFor(int k) => (areaW - (k - 1) * L.gap) / k;
+  var k = (areaW / (L.strips.first.w + L.gap)).round().clamp(1, n);
+  while (k < n && widthFor(k) / mm > kWidthRange.$2) {
+    k++;
+  }
+  if (k == n) return s.copyWith(width: () => null, scroll: 0);
+  final w = widthFor(k), unit = w + L.gap;
+  final first = ((s.scroll * mm) / (L.strips.first.w + L.gap)).round().clamp(0, n - k); // leftmost strip on screen
+  return s.copyWith(width: () => w / mm, scroll: first * unit / mm);
 }
 
 enum EventType { on, change, pitch, off }

@@ -146,8 +146,10 @@ Status (2026-10-24):
 - A3 started (2026-10-26): move mode on the strips (bar: box, synth, move, layout). Drag moves the view up and
   down the neck and settles on whole semitones; a vertical pinch sets the row height, a horizontal one the strip
   width, and strips wider than the screen scroll sideways (pinch: an axis scales only with the fingers 12 mm apart
-  on it). Defaults: 6 strips (guitar tuning), no gap, width "fit". Logic in `strips.dart` (`Pinch`, `moved`,
-  `settled`) with tests; the drag tried on the Pixel 9a, the pinch only in the tests so far. Not saved yet (presets).
+  on it). "done" snaps the width so a whole number of strips fills the screen, the scroll onto a strip. Defaults: 6
+  strips (guitar tuning), no gap, width "fit". No fret marker column (screen space). A press lights its note's row
+  and draws a bar from the note's centre to the finger, so the notes above stay visible. Logic in `strips.dart`
+  (`Pinch`, `moved`, `settled`, `quantized`) with tests; drag, snap and press tried on the Pixel 9a. Not saved yet.
 
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.
@@ -178,3 +180,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | Strips bar: box, synth, layout; synth page from the device's MIDI-CI control list; values kept per box screen | user: no way back to settings, and a page for the synth's parameters filled by MIDI-CI |
 | 2026-10-24 | Protocols: MIDI 1.0 always, standard MIDI-CI first (MIDI Message Report for current values), "X-" PE resources for custom data, no custom UMP transport for now; MPE stays | user's decision after the protocol discussion (docs/design/midi-ci.md "Protocol policy") |
 | 2026-10-26 | Move mode: the view moves (the hand up the neck), the tuning stays; 6 strips, no gap, fit width by default | user: transpose all strips at once, pinch to resize, scroll across strips wider than the screen |
+| 2026-10-26 | No fret markers; "done" snaps to whole strips; the press bar runs from the note's centre to the finger, inside its row | user: markers cost width, slivers of strips are unusable, the bar from the top hid the notes above |

@@ -163,25 +163,31 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
 
   // The fingers are off: glide onto whole semitones (rows in tune for snap and the key guide).
   void _settle() {
-    final l = L;
-    if (l == null) return;
-    final to = settled(l, s.layout);
-    s.apply(to.copyWith(view: s.view));
-    settleTo = to.view;
+    settleTo = settled(s.layout).view;
     if (!ticker.isActive) ticker.start();
   }
 
   void _toggleMove() {
     player.handleAll(strings.clear()); // fingers that were playing stop; in move mode nothing plays
+    final leaving = moving;
+    setState(() {
+      _leaveMove();
+      moving = !leaving;
+      showSettings = false;
+    });
+  }
+
+  // Out of move mode the view is on whole semitones and a whole number of strips fills the screen.
+  void _leaveMove() {
+    if (!moving) return;
     pinch.clear();
-    if (moving && settleTo != null) {
+    moving = false;
+    if (settleTo != null) {
       s.view = settleTo!;
       settleTo = null;
     }
-    setState(() {
-      moving = !moving;
-      showSettings = false;
-    });
+    final l = L;
+    if (l != null) s.apply(quantized(l, settled(s.layout)));
   }
 
   // Geometry changes drop the fingers (their strips moved); only a new strip count changes the MPE zone, so only
@@ -241,8 +247,8 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
               _barButton('synth', _openSynth, enabled: widget.synth != null && widget.link != null),
               _barButton(moving ? 'done' : 'move', _toggleMove, lit: moving),
               _barButton(showSettings ? 'done' : 'layout', () => setState(() {
+                    _leaveMove();
                     showSettings = !showSettings;
-                    moving = false;
                   })),
             ]),
           ),
@@ -401,7 +407,7 @@ class _Painter extends CustomPainter {
     for (final st in L.strips) {
       if (st.x > L.areaR || st.x + st.w < L.areaL) continue;
       final hue = stripHues[st.i % stripHues.length], state = p.strings.state(st.i);
-      final fillY = state == null ? L.top : L.yAt(st, state.pitch).clamp(L.top, L.bottom);
+      final pressed = state?.pitch.round(); // the note the sounding finger is nearest
       c.save();
       c.clipRect(Rect.fromLTRB(st.x, L.top, st.x + st.w, L.bottom));
       for (var r = first; r < last; r++) {
@@ -410,23 +416,28 @@ class _Painter extends CustomPainter {
         final strong = s.scale == 'off' ? r % 12 == 0 : isRoot(note, s.key);
         paint.color = !inKey(note, s.key, s.scale)
             ? cGrey.withValues(alpha: 0.1)
-            : hue.base.withValues(alpha: strong ? 0.3 : 0.18);
+            : hue.base.withValues(alpha: note == pressed ? 0.42 : strong ? 0.3 : 0.18);
         c.drawRect(Rect.fromLTWH(st.x, y0 + gapY / 2, st.w, L.row - gapY), paint);
-        final mid = y0 + L.row / 2;
-        if (labelSize > 0 && mid - labelSize / 2 > L.top && mid + labelSize / 2 < L.bottom) {
-          final filled = mid < fillY;
-          final a = inKey(note, s.key, s.scale) ? (filled ? 1.0 : 0.45) : (filled ? 0.45 : 0.18);
-          _text(c, kNames[note % 12], Offset(st.x + st.w / 2, mid), labelSize,
-              (filled ? cBg : cN).withValues(alpha: a));
-        }
       }
       if (state != null) {
-        // The strip fills down to the sounding pitch, like a tile filling to its value.
-        paint.color = hue.base.withValues(alpha: 0.85);
-        c.drawRect(Rect.fromLTRB(st.x, L.top, st.x + st.w, fillY), paint);
+        // Only inside the pressed note: a line at its centre and a bar from there to the finger, so the distance
+        // from in tune shows and the notes around stay visible.
+        final centre = L.yAt(st, pressed!.toDouble()), finger = L.yAt(st, state.pitch);
+        paint.color = hue.base.withValues(alpha: 0.9);
+        c.drawRect(Rect.fromLTRB(st.x, centre < finger ? centre : finger, st.x + st.w, centre < finger ? finger : centre),
+            paint);
         paint.color = hue.drag;
+        c.drawRect(Rect.fromCenter(center: Offset(st.x + st.w / 2, centre), width: st.w, height: 2), paint);
         for (final h in state.held) {
           c.drawRect(Rect.fromLTWH(st.x, L.yAt(st, h) - 1.5, st.w, 3), paint);
+        }
+      }
+      if (labelSize > 0) {
+        for (var r = first; r < last; r++) {
+          final note = st.base + r, mid = rowTop(r) + L.row / 2;
+          if (note < 0 || note > 127 || mid - labelSize / 2 < L.top || mid + labelSize / 2 > L.bottom) continue;
+          final a = note == pressed ? 1.0 : inKey(note, s.key, s.scale) ? 0.45 : 0.18;
+          _text(c, kNames[note % 12], Offset(st.x + st.w / 2, mid), labelSize, cN.withValues(alpha: a));
         }
       }
       c.restore();
@@ -442,17 +453,6 @@ class _Painter extends CustomPainter {
       }
     }
     c.restore();
-    // fret markers, moving with the view
-    paint.color = cN.withValues(alpha: 0.45);
-    const side = 7.0;
-    for (var f = first; f < last; f++) {
-      final n = fretMarks(f), y = rowTop(f) + L.row / 2;
-      if (n == 0 || y - side / 2 < L.top || y + side / 2 > L.bottom) continue;
-      for (var k = 0; k < n; k++) {
-        final x = L.markerX + (n == 2 ? (k == 1 ? 0.75 : -0.75) * side : 0);
-        c.drawRect(Rect.fromCenter(center: Offset(x, y), width: side, height: side), paint);
-      }
-    }
     if (p.moving) {
       // move mode: an accent frame round the field and what the fingers do
       paint

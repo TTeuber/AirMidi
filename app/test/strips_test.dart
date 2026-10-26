@@ -26,9 +26,9 @@ void main() {
 
   test('strips are centred in the area right of the markers; a touch in a gap goes to the nearer strip', () {
     final a = L.strips[0], b = L.strips[1];
-    expect(L.areaL, 8); // 1 mm edge, 6 mm marker column, 1 mm
+    expect(L.areaL, 1); // 1 mm free at either edge
     expect(L.areaR, 999);
-    expect(a.x, 8 + (991 - 68) / 2);
+    expect(a.x, 1 + (998 - 68) / 2);
     expect(L.stripAt(a.x + a.w + 1, 1)!.i, 0);
     expect(L.stripAt(b.x - 1, 1)!.i, 1);
     expect(L.stripAt(a.x - 3, 1)!.i, 0); // a little outside the outer strips still counts
@@ -70,26 +70,13 @@ void main() {
     expect(g.move(1, 53.0)!.pitch, closeTo(52.7, 1e-9));
   });
 
-  test('fret marker column sits left of the first strip, clear of it', () {
-    expect(L.markerX, 4); // the centre of the 6 mm column after the 1 mm edge
-    final fit = layout(0, 0, 100, 800, LayoutSettings(row: 10, gap: 0, tuning: defaultTuning(6)), 1);
-    expect(L.markerX + 3, lessThanOrEqualTo(fit.strips[0].x));
-  });
-
-  test('fret marks repeat every 12 frets, none on the open string', () {
-    expect([for (var f = 0; f <= 24; f++) fretMarks(f)].join(), '0001010101002001010101002');
-    expect(fretMarks(-12), 2);
-    expect(fretMarks(-3), 1); // = fret 9 an octave down
-    expect(fretMarks(-4), 0);
-  });
-
   group('move mode', () {
     final six = LayoutSettings(row: 10, gap: 0, tuning: defaultTuning(6));
-    final F = layout(0, 100, 100, 200, six, 1); // area 8..99 = 91 px, 20 rows
+    final F = layout(0, 100, 100, 200, six, 1); // area 1..99 = 98 px, 20 rows
 
     test('fit: six strips with no gap fill the area exactly', () {
-      expect(F.fitWidth, closeTo(91 / 6, 1e-9));
-      expect(F.strips.first.x, 8);
+      expect(F.fitWidth, closeTo(98 / 6, 1e-9));
+      expect(F.strips.first.x, 1);
       expect(F.strips.last.x + F.strips.last.w, closeTo(99, 1e-9));
       expect(F.overflows, isFalse);
     });
@@ -121,7 +108,7 @@ void main() {
 
     test('a horizontal pinch widens the strips; wider than the screen, they scroll around the fingers', () {
       final m = moved(F, six, const PinchStep(30, 300, 30, 300, 2, 1));
-      expect(m.width, closeTo(91 / 6 * 2, 1e-9));
+      expect(m.width, closeTo(98 / 6 * 2, 1e-9));
       final W = layout(0, 100, 100, 200, m, 1);
       expect(W.overflows, isTrue);
       final before = (30 - F.strips[0].x) / F.strips[0].w, after = (30 - W.strips[0].x) / W.strips[0].w;
@@ -129,20 +116,47 @@ void main() {
       final dragged = moved(W, m, const PinchStep(50, 300, 10, 300, 1, 1));
       expect(dragged.scroll, closeTo(m.scroll + 40, 1e-9));
       final far = moved(W, m, const PinchStep(50, 300, -900, 300, 1, 1));
-      expect(far.scroll, closeTo(W.total - 91, 1e-9)); // stops at the last strip
+      expect(far.scroll, closeTo(W.total - 98, 1e-9)); // stops at the last strip
     });
 
     test('a touch outside a scrolled area plays the strip at the edge, not a hidden one', () {
       final W = layout(0, 100, 100, 200, six.copyWith(width: () => 30, scroll: 20), 1);
-      expect(W.stripAt(3)!.i, W.stripAt(8)!.i);
-      expect(W.strips[W.stripAt(3)!.i].x + W.strips[W.stripAt(3)!.i].w, greaterThan(8));
+      expect(W.stripAt(0.5)!.i, W.stripAt(1)!.i);
+      expect(W.strips[W.stripAt(0.5)!.i].x + W.strips[W.stripAt(0.5)!.i].w, greaterThan(1));
     });
 
-    test('settled: whole semitones, and nearly fitting strips go back to fit', () {
-      final s1 = settled(F, six.copyWith(view: 2.4, width: () => 91 / 6 + 0.5));
-      expect(s1.view, 2);
-      expect(s1.width, isNull);
-      expect(settled(F, six.copyWith(view: 2.6, width: () => 25)).width, 25);
+    test('settled: whole semitones when the fingers lift', () {
+      expect(settled(six.copyWith(view: 2.4)).view, 2);
+      expect(settled(six.copyWith(view: 2.6)).view, 3);
+    });
+
+    test('quantized: a whole number of strips fills the screen, the scroll lands on a strip', () {
+      // 2.6 strips on screen (37.7 px each), scrolled to show part of the second: 3 strips from the second on
+      final s1 = six.copyWith(width: () => 37.7, scroll: 30);
+      final q = quantized(layout(0, 100, 100, 200, s1, 1), s1);
+      expect(q.width, closeTo(98 / 3, 1e-9));
+      expect(q.scroll, closeTo(98 / 3, 1e-9));
+      final Q = layout(0, 100, 100, 200, q, 1);
+      expect(Q.strips[1].x, closeTo(Q.areaL, 1e-9));
+      expect(Q.strips[3].x + Q.strips[3].w, closeTo(Q.areaR, 1e-9));
+      // a little narrower or wider than fit: back to fit
+      for (final w in [12.0, 17.5]) {
+        final s2 = six.copyWith(width: () => w, scroll: 5);
+        final f = quantized(layout(0, 100, 100, 200, s2, 1), s2);
+        expect((f.width, f.scroll), (null, 0));
+      }
+      // never past the last strip
+      final s3 = six.copyWith(width: () => 39, scroll: 999);
+      final e = quantized(layout(0, 100, 80, 200, s3, 1), s3); // area 78: 2 strips of 39
+      expect(e.scroll, closeTo(4 * 39, 1e-9));
+    });
+
+    test('quantized keeps the width range: one strip is never wider than 40 mm', () {
+      final wide = layout(0, 100, 150, 200, six.copyWith(width: () => 40), 1); // area 148: 3.7 strips
+      final one = quantized(wide, six.copyWith(width: () => 40));
+      expect(one.width, closeTo(148 / 4, 1e-9));
+      final narrow = layout(0, 100, 60, 200, six.copyWith(width: () => 40), 1); // area 58: 1.45 strips
+      expect(quantized(narrow, six.copyWith(width: () => 40)).width, closeTo(29, 1e-9)); // 2, not 1 of 58
     });
 
     test('pinch: one finger drags, two side by side scale across only', () {
