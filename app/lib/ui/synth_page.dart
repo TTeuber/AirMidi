@@ -1,5 +1,6 @@
 // The synth behind the box: its controls as its MIDI-CI control list describes them (read by the box over TRS), drawn
-// as faders, pickers and toggles. Moving one sends its CC through the box; the synth's own knobs move them back. The
+// as faders, pickers and toggles, in sections by their control paths, and an envelope editor where four of them make
+// one (lib/synth/groups.dart). Moving one sends its CC through the box; the synth's own knobs move them back. The
 // values live in SynthState (owned by the box screen), so they are still there the next time the page opens.
 import 'dart:async';
 
@@ -7,7 +8,9 @@ import 'package:flutter/material.dart';
 
 import '../link/link.dart';
 import '../synth/controls.dart';
+import '../synth/groups.dart';
 import '../synth/state.dart';
+import 'envelope_editor.dart';
 import 'strips_page.dart';
 
 class SynthPage extends StatefulWidget {
@@ -110,12 +113,7 @@ class _SynthPageState extends State<SynthPage> {
         if (message != null)
           Padding(padding: const EdgeInsets.only(bottom: 12), child: Text(message!, style: const TextStyle(color: cN))),
         if (d != null) ...[
-          for (final c in d.controls.where((c) => d.kind(c) == Kind.fader)) _fader(d, c),
-          const SizedBox(height: 8),
-          for (final c in d.controls.where((c) => d.kind(c) == Kind.select)) _select(d, c),
-          Wrap(spacing: 8, runSpacing: 8, children: [
-            for (final c in d.controls.where((c) => d.kind(c) == Kind.toggle)) _toggle(c),
-          ]),
+          for (final s in sections(d)) ..._section(d, s),
           if (d.hidden > 0)
             Padding(
               padding: const EdgeInsets.only(top: 14),
@@ -136,6 +134,32 @@ class _SynthPageState extends State<SynthPage> {
         ],
       ]),
     );
+  }
+
+  // A section: its heading (the first path segment), then faders and envelopes in the list's order, pickers, toggles.
+  List<Widget> _section(Device d, Section s) {
+    final controls = s.items.whereType<Control>();
+    final toggles = [for (final c in controls) if (d.kind(c) == Kind.toggle) _toggle(c)];
+    return [
+      if (s.title.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 6),
+          child: Text(s.title, style: const TextStyle(color: cGrey, fontSize: 12, letterSpacing: 1.5)),
+        ),
+      for (final i in s.items)
+        if (i is Envelope)
+          EnvelopeEditor(device: d, env: i, onSet: _set)
+        else if (i is Control && d.kind(i) == Kind.fader)
+          _fader(d, i),
+      for (final c in controls)
+        if (d.kind(c) == Kind.select) _select(d, c),
+      if (toggles.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Wrap(spacing: 8, runSpacing: 8, children: toggles),
+        ),
+      const SizedBox(height: 10),
+    ];
   }
 
   // A tile that fills to its value (the forslike tile): drag sideways, the whole width is the whole range.

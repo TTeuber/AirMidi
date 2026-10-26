@@ -22,12 +22,15 @@ class Control {
   final int priority;
   final int def;
   final String? mapId, typeHint;
+  final String path; // M2-117 paramPath ("/env/attack"), '' if the device sent none
   final int stepCount;
   final int lo, hi;
   int value;
 
+  int order = 0; // position in the device's list: ties in priority keep it (Dart's sort is not stable)
+
   Control._(this.title, this.channel, this.type, this.index, this.priority, this.def, this.mapId, this.typeHint,
-      this.stepCount, this.lo, this.hi)
+      this.path, this.stepCount, this.lo, this.hi)
       : value = def;
 
   static Control? fromJson(Map<String, dynamic> j) {
@@ -45,6 +48,7 @@ class Control {
       ((j['default'] ?? (pBend ? 0x80000000 : 0)) as num).toInt(),
       j['ctrlMapId'] as String?,
       j['typeHint'] as String?,
+      j['paramPath'] is String ? j['paramPath'] as String : '',
       ((j['stepCount'] ?? 0) as num).toInt(),
       mm is List && mm.length == 2 ? (mm[0] as num).toInt() : 0,
       mm is List && mm.length == 2 ? (mm[1] as num).toInt() : kMax32,
@@ -75,8 +79,11 @@ class Device {
               if (o is Map && o['title'] is String && o['value'] is num) MapEntry(o['title'], (o['value'] as num).toInt())
           ]
     };
-    final controls = [for (final c in all) if (c is Map<String, dynamic>) Control.fromJson(c)].whereType<Control>().toList()
-      ..sort((a, b) => a.priority.compareTo(b.priority));
+    final controls = [for (final c in all) if (c is Map<String, dynamic>) Control.fromJson(c)].whereType<Control>().toList();
+    for (var i = 0; i < controls.length; i++) {
+      controls[i].order = i;
+    }
+    controls.sort((a, b) => a.priority != b.priority ? a.priority.compareTo(b.priority) : a.order.compareTo(b.order));
     final name = info == null
         ? ''
         : [info['manufacturer'], info['model']].whereType<String>().where((s) => s.isNotEmpty).join(' ');

@@ -104,7 +104,7 @@ it to group controls and to pick a widget. Our conventions, so every instrument'
 
 | a group with | widget | state |
 |---|---|---|
-| `attack`, `decay`, `sustain`, `release` (optional `delay`, `hold`) | envelope editor: drag the corners, times from the CtrlMapLists | next |
+| `attack`, `decay`, `sustain`, `release` (optional `delay`, `hold`) | envelope editor: drag the corners, times from the CtrlMapLists | in the app |
 | `cutoff`, `resonance` | XY pad | idea |
 | `rate`, `depth` (optional `wave`) | LFO | idea |
 
@@ -135,7 +135,6 @@ None yet. Candidates, each to be checked against the standard first:
 
 ## State
 
-Done: tiers 0 and 1 on the box (initiator over TRS, cache, page), the app (synth page from the control list,
-current values), daisy_synth and the Mac stand-in (responder). Next: the app's editor groups by `paramPath` and draws
-the envelope editor. Not done: any tier 2 resource, the plugin side channel, MIDI-CI Profiles, Set Property Data,
+Done: tiers 0 and 1 on the box (initiator over TRS, cache, page), the app (synth page in sections by `paramPath`,
+the envelope editor, current values), daisy_synth and the Mac stand-in (responder). Not done: any tier 2 resource, the plugin side channel, MIDI-CI Profiles, Set Property Data,
 Subscriptions.
