@@ -167,8 +167,8 @@ Status (2026-10-24):
   and draws a bar from the note's centre to the finger, so the notes above stay visible. Logic in `strips.dart`
   (`Pinch`, `moved`, `settled`, `quantized`) with tests; drag, snap and press tried on the Pixel 9a. Not saved yet.
 - Direct to a computer (2026-10-26, "Without a box" above): USB tried end to end (the Mac logged the setup once, the
-  note with its bend first, 114 bends of a slide, the note off; back and reopen works). BLE to the Mac written, to
-  be tried with the Mac advertising.
+  note with its bend first, 114 bends of a slide, the note off; back and reopen works). The user played Logic over
+  both USB and BLE, both work.
 
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.
@@ -201,3 +201,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-26 | Move mode: the view moves (the hand up the neck), the tuning stays; 6 strips, no gap, fit width by default | user: transpose all strips at once, pinch to resize, scroll across strips wider than the screen |
 | 2026-10-26 | No fret markers; "done" snaps to whole strips; the press bar runs from the note's centre to the finger, inside its row | user: markers cost width, slivers of strips are unusable, the bar from the top hid the notes above |
 | 2026-10-26 | Computers and other MIDI devices through Android's MIDI service (BLE and USB), straight to the strips; no setup repeat on those links | user: the app as a wireless controller for the Mac without the box; Android's BLE MIDI driver asks for the fast interval, the BLE plugin cannot; USB MIDI comes for free |
+| 2026-10-26 | A system doc (docs/system): roles, tiers 0-2, messages not transports, the instrument checklist, `paramPath` conventions for widgets; plugins get their description over a side channel, control through the DAW | user: one documented MIDI system, the box one piece of it, for hardware and JUCE plugins |
