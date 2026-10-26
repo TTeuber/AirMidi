@@ -143,14 +143,20 @@ Status (2026-10-24):
   networks, Wi-Fi setup with the box's scan, phones, settings), pairing on first use, and the page follows the box
   when a mode change or a restart moves it to the other transport. Tried on the Pixel 9a: every mode change in
   both directions and a restarting settings change followed the box; the phone re-paired through Setup mode.
+- A3 started (2026-10-26): move mode on the strips (bar: box, synth, move, layout). Drag moves the view up and
+  down the neck and settles on whole semitones; a vertical pinch sets the row height, a horizontal one the strip
+  width, and strips wider than the screen scroll sideways (pinch: an axis scales only with the fingers 12 mm apart
+  on it). Defaults: 6 strips (guitar tuning), no gap, width "fit". Logic in `strips.dart` (`Pinch`, `moved`,
+  `settled`) with tests; the drag tried on the Pixel 9a, the pinch only in the tests so far. Not saved yet (presets).
 
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.
 
 ## Open questions
 
-- Strip count and size on a phone screen: the iPad layout had 20 mm strips; the Pixel 9a is ~65 x 146 mm, so in
-  portrait three strips need ~15 mm each with ~11 rows visible at 12 mm. A0 starts portrait, 15 / 3 / 11 mm.
+- Strip count and size on a phone screen: the iPad layout had 20 mm strips; the Pixel 9a is ~65 x 146 mm. A0 started
+  with 3 strips of 15 mm; since move mode the default is 6 strips that fit the screen (~9.5 mm, no gap), 11 mm rows,
+  resized by pinching.
 - Answered 2026-10-24: phone = Pixel 9a on the latest Android; code in `app/` here; daisy_synth with an MPE mode
   plays the strips first; the pairing window is fine.
 
@@ -171,4 +177,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | A2 tried on the phone; the page follows the box only on sightings after its link died, and closes that link first | a stale BLE sighting and the replaced page's dispose both broke the follow (app commit 9fcad12) |
 | 2026-10-24 | Strips bar: box, synth, layout; synth page from the device's MIDI-CI control list; values kept per box screen | user: no way back to settings, and a page for the synth's parameters filled by MIDI-CI |
 | 2026-10-24 | Protocols: MIDI 1.0 always, standard MIDI-CI first (MIDI Message Report for current values), "X-" PE resources for custom data, no custom UMP transport for now; MPE stays | user's decision after the protocol discussion (docs/design/midi-ci.md "Protocol policy") |
-
+| 2026-10-26 | Move mode: the view moves (the hand up the neck), the tuning stays; 6 strips, no gap, fit width by default | user: transpose all strips at once, pinch to resize, scroll across strips wider than the screen |

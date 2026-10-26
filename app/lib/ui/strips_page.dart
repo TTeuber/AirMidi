@@ -1,6 +1,9 @@
 // The strips: raw pointers in (Listener, every finger with its id), drawing with a CustomPainter, events to the
-// Player. Portrait, full screen. Colours from the prototype's forslike palette.
+// Player. Portrait, full screen. Colours from the prototype's forslike palette. Move mode turns the same fingers into
+// a pan and pinch of the view: up and down the neck, the row height, the strip width and, for wide strips, which ones
+// are on screen.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -20,16 +23,26 @@ const stripHues = [
 ];
 
 class Settings {
-  double row = 11, width = 15, gap = 3; // mm; the Pixel 9a is ~65 mm wide in portrait
-  int count = 3;
-  List<int> tuning = defaultTuning(3);
+  double row = 11, gap = 0; // mm; the Pixel 9a is ~65 mm wide in portrait
+  double? width; // mm; null = fit the strips to the screen
+  double view = 0, scroll = 0; // semitones up the neck; mm scrolled across wide strips
+  int count = 6;
+  List<int> tuning = defaultTuning(6);
   bool snap = false, legato = true;
   bool showStats = false; // the link's numbers above the bar (for measuring)
   double assist = 0, pull = 150; // 0..100, ms
   int key = 7;
   String scale = 'off';
 
-  LayoutSettings get layout => LayoutSettings(row: row, width: width, gap: gap, align: StripAlign.mid, tuning: tuning);
+  LayoutSettings get layout =>
+      LayoutSettings(row: row, width: width, gap: gap, tuning: tuning, view: view, scroll: scroll);
+
+  void apply(LayoutSettings l) {
+    row = l.row;
+    width = l.width;
+    view = l.view;
+    scroll = l.scroll;
+  }
 }
 
 class StripsPage extends StatefulWidget {
@@ -48,9 +61,18 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
   final repaint = ValueNotifier(0);
   late final Ticker ticker = createTicker(_tick);
   Duration? lastTick;
-  StripLayout? L;
+  Size? field; // the strips' area below the readouts, from the last build
   Timer? statsTimer;
   bool showSettings = false;
+  bool moving = false; // move mode: fingers move the view instead of playing
+  final pinch = Pinch(12 * kPxPerMm); // fingers closer than 12 mm on an axis do not scale it
+  double? settleTo; // the whole semitone the view glides to after a move
+
+  // Computed on use, so a move only needs a repaint, not a rebuild.
+  StripLayout? get L {
+    final f = field;
+    return f == null ? null : layout(0, _readH, f.width, f.height, s.layout);
+  }
 
   static const _readH = 64.0; // px, the note readouts above the strips
 
@@ -85,14 +107,27 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
     final dt = lastTick == null ? 1 / 60 : ((now - lastTick!).inMicroseconds / 1e6).clamp(0.001, 0.05);
     lastTick = now;
     player.handleAll(strings.tick(dt));
+    final to = settleTo;
+    if (to != null) {
+      s.view += (to - s.view) * (1 - math.exp(-dt / 0.04));
+      if ((to - s.view).abs() < 0.003) {
+        s.view = to;
+        settleTo = null;
+      }
+    }
     repaint.value++;
-    if (strings.touchCount == 0) {
+    if (strings.touchCount == 0 && settleTo == null) {
       ticker.stop();
       lastTick = null;
     }
   }
 
   void _down(PointerDownEvent e) {
+    if (moving) {
+      settleTo = null;
+      pinch.down(e.pointer, e.localPosition.dx, e.localPosition.dy);
+      return;
+    }
     final l = L;
     if (l == null || e.localPosition.dy < l.top) return;
     final st = l.stripAt(e.localPosition.dx);
@@ -103,6 +138,13 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
   }
 
   void _move(PointerMoveEvent e) {
+    if (moving) {
+      final l = L, step = pinch.move(e.pointer, e.localPosition.dx, e.localPosition.dy);
+      if (l == null || step == null) return;
+      s.apply(moved(l, s.layout, step));
+      repaint.value++;
+      return;
+    }
     final l = L, strip = strings.stripOf(e.pointer);
     if (l == null || strip == null || strip >= l.strips.length) return;
     player.handle(strings.move(e.pointer, l.pitchAt(l.strips[strip], e.localPosition.dy)));
@@ -110,8 +152,36 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
   }
 
   void _up(PointerEvent e) {
+    if (moving) {
+      pinch.up(e.pointer);
+      if (pinch.count == 0) _settle();
+      return;
+    }
     player.handle(strings.up(e.pointer));
     repaint.value++;
+  }
+
+  // The fingers are off: glide onto whole semitones (rows in tune for snap and the key guide).
+  void _settle() {
+    final l = L;
+    if (l == null) return;
+    final to = settled(l, s.layout);
+    s.apply(to.copyWith(view: s.view));
+    settleTo = to.view;
+    if (!ticker.isActive) ticker.start();
+  }
+
+  void _toggleMove() {
+    player.handleAll(strings.clear()); // fingers that were playing stop; in move mode nothing plays
+    pinch.clear();
+    if (moving && settleTo != null) {
+      s.view = settleTo!;
+      settleTo = null;
+    }
+    setState(() {
+      moving = !moving;
+      showSettings = false;
+    });
   }
 
   // Geometry changes drop the fingers (their strips moved); only a new strip count changes the MPE zone, so only
@@ -134,7 +204,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
       body: SafeArea(
         child: Stack(children: [
           LayoutBuilder(builder: (context, box) {
-            L = layout(0, _readH, box.maxWidth, box.maxHeight - _readH - _barH - (s.showStats ? _statsH : 0), s.layout);
+            field = Size(box.maxWidth, box.maxHeight - _readH - _barH - (s.showStats ? _statsH : 0));
             return Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: _down,
@@ -169,7 +239,11 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
             child: Row(children: [
               _barButton('box', () => Navigator.of(context).maybePop()),
               _barButton('synth', _openSynth, enabled: widget.synth != null && widget.link != null),
-              _barButton(showSettings ? 'done' : 'layout', () => setState(() => showSettings = !showSettings)),
+              _barButton(moving ? 'done' : 'move', _toggleMove, lit: moving),
+              _barButton(showSettings ? 'done' : 'layout', () => setState(() {
+                    showSettings = !showSettings;
+                    moving = false;
+                  })),
             ]),
           ),
           if (showSettings) Positioned(left: 0, right: 0, bottom: _barH, child: _settings()),
@@ -187,8 +261,8 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
         .push(MaterialPageRoute(builder: (_) => SynthPage(synth: widget.synth!, link: widget.link!)));
   }
 
-  // A third of the bar each; the whole bar height responds, not just the word.
-  Widget _barButton(String label, VoidCallback onTap, {bool enabled = true}) => Expanded(
+  // A quarter of the bar each; the whole bar height responds, not just the word. Lit = a mode that is on.
+  Widget _barButton(String label, VoidCallback onTap, {bool enabled = true, bool lit = false}) => Expanded(
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: enabled ? onTap : null,
@@ -199,8 +273,9 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
                 height: 40,
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 alignment: Alignment.center,
-                decoration: BoxDecoration(border: Border.all(color: enabled ? cAc : cGrey, width: 1.5)),
-                child: Text(label, style: TextStyle(color: enabled ? cAc : cGrey, fontSize: 15)),
+                decoration: BoxDecoration(
+                    color: lit ? cAc : null, border: Border.all(color: enabled ? cAc : cGrey, width: 1.5)),
+                child: Text(label, style: TextStyle(color: lit ? cBg : enabled ? cAc : cGrey, fontSize: 15)),
               ),
             ),
           ),
@@ -244,8 +319,9 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
       color: const Color(0xF20A1014),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _slider('row', s.row, 6, 30, (v) => _relayout(() => s.row = v.roundToDouble()), unit: ' mm'),
-        _slider('width', s.width, 8, 40, (v) => _relayout(() => s.width = v.roundToDouble()), unit: ' mm'),
+        _slider('row', s.row, kRowRange.$1, kRowRange.$2, (v) => _relayout(() => s.row = v.roundToDouble()), unit: ' mm'),
+        _slider('width', s.width ?? (L?.fitWidth ?? 0) / kPxPerMm, kWidthRange.$1, kWidthRange.$2,
+            (v) => _relayout(() => s.width = v.roundToDouble()), unit: s.width == null ? ' fit' : ' mm'),
         _slider('gap', s.gap, 0, 20, (v) => _relayout(() => s.gap = v.roundToDouble()), unit: ' mm'),
         _slider('strips', s.count.toDouble(), 1, 6, (v) {
           if (v.round() == s.count) return;
@@ -287,6 +363,10 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
           _toggle('snap', s.snap, (v) => setState(() => s.snap = v)),
           _toggle('legato', s.legato, (v) => setState(() => s.legato = v)),
           _toggle('link stats', s.showStats, (v) => setState(() => s.showStats = v)),
+          _cell('fit', s.width == null, () => _relayout(() {
+                s.width = null;
+                s.scroll = 0;
+              }), width: 52),
           _cell('all off', false, () => player.allOff(), width: 80),
         ]),
       ]),
@@ -311,24 +391,32 @@ class _Painter extends CustomPainter {
     final L = p.L, s = p.s;
     if (L == null) return;
     const gapY = 2.0; // background between rows separates them; no lines
-    final rows = ((L.bottom - L.top) / L.row).ceil();
     final labelSize = L.row >= 40 ? 15.0 : L.row >= 28 ? 12.0 : 0.0;
     final paint = Paint();
+    // Rows below the open string: from the one cut by the top edge to the one cut by the bottom.
+    final first = L.view.floor(), last = (L.view + (L.bottom - L.top) / L.row).ceil();
+    double rowTop(int r) => L.top + (r - L.view) * L.row;
+    c.save();
+    c.clipRect(Rect.fromLTRB(L.areaL, 0, L.areaR, size.height)); // wide strips scroll under the edges
     for (final st in L.strips) {
+      if (st.x > L.areaR || st.x + st.w < L.areaL) continue;
       final hue = stripHues[st.i % stripHues.length], state = p.strings.state(st.i);
       final fillY = state == null ? L.top : L.yAt(st, state.pitch).clamp(L.top, L.bottom);
-      for (var r = 0; r < rows; r++) {
-        final y0 = L.top + r * L.row, h = (L.row < L.bottom - y0 ? L.row : L.bottom - y0) - gapY, note = st.base + r;
-        if (h < 1) continue;
+      c.save();
+      c.clipRect(Rect.fromLTRB(st.x, L.top, st.x + st.w, L.bottom));
+      for (var r = first; r < last; r++) {
+        final y0 = rowTop(r), note = st.base + r;
+        if (note < 0 || note > 127) continue;
         final strong = s.scale == 'off' ? r % 12 == 0 : isRoot(note, s.key);
         paint.color = !inKey(note, s.key, s.scale)
             ? cGrey.withValues(alpha: 0.1)
             : hue.base.withValues(alpha: strong ? 0.3 : 0.18);
-        c.drawRect(Rect.fromLTWH(st.x, y0 + gapY / 2, st.w, h), paint);
-        if (labelSize > 0 && y0 + L.row / 2 + labelSize / 2 < L.bottom) {
-          final filled = y0 + L.row / 2 < fillY;
+        c.drawRect(Rect.fromLTWH(st.x, y0 + gapY / 2, st.w, L.row - gapY), paint);
+        final mid = y0 + L.row / 2;
+        if (labelSize > 0 && mid - labelSize / 2 > L.top && mid + labelSize / 2 < L.bottom) {
+          final filled = mid < fillY;
           final a = inKey(note, s.key, s.scale) ? (filled ? 1.0 : 0.45) : (filled ? 0.45 : 0.18);
-          _text(c, kNames[note % 12], Offset(st.x + st.w / 2, y0 + L.row / 2), labelSize,
+          _text(c, kNames[note % 12], Offset(st.x + st.w / 2, mid), labelSize,
               (filled ? cBg : cN).withValues(alpha: a));
         }
       }
@@ -341,9 +429,10 @@ class _Painter extends CustomPainter {
           c.drawRect(Rect.fromLTWH(st.x, L.yAt(st, h) - 1.5, st.w, 3), paint);
         }
       }
-      // readout: nearest note, cents, an underline within 5 cents
-      final n = nearest(state?.pitch ?? st.base.toDouble()), cx = st.x + st.w / 2;
-      _text(c, noteName(n.note), Offset(cx, 20), 20, cN.withValues(alpha: state == null ? 0.45 : 1));
+      c.restore();
+      // readout: the sounding note, cents, an underline within 5 cents; idle, the note at the top edge
+      final n = nearest(state?.pitch ?? st.base + L.view), cx = st.x + st.w / 2;
+      _text(c, noteName(n.note), Offset(cx, 20), st.w < 50 ? 16 : 20, cN.withValues(alpha: state == null ? 0.45 : 1));
       if (state != null) {
         if (n.cents.abs() <= 5) {
           paint.color = hue.base;
@@ -352,17 +441,32 @@ class _Painter extends CustomPainter {
         _text(c, '${n.cents > 0 ? '+' : ''}${n.cents}', Offset(cx, 48), 12, cN.withValues(alpha: 0.7));
       }
     }
-    // fret markers
+    c.restore();
+    // fret markers, moving with the view
     paint.color = cN.withValues(alpha: 0.45);
     const side = 7.0;
-    kFretMarkers.forEach((fret, n) {
-      final y = L.top + (fret + 0.5) * L.row;
-      if (y + side / 2 > L.bottom) return;
+    for (var f = first; f < last; f++) {
+      final n = fretMarks(f), y = rowTop(f) + L.row / 2;
+      if (n == 0 || y - side / 2 < L.top || y + side / 2 > L.bottom) continue;
       for (var k = 0; k < n; k++) {
         final x = L.markerX + (n == 2 ? (k == 1 ? 0.75 : -0.75) * side : 0);
         c.drawRect(Rect.fromCenter(center: Offset(x, y), width: side, height: side), paint);
       }
-    });
+    }
+    if (p.moving) {
+      // move mode: an accent frame round the field and what the fingers do
+      paint
+        ..color = cAc
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      c.drawRect(Rect.fromLTRB(L.areaL + 1, L.top + 1, L.areaR - 1, L.bottom - 1), paint);
+      paint.style = PaintingStyle.fill;
+      final hint = Rect.fromCenter(center: Offset((L.areaL + L.areaR) / 2, L.bottom - 40), width: 230, height: 44);
+      c.drawRect(hint, Paint()..color = cBg.withValues(alpha: 0.85));
+      _text(c, 'drag: up and down the neck', hint.center - const Offset(0, 9), 13, cAc);
+      _text(c, L.overflows ? 'pinch: rows / width, drag across' : 'pinch: rows / width', hint.center + const Offset(0, 9),
+          13, cAc);
+    }
   }
 
   @override

@@ -12,9 +12,10 @@ const kNames = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b']
 const _addOrder = [50, 55, 59, 64, 45, 40];
 List<int> defaultTuning(int n) => (_addOrder.take(n).toList()..sort());
 
-/// Fret markers like a guitar neck, by row below the open note: one mark, two at the octaves.
-const kFretMarkers = {3: 1, 5: 1, 7: 1, 9: 1, 12: 2, 15: 1, 17: 1, 19: 1, 21: 1, 24: 2};
-const _markerCol = 6.0; // mm, the marker column left of the first strip
+/// Fret markers like a guitar neck, by fret (rows below the open note): one mark, two at the octaves. The neck goes on
+/// past 24 and below 0 when the view moves, so the marks repeat every 12 frets; the open string has none.
+int fretMarks(int fret) => fret == 0 ? 0 : const {3: 1, 5: 1, 7: 1, 9: 1, 0: 2}[_pc(fret)] ?? 0;
+const _markerCol = 6.0, _edge = 1.0; // mm: the marker column at the left edge, and the space either side of it
 
 int _pc(int m) => ((m % 12) + 12) % 12;
 String noteName(int m) => kNames[_pc(m)] + ((m / 12).floor() - 1).toString();
@@ -46,13 +47,22 @@ const _letGoTau = 0.025; // s, how fast the assist lets go when the finger start
   return (note: note, cents: ((pitch - note) * 100).round());
 }
 
-enum StripAlign { left, mid, right }
-
 class LayoutSettings {
-  final double row, width, gap; // mm
-  final StripAlign align;
+  final double row, gap; // mm
+  final double? width; // mm; null = fit the strips to the screen
   final List<int> tuning;
-  const LayoutSettings({required this.row, required this.width, required this.gap, required this.align, required this.tuning});
+  final double view; // semitones: the pitch at the top edge, above the open strings (the hand up the neck)
+  final double scroll; // mm, how far wide strips are scrolled to the left
+  const LayoutSettings(
+      {required this.row, this.width, required this.gap, required this.tuning, this.view = 0, this.scroll = 0});
+
+  LayoutSettings copyWith({double? row, double? Function()? width, double? view, double? scroll}) => LayoutSettings(
+      row: row ?? this.row,
+      width: width != null ? width() : this.width,
+      gap: gap,
+      tuning: tuning,
+      view: view ?? this.view,
+      scroll: scroll ?? this.scroll);
 }
 
 class Strip {
@@ -61,18 +71,27 @@ class Strip {
   const Strip(this.i, this.base, this.x, this.w);
 }
 
+/// Every length in px. The strips live in the area right of the marker column; strips wider than it scroll.
 class StripLayout {
   final List<Strip> strips;
   final double top, bottom, row, gap, markerX;
-  const StripLayout(this.strips, this.top, this.bottom, this.row, this.gap, this.markerX);
+  final double areaL, areaR; // the strips' area; strips outside it are clipped
+  final double fitWidth; // the strip width that fills the area exactly
+  final double view, pxPerMm;
+  const StripLayout(this.strips, this.top, this.bottom, this.row, this.gap, this.markerX,
+      {required this.areaL, required this.areaR, required this.fitWidth, this.view = 0, this.pxPerMm = kPxPerMm});
 
-  double pitchAt(Strip s, double y) => s.base + (y - top) / row - 0.5;
-  double yAt(Strip s, double pitch) => top + (pitch - s.base + 0.5) * row;
+  double pitchAt(Strip s, double y) => s.base + view + (y - top) / row - 0.5;
+  double yAt(Strip s, double pitch) => top + (pitch - s.base - view + 0.5) * row;
+
+  double get total => strips.isEmpty ? 0 : strips.last.x + strips.last.w - strips.first.x;
+  bool get overflows => total > areaR - areaL + 0.5;
 
   /// The strip a touch at x belongs to: inside a strip, or within half a gap of one (and the same past the outer
-  /// edges).
-  Strip? stripAt(double x, [double pxPerMm = kPxPerMm]) {
-    final reach = math.max(gap / 2, 4 * pxPerMm);
+  /// edges). With scrolled strips, a touch outside the area plays the strip at its edge, never a hidden one.
+  Strip? stripAt(double x, [double? pxPerMm]) {
+    if (overflows) x = x.clamp(areaL, areaR - 0.01);
+    final reach = math.max(gap / 2, 4 * (pxPerMm ?? this.pxPerMm));
     for (final s in strips) {
       final left = s.i == 0 ? reach : gap / 2, right = s.i == strips.length - 1 ? reach : gap / 2;
       if (x >= s.x - left && x < s.x + s.w + right) return s;
@@ -81,19 +100,103 @@ class StripLayout {
   }
 }
 
-/// field: (x, y, w, h) in px. Returns the strips' columns and the row height in px.
+/// field: (x, y, w, h) in px. Strips that fit sit centred in the area; wider ones start at its left edge, scrolled.
 StripLayout layout(double fx, double fy, double fw, double fh, LayoutSettings s, [double pxPerMm = kPxPerMm]) {
-  final w = s.width * pxPerMm, gap = s.gap * pxPerMm, margin = 8 * pxPerMm;
-  final markerGap = math.max(gap, 2 * pxPerMm), col = _markerCol * pxPerMm;
-  final n = s.tuning.length, total = n * w + (n - 1) * gap;
-  final x0 = switch (s.align) {
-    StripAlign.left => fx + margin + col + markerGap,
-    StripAlign.right => fx + fw - margin - total,
-    StripAlign.mid => fx + (fw - total) / 2,
-  };
+  final gap = s.gap * pxPerMm, col = _markerCol * pxPerMm, edge = _edge * pxPerMm;
+  final areaL = fx + edge + col + edge, areaR = fx + fw - edge, areaW = areaR - areaL;
+  final n = s.tuning.length;
+  final fit = n == 0 ? 0.0 : (areaW - (n - 1) * gap) / n;
+  final w = s.width == null ? fit : s.width! * pxPerMm, total = n * w + (n - 1) * gap;
+  final x0 = total <= areaW
+      ? areaL + (areaW - total) / 2
+      : areaL - (s.scroll * pxPerMm).clamp(0.0, total - areaW);
   final strips = [for (var i = 0; i < n; i++) Strip(i, s.tuning[i], x0 + i * (w + gap), w)];
-  final markerX = x0 - markerGap - col / 2; // centre of the marker column
-  return StripLayout(strips, fy, fy + fh, s.row * pxPerMm, gap, markerX);
+  return StripLayout(strips, fy, fy + fh, s.row * pxPerMm, gap, fx + edge + col / 2,
+      areaL: areaL, areaR: areaR, fitWidth: fit, view: s.view, pxPerMm: pxPerMm);
+}
+
+/// Move mode's fingers: one drags, two pinch. Each step compares the fingers with where they were on the previous
+/// event: the focal point (their centre) before and after, and the spread's change along each axis. An axis whose
+/// spread is under minSpan does not scale, so fingers side by side resize the strips without zooming the rows.
+class PinchStep {
+  final double fx, fy, nx, ny, sx, sy;
+  const PinchStep(this.fx, this.fy, this.nx, this.ny, this.sx, this.sy);
+}
+
+class Pinch {
+  final double minSpan; // px
+  Pinch(this.minSpan);
+  final _at = <int, (double, double)>{};
+  ({double cx, double cy, double spanX, double spanY})? _was;
+
+  int get count => _at.length;
+
+  ({double cx, double cy, double spanX, double spanY}) _stats() {
+    var cx = 0.0, cy = 0.0;
+    for (final (x, y) in _at.values) {
+      cx += x / _at.length;
+      cy += y / _at.length;
+    }
+    var sx = 0.0, sy = 0.0; // twice the mean distance from the centre: for two fingers, their distance on the axis
+    for (final (x, y) in _at.values) {
+      sx += 2 * (x - cx).abs() / _at.length;
+      sy += 2 * (y - cy).abs() / _at.length;
+    }
+    return (cx: cx, cy: cy, spanX: sx, spanY: sy);
+  }
+
+  // A finger landing or lifting moves the centre without anything having moved: start the comparison again.
+  void down(int id, double x, double y) {
+    _at[id] = (x, y);
+    _was = _stats();
+  }
+
+  void up(int id) {
+    _at.remove(id);
+    _was = _at.isEmpty ? null : _stats();
+  }
+
+  void clear() {
+    _at.clear();
+    _was = null;
+  }
+
+  PinchStep? move(int id, double x, double y) {
+    final a = _was;
+    if (a == null || !_at.containsKey(id)) return null;
+    _at[id] = (x, y);
+    final b = _was = _stats();
+    double scale(double s0, double s1) => s0 >= minSpan && s1 >= minSpan ? s1 / s0 : 1;
+    return PinchStep(a.cx, a.cy, b.cx, b.cy, scale(a.spanX, b.spanX), scale(a.spanY, b.spanY));
+  }
+}
+
+const kRowRange = (6.0, 30.0), kWidthRange = (8.0, 40.0); // mm
+
+/// One move-mode step applied to the view: the pitch and the strip under the focal point follow it, and rows and
+/// strips grow or shrink around it. The view stays where every visible row is a MIDI note.
+LayoutSettings moved(StripLayout L, LayoutSettings s, PinchStep p) {
+  final mm = L.pxPerMm;
+  // rows: the pitch under the focal point before = the pitch under it after
+  final row = (s.row * p.sy).clamp(kRowRange.$1, kRowRange.$2), rowPx = row * mm;
+  final view = s.view + (p.fy - L.top) / L.row - (p.ny - L.top) / rowPx;
+  final lo = -s.tuning.reduce(math.min).toDouble();
+  final hi = math.max(lo, 127 - s.tuning.reduce(math.max) - (L.bottom - L.top) / rowPx + 0.5);
+  // strips: the same for the position across the strips (in strip widths from the first strip's left edge)
+  final w0 = L.strips.first.w, unit0 = w0 + L.gap;
+  final width = p.sx == 1 ? s.width : (w0 / mm * p.sx).clamp(kWidthRange.$1, kWidthRange.$2);
+  final w1 = width == null ? L.fitWidth : width * mm, unit1 = w1 + L.gap;
+  final x0 = p.nx - (p.fx - L.strips.first.x) / unit0 * unit1;
+  final total = L.strips.length * w1 + (L.strips.length - 1) * L.gap, areaW = L.areaR - L.areaL;
+  final scroll = total <= areaW ? 0.0 : (L.areaL - x0).clamp(0.0, total - areaW) / mm;
+  return s.copyWith(row: row, width: () => width, view: view.clamp(lo, hi), scroll: scroll);
+}
+
+/// Where a move ends: rows back on whole semitones, and a width close to the fitting one becomes "fit".
+LayoutSettings settled(StripLayout L, LayoutSettings s) {
+  final w = s.width;
+  final fit = w != null && (w - L.fitWidth / L.pxPerMm).abs() < 0.8;
+  return s.copyWith(view: s.view.roundToDouble(), width: fit ? () => null : null, scroll: fit ? 0 : null);
 }
 
 enum EventType { on, change, pitch, off }

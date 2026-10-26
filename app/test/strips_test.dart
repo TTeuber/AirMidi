@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 const on = EventType.on, change = EventType.change, pitch = EventType.pitch, off = EventType.off;
 
 void main() {
-  final s = LayoutSettings(row: 10, width: 20, gap: 4, align: StripAlign.mid, tuning: defaultTuning(3));
+  final s = LayoutSettings(row: 10, width: 20, gap: 4, tuning: defaultTuning(3));
   final L = layout(0, 100, 1000, 800, s, 1); // 1 px per mm keeps the numbers readable
 
   test('default tuning is guitar strings 4-3-2, then adds high E, A, low E', () {
@@ -24,9 +24,11 @@ void main() {
     expect(L.pitchAt(L.strips[1], 105), 55); // same row on the next strip = g3
   });
 
-  test('strips are centred; a touch in a gap goes to the nearer strip', () {
+  test('strips are centred in the area right of the markers; a touch in a gap goes to the nearer strip', () {
     final a = L.strips[0], b = L.strips[1];
-    expect(a.x, (1000 - 68) / 2);
+    expect(L.areaL, 8); // 1 mm edge, 6 mm marker column, 1 mm
+    expect(L.areaR, 999);
+    expect(a.x, 8 + (991 - 68) / 2);
     expect(L.stripAt(a.x + a.w + 1, 1)!.i, 0);
     expect(L.stripAt(b.x - 1, 1)!.i, 1);
     expect(L.stripAt(a.x - 3, 1)!.i, 0); // a little outside the outer strips still counts
@@ -69,10 +71,93 @@ void main() {
   });
 
   test('fret marker column sits left of the first strip, clear of it', () {
-    expect(L.markerX, L.strips[0].x - 4 - 3); // gap 4 mm, then half the 6 mm column
-    final left = layout(0, 0, 1000, 800,
-        LayoutSettings(row: 10, width: 20, gap: 4, align: StripAlign.left, tuning: defaultTuning(3)), 1);
-    expect(left.markerX - 3, greaterThanOrEqualTo(8)); // still inside the 8 mm margin when left-aligned
+    expect(L.markerX, 4); // the centre of the 6 mm column after the 1 mm edge
+    final fit = layout(0, 0, 100, 800, LayoutSettings(row: 10, gap: 0, tuning: defaultTuning(6)), 1);
+    expect(L.markerX + 3, lessThanOrEqualTo(fit.strips[0].x));
+  });
+
+  test('fret marks repeat every 12 frets, none on the open string', () {
+    expect([for (var f = 0; f <= 24; f++) fretMarks(f)].join(), '0001010101002001010101002');
+    expect(fretMarks(-12), 2);
+    expect(fretMarks(-3), 1); // = fret 9 an octave down
+    expect(fretMarks(-4), 0);
+  });
+
+  group('move mode', () {
+    final six = LayoutSettings(row: 10, gap: 0, tuning: defaultTuning(6));
+    final F = layout(0, 100, 100, 200, six, 1); // area 8..99 = 91 px, 20 rows
+
+    test('fit: six strips with no gap fill the area exactly', () {
+      expect(F.fitWidth, closeTo(91 / 6, 1e-9));
+      expect(F.strips.first.x, 8);
+      expect(F.strips.last.x + F.strips.last.w, closeTo(99, 1e-9));
+      expect(F.overflows, isFalse);
+    });
+
+    test('the view moves every strip up the neck', () {
+      final up = layout(0, 100, 100, 200, six.copyWith(view: 5), 1);
+      expect(up.pitchAt(up.strips[0], 105), 45); // e2 + 5 = a2 at the top row
+      expect(up.yAt(up.strips[0], 45), 105);
+    });
+
+    test('dragging up by two rows shows two semitones higher', () {
+      final m = moved(F, six, const PinchStep(50, 500, 50, 480, 1, 1));
+      expect(m.view, closeTo(2, 1e-9));
+      expect(m.row, 10);
+    });
+
+    test('the view stops where the rows stop being MIDI notes', () {
+      expect(moved(F, six, const PinchStep(50, 100, 50, 9000, 1, 1)).view, -40); // the low e strip can go down to note 0
+      final high = moved(F, six, const PinchStep(50, 900, 50, -9000, 1, 1)).view;
+      expect(64 + high + 20 - 0.5, closeTo(127, 1e-9)); // the bottom row of the high e strip is g9
+    });
+
+    test('a vertical pinch zooms the rows around the fingers', () {
+      final m = moved(F, six, const PinchStep(50, 300, 50, 300, 1, 2));
+      expect(m.row, 20);
+      final Z = layout(0, 100, 100, 200, m, 1);
+      expect(Z.pitchAt(Z.strips[0], 300), closeTo(F.pitchAt(F.strips[0], 300), 1e-9));
+    });
+
+    test('a horizontal pinch widens the strips; wider than the screen, they scroll around the fingers', () {
+      final m = moved(F, six, const PinchStep(30, 300, 30, 300, 2, 1));
+      expect(m.width, closeTo(91 / 6 * 2, 1e-9));
+      final W = layout(0, 100, 100, 200, m, 1);
+      expect(W.overflows, isTrue);
+      final before = (30 - F.strips[0].x) / F.strips[0].w, after = (30 - W.strips[0].x) / W.strips[0].w;
+      expect(after, closeTo(before, 1e-9)); // the same point across the strips stays under the fingers
+      final dragged = moved(W, m, const PinchStep(50, 300, 10, 300, 1, 1));
+      expect(dragged.scroll, closeTo(m.scroll + 40, 1e-9));
+      final far = moved(W, m, const PinchStep(50, 300, -900, 300, 1, 1));
+      expect(far.scroll, closeTo(W.total - 91, 1e-9)); // stops at the last strip
+    });
+
+    test('a touch outside a scrolled area plays the strip at the edge, not a hidden one', () {
+      final W = layout(0, 100, 100, 200, six.copyWith(width: () => 30, scroll: 20), 1);
+      expect(W.stripAt(3)!.i, W.stripAt(8)!.i);
+      expect(W.strips[W.stripAt(3)!.i].x + W.strips[W.stripAt(3)!.i].w, greaterThan(8));
+    });
+
+    test('settled: whole semitones, and nearly fitting strips go back to fit', () {
+      final s1 = settled(F, six.copyWith(view: 2.4, width: () => 91 / 6 + 0.5));
+      expect(s1.view, 2);
+      expect(s1.width, isNull);
+      expect(settled(F, six.copyWith(view: 2.6, width: () => 25)).width, 25);
+    });
+
+    test('pinch: one finger drags, two side by side scale across only', () {
+      final p = Pinch(20);
+      p.down(1, 50, 500);
+      final d = p.move(1, 50, 480)!;
+      expect((d.fy, d.ny, d.sx, d.sy), (500, 480, 1, 1));
+      p.down(2, 90, 500); // lands: no step, the centre jumps without anything moving
+      final s1 = p.move(2, 130, 500)!;
+      expect(s1.sx, closeTo(80 / 40, 1e-9));
+      expect(s1.sy, 1); // no vertical spread
+      expect((s1.fx, s1.nx), (70, 90));
+      p.up(1);
+      expect(p.move(2, 130, 490)!.fy, 500); // after a lift, steps start from the finger that is left
+    });
   });
 
   test('key guide: g major keeps g a b c d e f#, greys the rest', () {
