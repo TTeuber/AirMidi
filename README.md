@@ -104,6 +104,7 @@ One note per module, with the reasoning, the alternatives considered and what th
 - [measurements.md](docs/measurements.md): every number in this README, with its method
 - [plan.md](docs/plan.md): the development plan and a decision log of every choice and measured result
 - [app.md](docs/app.md): the Android app (`app/`): plan, phases and its decision log
+- [desktop.md](docs/desktop.md): the desktop app (plan): MIDI engine, tracks, who keeps time
 - [system](docs/system/README.md): how the box, the app and future instruments fit together: tiers, links, the instrument checklist
 
 ## Layout
