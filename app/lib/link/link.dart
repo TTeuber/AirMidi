@@ -22,6 +22,10 @@ abstract class MidiLink {
   /// takes the next batch).
   Future<void> send(List<List<int>> msgs);
   Future<void> close();
+
+  /// Send the MPE zone setup again every few seconds while nothing sounds (Player): right for a synth behind a box,
+  /// which may have been reset; wrong for a computer, which records it into the take.
+  bool get repeatSetup;
 }
 
 /// One BLE connection to a box.
@@ -82,6 +86,9 @@ class BleMidiLink implements MidiLink {
   @override
   String get label => '${box.name} · ble · mtu ${box.mtu}';
 
+  @override
+  bool get repeatSetup => true;
+
   static final _clock = Stopwatch()..start();
 
   @override
@@ -106,6 +113,9 @@ class WsMidiLink implements MidiLink {
 
   @override
   String get label => '$host · wi-fi';
+
+  @override
+  bool get repeatSetup => true;
 
   static Future<WsMidiLink> connect(String host) async {
     final ch = WebSocketChannel.connect(Uri.parse('ws://$host/ws'));

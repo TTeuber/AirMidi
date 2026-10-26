@@ -30,6 +30,8 @@ class FakeLink implements MidiLink {
   @override
   String get label => 'fake';
   @override
+  bool get repeatSetup => false;
+  @override
   Future<void> send(List<List<int>> msgs) async {}
   @override
   Future<void> close() async {}

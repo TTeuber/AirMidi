@@ -243,7 +243,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
             bottom: 0,
             height: _barH,
             child: Row(children: [
-              _barButton('box', () => Navigator.of(context).maybePop()),
+              _barButton(widget.synth == null ? 'back' : 'box', () => Navigator.of(context).maybePop()),
               _barButton('synth', _openSynth, enabled: widget.synth != null && widget.link != null),
               _barButton(moving ? 'done' : 'move', _toggleMove, lit: moving),
               _barButton(showSettings ? 'done' : 'layout', () => setState(() {

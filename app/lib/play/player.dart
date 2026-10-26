@@ -48,6 +48,7 @@ class Player {
     link = l;
     _strips = strips;
     await l.send(mpeSetup(strips));
+    if (!l.repeatSetup) return;
     _setupTimer ??= Timer.periodic(kSetupRepeat, (_) {
       final l = link;
       if (l != null && !_busy && !mpe.sounding && !mpe.hasDue) l.send(mpeSetup(_strips)).catchError((_) {});

@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
         <!-- BLE: scan without location (Android 12+), connect. Wi-Fi: the box's WebSocket. -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+    <!-- Android's MIDI service: computers and other MIDI devices over BLE or USB (MainActivity.kt) -->
+    <uses-feature android:name="android.software.midi" android:required="false" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.INTERNET" />

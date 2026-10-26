@@ -117,7 +117,23 @@ and runs the same screens over HTTP. Only built if BLE setup turns out unreliabl
   voice per member channel, per-channel bend, the bend range RPN). Until then, any MPE synth on the Mac works behind
   the box (its USB MIDI on the S3, Network MIDI, or TRS into the AudioFuse).
 
-## Phases
+## Without a box: a computer or any MIDI device
+
+The strips also play a Mac (or any MIDI device) directly, no box in between. Everything that is not an airmidi box goes
+through Android's MIDI service (`android.media.midi`, `MainActivity.kt` + `lib/link/android_midi.dart`), not the BLE
+plugin:
+
+- **BLE:** the Mac advertises (Audio MIDI Setup > MIDI Studio > Bluetooth > Advertise) and appears in the app's
+  "computers and other MIDI devices" list. Here the phone is the central and picks the connection interval, and
+  Android's default is slow; universal_ble cannot ask for a faster one, but Android's own BLE MIDI driver
+  (BluetoothMidiService) asks for `CONNECTION_PRIORITY_HIGH` and the big MTU itself.
+- **USB cable:** with the phone's USB mode on MIDI, Android lists its "Android USB Peripheral Port" and the Mac sees
+  a "USB MIDI Device". adb keeps working in that mode (Google's MIDI + adb configuration, 18d1:4ee9); the switch
+  took ~25 s to enumerate on the Mac the first time.
+- A computer records what it gets, so these links do not repeat the MPE zone setup every 3 s (`repeatSetup`); the
+  box links keep it for a synth that was reset.
+- Logic: the instrument needs MIDI Mono Mode on (base channel 1) and a 48-semitone bend range for the strips' MPE.
+
 
 - **A0 spike (go/no-go):** Flutter app with the strips ported (logic + tests + painter, no settings yet) writing BLE
   MIDI straight to the box's existing BLE MIDI characteristic; no firmware changes. Listen through a Mac MPE synth
@@ -150,6 +166,9 @@ Status (2026-10-24):
   strips (guitar tuning), no gap, width "fit". No fret marker column (screen space). A press lights its note's row
   and draws a bar from the note's centre to the finger, so the notes above stay visible. Logic in `strips.dart`
   (`Pinch`, `moved`, `settled`, `quantized`) with tests; drag, snap and press tried on the Pixel 9a. Not saved yet.
+- Direct to a computer (2026-10-26, "Without a box" above): USB tried end to end (the Mac logged the setup once, the
+  note with its bend first, 114 bends of a slide, the note off; back and reopen works). BLE to the Mac written, to
+  be tried with the Mac advertising.
 
 Code lives in `app/` in this repo (the API contract and both ends change together); design notes in `docs/design/`
 per module as for the firmware. UI in the forslike style.
@@ -181,3 +200,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | Protocols: MIDI 1.0 always, standard MIDI-CI first (MIDI Message Report for current values), "X-" PE resources for custom data, no custom UMP transport for now; MPE stays | user's decision after the protocol discussion (docs/design/midi-ci.md "Protocol policy") |
 | 2026-10-26 | Move mode: the view moves (the hand up the neck), the tuning stays; 6 strips, no gap, fit width by default | user: transpose all strips at once, pinch to resize, scroll across strips wider than the screen |
 | 2026-10-26 | No fret markers; "done" snaps to whole strips; the press bar runs from the note's centre to the finger, inside its row | user: markers cost width, slivers of strips are unusable, the bar from the top hid the notes above |
+| 2026-10-26 | Computers and other MIDI devices through Android's MIDI service (BLE and USB), straight to the strips; no setup repeat on those links | user: the app as a wireless controller for the Mac without the box; Android's BLE MIDI driver asks for the fast interval, the BLE plugin cannot; USB MIDI comes for free |

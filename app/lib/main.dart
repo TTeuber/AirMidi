@@ -1,10 +1,13 @@
 // airmidi app (docs/app.md): find boxes over BLE and on Wi-Fi (one entry per box), set them up, play the strips.
+// Without a box the strips play a computer or any other MIDI device directly, over BLE or a USB cable (Android's
+// MIDI service, link/android_midi.dart).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'discovery.dart';
+import 'link/android_midi.dart';
 import 'link/config.dart';
 import 'link/link.dart';
 import 'ui/box_page.dart';
@@ -94,6 +97,8 @@ class _ConnectPageState extends State<ConnectPage> {
   final host = TextEditingController();
   String? error; // the last connect failure, kept until the next attempt
   bool busy = false;
+  List<MidiDeviceEntry> usb = []; // Android's MIDI devices: USB ones and the USB peripheral port
+  StreamSubscription<void>? _usbChanges;
 
   @override
   void initState() {
@@ -101,15 +106,44 @@ class _ConnectPageState extends State<ConnectPage> {
     discovery.addListener(_changed);
     discovery.start();
     SharedPreferences.getInstance().then((p) => host.text = p.getString('host') ?? '');
+    _usbChanges = AndroidMidi.changes.listen((_) => _listUsb());
+    _listUsb();
+  }
+
+  Future<void> _listUsb() async {
+    try {
+      final d = await AndroidMidi.devices();
+      if (mounted) setState(() => usb = d.where((d) => d.inputs > 0).toList()); // we send: it needs an input
+    } catch (_) {}
   }
 
   void _changed() => setState(() {});
 
   @override
   void dispose() {
+    _usbChanges?.cancel();
     discovery.removeListener(_changed);
     discovery.dispose();
     super.dispose();
+  }
+
+  // Straight to the strips, no box page: there is no box API behind a computer. The link closes with the strips.
+  Future<void> _play(Future<MidiLink> Function() open) async {
+    if (busy) return;
+    setState(() => (busy = true, error = null));
+    MidiLink? link;
+    try {
+      await discovery.stopBle(); // Android connects more reliably with the scan stopped
+      link = await open();
+    } catch (e) {
+      setState(() => error = '$e');
+    } finally {
+      discovery.startBle();
+      if (mounted) setState(() => busy = false);
+    }
+    if (link == null || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => StripsPage(link: link)));
+    await link.close().catchError((_) {});
   }
 
   Future<void> _open(Future<Widget> Function() page) async {
@@ -132,9 +166,18 @@ class _ConnectPageState extends State<ConnectPage> {
       if (s.onBle) 'bluetooth ${s.rssi ?? '?'} dBm',
       if (s.onWifi) 'wi-fi ${s.host}',
     ].join(' · ');
+    if (s.id == null) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(s.name),
+        subtitle: Text('$ways · play the strips on it', style: const TextStyle(color: cGrey)),
+        trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
+        onTap: () => _play(() => AndroidMidi.openBluetooth(s.bleDevice!, s.name)),
+      );
+    }
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: Text(s.id == null ? '${s.name} (not an airmidi box)' : s.name),
+      title: Text(s.name),
       subtitle: Text(ways, style: const TextStyle(color: cGrey)),
       trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
       // BLE works in Play and Setup mode (and in Network mode with BLE kept on); Wi-Fi when that is all there is.
@@ -144,7 +187,8 @@ class _ConnectPageState extends State<ConnectPage> {
 
   @override
   Widget build(BuildContext context) {
-    final list = discovery.list;
+    final list = discovery.list.where((s) => s.id != null).toList();
+    final others = discovery.list.where((s) => s.id == null).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('airmidi'), backgroundColor: cBg),
       body: ListView(padding: const EdgeInsets.all(14), children: [
@@ -166,6 +210,39 @@ class _ConnectPageState extends State<ConnectPage> {
           Padding(
               padding: const EdgeInsets.only(top: 8), child: Text(discovery.error!, style: const TextStyle(color: cGrey))),
         const SizedBox(height: 24),
+        const Text('computers and other MIDI devices', style: TextStyle(color: cAc, fontSize: 13)),
+        for (final s in others) _box(s),
+        for (final d in usb)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(d.name),
+            subtitle: Text('${d.type} · play the strips on it', style: const TextStyle(color: cGrey)),
+            trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
+            onTap: () => _play(() => AndroidMidi.open(d)),
+          ),
+        if (others.isEmpty && usb.isEmpty)
+          const ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text('none yet', style: TextStyle(color: cN)),
+            subtitle: Text('BLE MIDI devices that advertise, and USB MIDI', style: TextStyle(color: cGrey)),
+          ),
+        const ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: Text('play a Mac', style: TextStyle(color: cN, fontSize: 14)),
+          expandedCrossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                'Bluetooth: on the Mac, Audio MIDI Setup > Window > Show MIDI Studio, the Bluetooth button, '
+                'Advertise. The Mac shows up above; keep that window open until the phone has connected.\n\n'
+                'USB cable (lowest latency): plug the phone into the Mac and set its USB mode to MIDI (the USB '
+                'notification, or Settings > Connected devices > USB). The phone\'s port shows up above, and the '
+                'Mac sees the phone as a MIDI device.\n\n'
+                'The strips send MPE: in Logic, set the instrument\'s MIDI Mono Mode on (base channel 1) and its '
+                'pitch bend range to 48 semitones, or bends will be off.',
+                style: TextStyle(color: cGrey, fontSize: 13, height: 1.4)),
+            SizedBox(height: 12),
+          ],
+        ),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
           title: const Text('connect by address', style: TextStyle(color: cN, fontSize: 14)),
