@@ -77,7 +77,15 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   the strips and the synth page with the device's current values and widgets. The Android-only parts (Android MIDI,
   "play a Mac") are skipped on the desktop. Debug builds can be driven from the terminal (`lib/debug_drive.dart`,
   `tool/drive.py`: screenshot and tap through the Dart VM service), since the terminal may not capture the screen.
-  Not yet: MIDI from the Mac goes over the BLE plugin (30 ms interval); D1 moves it to the computer's MIDI system.
+- **D1 (2026-10-26):** `app/packages/midi_engine`, an FFI plugin: libremidi v5.4.3 header-only (vendored, one
+  upstream fix applied: v5.4.3's CoreMIDI observer never made its client, so no hotplug), a C API (`src/engine.h`),
+  Dart bindings. The connect page lists the computer's MIDI outputs (live as ports come and go) and the app's own
+  virtual port "airmidi app"; the strips play any of them. Timing (`test_native`, a loopback through the engine's
+  own virtual port, 400 notes 5 ms apart plus a SysEx): all in order, arrival minus due median 0.06 ms, max 0.19 ms,
+  once the send thread runs with macOS's time-constraint policy (before: median 1.0 ms, max 5.5 ms, timer
+  coalescing). Checked in the app: the strips' MPE setup reached a mido listener on "airmidi app" once (42
+  messages), a port made by another process appeared and went away in the list. Not yet tried: the box as a CoreMIDI
+  port (Bluetooth in Audio MIDI Setup, or Network MIDI) and input from Dart (the engine side is tested natively).
 
 ## Open
 

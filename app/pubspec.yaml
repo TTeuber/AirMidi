@@ -38,6 +38,8 @@ dependencies:
   universal_ble: ^1.2.0
   shared_preferences: ^2.5.3
   bonsoir: ^5.1.11
+  midi_engine:
+    path: packages/midi_engine
   url_launcher: ^6.3.2
 
 dev_dependencies:

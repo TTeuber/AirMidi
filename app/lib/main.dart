@@ -5,12 +5,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:midi_engine/midi_engine.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_drive.dart';
 import 'discovery.dart';
 import 'link/android_midi.dart';
 import 'link/config.dart';
+import 'link/desktop_midi.dart';
 import 'link/link.dart';
 import 'ui/box_page.dart';
 import 'ui/strips_page.dart';
@@ -105,6 +107,7 @@ class _ConnectPageState extends State<ConnectPage> {
   bool busy = false;
   List<MidiDeviceEntry> usb = []; // Android's MIDI devices: USB ones and the USB peripheral port
   StreamSubscription<void>? _usbChanges;
+  List<MidiPortInfo> ports = []; // the desktop's MIDI outputs (packages/midi_engine)
 
   @override
   void initState() {
@@ -115,6 +118,14 @@ class _ConnectPageState extends State<ConnectPage> {
     if (Platform.isAndroid) {
       _usbChanges = AndroidMidi.changes.listen((_) => _listUsb());
       _listUsb();
+    } else if (DesktopMidi.available) {
+      try {
+        DesktopMidi.virtualPorts(); // made at start, so other apps see them whether or not the strips are open
+        ports = DesktopMidi.outputs();
+        _usbChanges = DesktopMidi.changes.listen((_) => setState(() => ports = DesktopMidi.outputs()));
+      } catch (e) {
+        error = 'MIDI: $e';
+      }
     }
   }
 
@@ -169,6 +180,36 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
+  // The desktop: the computer's MIDI outputs, and the app's own virtual port for Logic and other apps.
+  List<Widget> _desktopPorts() {
+    String kind(MidiPortInfo p) => [
+          if (p.isUsb) 'usb',
+          if (p.isBluetooth) 'bluetooth',
+          if (p.isNetwork) 'network',
+          if (p.isVirtual) 'app',
+        ].join(' · ');
+    return [
+      const Text('MIDI ports', style: TextStyle(color: cAc, fontSize: 13)),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: const Text(kVirtualName),
+        subtitle: const Text('this app\'s own port: Logic and other apps record what the strips play there',
+            style: TextStyle(color: cGrey)),
+        trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
+        onTap: () => _play(() async => DesktopMidi.openVirtual()),
+      ),
+      for (final p in ports)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(p.name),
+          subtitle: Text([kind(p), 'play the strips on it'].where((s) => s.isNotEmpty).join(' · '),
+              style: const TextStyle(color: cGrey)),
+          trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
+          onTap: () => _play(() async => DesktopMidi.open(p)),
+        ),
+    ];
+  }
+
   Widget _box(Sighting s) {
     final ways = [
       if (s.onBle) 'bluetooth ${s.rssi ?? '?'} dBm',
@@ -221,22 +262,25 @@ class _ConnectPageState extends State<ConnectPage> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(discovery.error!, style: const TextStyle(color: cGrey))),
         const SizedBox(height: 24),
-        const Text('computers and other MIDI devices', style: TextStyle(color: cAc, fontSize: 13)),
-        for (final s in others) _box(s),
-        for (final d in usb)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(d.name),
-            subtitle: Text('${d.type} · play the strips on it', style: const TextStyle(color: cGrey)),
-            trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
-            onTap: () => _play(() => AndroidMidi.open(d)),
-          ),
-        if (others.isEmpty && usb.isEmpty)
-          const ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('none yet', style: TextStyle(color: cN)),
-            subtitle: Text('BLE MIDI devices that advertise, and USB MIDI', style: TextStyle(color: cGrey)),
-          ),
+        if (DesktopMidi.available) ..._desktopPorts(),
+        if (Platform.isAndroid) ...[
+          const Text('computers and other MIDI devices', style: TextStyle(color: cAc, fontSize: 13)),
+          for (final s in others) _box(s),
+          for (final d in usb)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(d.name),
+              subtitle: Text('${d.type} · play the strips on it', style: const TextStyle(color: cGrey)),
+              trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
+              onTap: () => _play(() => AndroidMidi.open(d)),
+            ),
+          if (others.isEmpty && usb.isEmpty)
+            const ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('none yet', style: TextStyle(color: cN)),
+              subtitle: Text('BLE MIDI devices that advertise, and USB MIDI', style: TextStyle(color: cGrey)),
+            ),
+        ],
         if (Platform.isAndroid)
           const ExpansionTile(
             tilePadding: EdgeInsets.zero,

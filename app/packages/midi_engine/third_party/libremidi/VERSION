@@ -1,0 +1,3 @@
+libremidi v5.4.3 (390707b5), https://github.com/celtera/libremidi: include/ and LICENSE.md only (header-only build).
+Patched: include/libremidi/backends/coremidi.hpp uses coremidi::observer_impl as the observer (as upstream master
+does). v5.4.3's observer_core never creates its CoreMIDI client, so no port added/removed notifications arrived.

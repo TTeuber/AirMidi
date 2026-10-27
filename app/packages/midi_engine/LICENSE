@@ -1,0 +1,4 @@
+MIT License, as the airmidi repository (../../../LICENSE). Copyright (c) 2026 Tyler Teuber.
+
+third_party/libremidi is libremidi by Jean-Michaël Celerier and contributors, BSD-2-Clause with MIT and BSD-2-Clause
+parts from RtMidi and ModernMidi: see third_party/libremidi/LICENSE.md.
