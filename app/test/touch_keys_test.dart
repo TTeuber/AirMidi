@@ -61,7 +61,10 @@ void main() {
     await t.tapAt(Offset(grid.left + side / 2, grid.bottom - side + 4)); // kick, near its top: loud
     await t.tapAt(Offset(grid.left + side / 2, grid.bottom - 4)); // kick, near its bottom: soft
     await t.pump();
-    final ons = [for (final m in link.sent) if (m[0] == 0x99) m];
+    final ons = [
+      for (final m in link.sent)
+        if (m[0] == 0x99) m
+    ];
     expect(ons.map((m) => m[1]), [36, 36]);
     expect(ons[0][2] > 120 && ons[1][2] < 40, isTrue);
   });

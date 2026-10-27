@@ -46,6 +46,24 @@ AME_API int ame_send(int handle, const uint8_t *bytes, int n, int64_t at_ns);
 // Drops everything still queued for an output (a sequencer stopping); returns how many messages were dropped.
 AME_API int ame_clear(int handle);
 
+// Routes (the router page): what arrives on input in_handle goes straight out to out_handle, from the input's own
+// thread, if it passes: channel messages on a channel in mask (bit c = channel c, 0-based) moved to map[c], notes
+// and poly pressure in lo..hi transposed by transpose (dropped if that leaves 0..127), and only the message types in
+// types (AME_T_* bits). Dart still gets every message. id: the caller's; setting an id again replaces that route.
+#define AME_T_NOTES 1u      // note on/off, poly pressure
+#define AME_T_CC 2u         // control change (and channel mode)
+#define AME_T_PROGRAM 4u
+#define AME_T_PRESSURE 8u   // channel pressure
+#define AME_T_BEND 16u
+#define AME_T_SYSEX 32u
+#define AME_T_CLOCK 64u     // clock, start, continue, stop, song position
+#define AME_T_OTHER 128u    // other system common and real-time (active sensing, reset, MTC, tune request)
+AME_API int ame_route_set(int id, int in_handle, int out_handle, uint16_t mask, const uint8_t *map, int transpose,
+                          int lo, int hi, uint32_t types);
+AME_API void ame_route_remove(int id);
+// How many messages a route passed so far (for the page's activity lights), -1 for no such route.
+AME_API int64_t ame_route_count(int id);
+
 // Takes the oldest waiting event: kind 1 = MIDI (handle, bytes, *t_ns its arrival time), kind 2 = the port list
 // changed. Returns the kind (0 = nothing waiting); *n is the message length, cut to cap if longer.
 AME_API int ame_read(int *handle, uint8_t *bytes, int cap, int *n, int64_t *t_ns);

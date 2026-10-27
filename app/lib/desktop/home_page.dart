@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:airmidi/desktop/desktop_midi.dart';
 import 'package:airmidi/desktop/keys_page.dart';
+import 'package:airmidi/desktop/router.dart';
+import 'package:airmidi/desktop/router_page.dart';
 import 'package:airmidi/desktop/tracks_page.dart';
 import 'package:airmidi/shared/boxes.dart';
 import 'package:airmidi/shared/discovery.dart';
@@ -40,6 +42,7 @@ class _DesktopHomeState extends State<DesktopHome> {
     SharedPreferences.getInstance().then((p) => host.text = p.getString('host') ?? '');
     try {
       DesktopMidi.virtualPorts(); // made at start, so other apps see them whether or not anything plays
+      MidiRouter.instance; // the saved routes run from the start, whether or not the router page is open
       ports = DesktopMidi.outputs();
       _portChanges = DesktopMidi.changes.listen((_) => setState(() => ports = DesktopMidi.outputs()));
     } catch (e) {
@@ -142,6 +145,10 @@ class _DesktopHomeState extends State<DesktopHome> {
     final list = discovery.list.where((s) => s.id != null).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('airmidi'), backgroundColor: cBg, actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RouterPage())),
+          child: const Text('router'),
+        ),
         TextButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TracksPage())),
           child: const Text('tracks'),

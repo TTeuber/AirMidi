@@ -101,6 +101,67 @@ int main() {
     int late = 0;
     { int h, n; int64_t t; uint8_t b[16]; for (int kind; (kind = ame_read(&h, b, sizeof b, &n, &t));) late += kind == 1; }
     CHECK(late == 0);
+    // routes: a second virtual pair; what arrives on the test input is routed to it, filtered and remapped
+    const int out2 = ame_open_virtual(1, "airmidi engine test 2");
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    ame_refresh();
+    int src2 = -1;
+    for (int i = 0; i < ame_port_count(0); i++)
+        if (std::string(ame_port_name(0, i)).find("airmidi engine test 2") != std::string::npos) src2 = i;
+    const int in2 = ame_open(0, src2);
+    CHECK(in2 > 0);
+    { int h, n; int64_t t; uint8_t b[16]; while (ame_read(&h, b, sizeof b, &n, &t)) {} }
+    uint8_t map[16];
+    for (int c = 0; c < 16; c++) map[c] = (uint8_t)c;
+    map[0] = 2;  // channel 1 -> 3
+    // channels 1 and 10 pass; notes 36..72 only, up an octave; notes and CCs, no bend
+    CHECK(ame_route_set(7, in, out2, (1u << 0) | (1u << 9), map, 12, 36, 72, AME_T_NOTES | AME_T_CC) == 0);
+    const uint8_t sendme[][3] = {
+        {0x90, 60, 100},  // ch1 note 60 -> ch3 note 72
+        {0x91, 60, 100},  // ch2: blocked
+        {0x99, 36, 90},   // ch10 kick -> 48, stays ch10
+        {0x90, 80, 100},  // above the range: dropped
+        {0xE0, 0, 64},    // bend: not in types
+        {0xB0, 7, 99},    // CC 7 -> ch3
+    };
+    for (auto &m : sendme) ame_send(out, m, 3, 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    std::vector<std::vector<uint8_t>> routed;
+    { int h, n; int64_t t; uint8_t b[16]; for (int kind; (kind = ame_read(&h, b, sizeof b, &n, &t));) if (kind == 1 && h == in2) routed.emplace_back(b, b + n); }
+    // what a route adds: arrival on the source input to arrival after the routed hop, 200 notes
+    {
+        std::vector<int64_t> a(128, 0), d;
+        for (int k = 0; k < 200; k++) {
+            uint8_t m[3] = {0x90, (uint8_t)(40 + k % 30), 100};
+            ame_send(out, m, 3, 0);
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        int h, n;
+        int64_t t;
+        uint8_t b[16];
+        for (int kind; (kind = ame_read(&h, b, sizeof b, &n, &t));) {
+            if (kind != 1) continue;
+            if (h == in) a[b[1]] = t;
+            if (h == in2 && a[b[1] - 12]) d.push_back(t - a[b[1] - 12]);
+        }
+        std::sort(d.begin(), d.end());
+        if (!d.empty())
+            printf("  routed hop: %zu notes, median %.3f ms, max %.3f ms\n", d.size(), d[d.size() / 2] / 1e6, d.back() / 1e6);
+        CHECK(d.size() == 200);
+    }
+    CHECK(routed.size() == 3);
+    if (routed.size() == 3) {
+        CHECK((routed[0] == std::vector<uint8_t>{0x92, 72, 100}));
+        CHECK((routed[1] == std::vector<uint8_t>{0x99, 48, 90}));
+        CHECK((routed[2] == std::vector<uint8_t>{0xB2, 7, 99}));
+    }
+    CHECK(ame_route_count(7) == 203);
+    printf("  route: %zu of 6 messages through, filtered and remapped\n", routed.size());
+    ame_route_remove(7);
+    CHECK(ame_route_count(7) == -1);
+    ame_close(in2);
+    ame_close(out2);
     ame_close(in);
     ame_close(out);
     ame_stop();

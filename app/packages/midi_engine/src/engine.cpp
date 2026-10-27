@@ -77,12 +77,56 @@ struct Port {
     std::unique_ptr<libremidi::midi_out> out;
 };
 
+struct Route {
+    int id, in, out;
+    uint16_t mask;
+    uint8_t map[16];
+    int transpose, lo, hi;
+    uint32_t types;
+    int64_t count = 0;
+};
+
+// The route's verdict on one message: false = dropped; otherwise *out is what to send.
+bool routeMessage(const Route &r, const std::vector<uint8_t> &in, std::vector<uint8_t> &out) {
+    if (in.empty()) return false;
+    const uint8_t s = in[0];
+    if (s >= 0xF0) {
+        uint32_t t = s == 0xF0 ? AME_T_SYSEX
+                     : (s == 0xF8 || s == 0xFA || s == 0xFB || s == 0xFC || s == 0xF2) ? AME_T_CLOCK
+                                                                                        : AME_T_OTHER;
+        if (!(r.types & t)) return false;
+        out = in;
+        return true;
+    }
+    const int ch = s & 0x0F, kind = s & 0xF0;
+    if (!(r.mask & (1u << ch))) return false;
+    uint32_t t = kind == 0x80 || kind == 0x90 || kind == 0xA0 ? AME_T_NOTES
+                 : kind == 0xB0                               ? AME_T_CC
+                 : kind == 0xC0                               ? AME_T_PROGRAM
+                 : kind == 0xD0                               ? AME_T_PRESSURE
+                                                              : AME_T_BEND;
+    if (!(r.types & t)) return false;
+    out = in;
+    out[0] = (uint8_t)(kind | (r.map[ch] & 0x0F));
+    if (t == AME_T_NOTES && out.size() > 1) {
+        if (in[1] < r.lo || in[1] > r.hi) return false;
+        const int n = in[1] + r.transpose;
+        if (n < 0 || n > 127) return false;
+        out[1] = (uint8_t)n;
+    }
+    return true;
+}
+
 struct Engine {
     void (*wake)() = nullptr;
 
     // events for Dart
     std::mutex evMu;
     std::deque<Event> events;
+
+    // routes, checked on every input's thread
+    std::mutex routeMu;
+    std::vector<Route> routes;
 
     // open ports
     std::mutex portMu;
@@ -157,13 +201,36 @@ struct Engine {
         c.on_message = [this, handle](libremidi::message &&m) {
             int64_t t = m.timestamp, now = now_ns();
             if (t <= 0 || t > now + 1'000'000'000 || t < now - 1'000'000'000) t = now;  // no usable stamp: arrival
-            post({1, handle, t, std::vector<uint8_t>(m.bytes.begin(), m.bytes.end())});
+            std::vector<uint8_t> bytes(m.bytes.begin(), m.bytes.end());
+            route(handle, bytes);
+            post({1, handle, t, std::move(bytes)});
         };
         c.ignore_sysex = false;   // MIDI-CI
         c.ignore_timing = false;  // clock, for following another sequencer
         c.ignore_sensing = true;
         c.timestamps = libremidi::timestamp_mode::SystemMonotonic;
         return c;
+    }
+
+    // Straight out on this thread: no queue, no wait for Dart.
+    void route(int handle, const std::vector<uint8_t> &bytes) {
+        std::vector<std::pair<int, std::vector<uint8_t>>> sends;
+        {
+            std::lock_guard<std::mutex> l(routeMu);
+            for (auto &r : routes) {
+                if (r.in != handle) continue;
+                std::vector<uint8_t> out;
+                if (!routeMessage(r, bytes, out)) continue;
+                r.count++;
+                sends.emplace_back(r.out, std::move(out));
+            }
+        }
+        if (sends.empty()) return;
+        std::lock_guard<std::mutex> pl(portMu);
+        for (auto &[h, b] : sends) {
+            auto it = ports.find(h);
+            if (it != ports.end() && it->second.out) it->second.out->send_message(b.data(), b.size());
+        }
     }
 
     int add(Port p) {
@@ -349,6 +416,12 @@ void ame_close(int handle) {
         out = std::move(it->second.out);
         E->ports.erase(it);
     }
+    {
+        std::lock_guard<std::mutex> l(E->routeMu);
+        E->routes.erase(std::remove_if(E->routes.begin(), E->routes.end(),
+                                       [&](const Route &r) { return r.in == handle || r.out == handle; }),
+                        E->routes.end());
+    }
     // closed outside the lock: an input's callback may be posting at this moment
 }
 
@@ -402,6 +475,37 @@ int ame_clear(int handle) {
     }
     for (auto &d : keep) E->due.push(std::move(d));
     return dropped;
+}
+
+int ame_route_set(int id, int in_handle, int out_handle, uint16_t mask, const uint8_t *map, int transpose, int lo,
+                  int hi, uint32_t types) {
+    if (!E) return -1;
+    Route r{id, in_handle, out_handle, mask, {}, transpose, lo, hi, types};
+    for (int c = 0; c < 16; c++) r.map[c] = map ? map[c] : (uint8_t)c;
+    std::lock_guard<std::mutex> l(E->routeMu);
+    for (auto &x : E->routes)
+        if (x.id == id) {
+            r.count = x.count;
+            x = r;
+            return 0;
+        }
+    E->routes.push_back(r);
+    return 0;
+}
+
+void ame_route_remove(int id) {
+    if (!E) return;
+    std::lock_guard<std::mutex> l(E->routeMu);
+    E->routes.erase(std::remove_if(E->routes.begin(), E->routes.end(), [&](const Route &r) { return r.id == id; }),
+                    E->routes.end());
+}
+
+int64_t ame_route_count(int id) {
+    if (!E) return -1;
+    std::lock_guard<std::mutex> l(E->routeMu);
+    for (auto &r : E->routes)
+        if (r.id == id) return r.count;
+    return -1;
 }
 
 int ame_read(int *handle, uint8_t *bytes, int cap, int *n, int64_t *t_ns) {

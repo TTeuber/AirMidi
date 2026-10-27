@@ -139,9 +139,16 @@ by hand there.
 
 Done 2026-10-26: the split (`lib/shared`, `lib/mobile`, `lib/desktop`; the box page takes each app's play page).
 
-Done 2026-10-26: phone keys and pads (docs/app.md).
+Done 2026-10-26: phone keys and pads (docs/app.md). The router: routes in the engine (`ame_route_set`: input,
+output, channel mask, channel map, transpose, note range, message types; run on the input's own thread before Dart
+hears the message), `desktop/router.dart` (by port name, reopened when ports come and go, saved), `router_page.dart`
+(inputs x outputs grid with activity lights, an inspector per route). The app's own port is on both sides: "from
+Logic" (what Logic sends to "airmidi app") and "to Logic". SysEx off by default (MIDI-CI loops). Measured natively: a
+routed hop adds 0.039 ms median, 0.084 ms max; filter, remap and transpose as asked. Tried in the app: a keyboard's
+channel 2 to one port as channel 1 and its channel 10 to another, nothing crossing over; again after a restart
+without opening the page. Not yet: the box's own router edited from this page; groups (MIDI 2.0 ports).
 
-Order: the router; the desktop play view (keys and synth controls on one
+Order: the desktop play view (keys and synth controls on one
 page); then the DAW (design doc, arrangement and piano roll first).
 
 ## Open

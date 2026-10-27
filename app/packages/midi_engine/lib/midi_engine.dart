@@ -33,6 +33,12 @@ class MidiInEvent {
 
 typedef _WakeC = Void Function();
 
+/// Message types for a route (engine.h AME_T_*).
+abstract final class RouteTypes {
+  static const notes = 1, cc = 2, program = 4, pressure = 8, bend = 16, sysex = 32, clock = 64, other = 128;
+  static const channel = notes | cc | program | pressure | bend;
+}
+
 class MidiEngine {
   MidiEngine._(this._lib) {
     _start = _lib.lookupFunction<Int32 Function(Pointer<NativeFunction<_WakeC>>), int Function(Pointer<NativeFunction<_WakeC>>)>('ame_start');
@@ -46,6 +52,11 @@ class MidiEngine {
         _lib.lookupFunction<Int32 Function(Int32, Pointer<Utf8>), int Function(int, Pointer<Utf8>)>('ame_open_virtual');
     _close = _lib.lookupFunction<Void Function(Int32), void Function(int)>('ame_close');
     _clear = _lib.lookupFunction<Int32 Function(Int32), int Function(int)>('ame_clear');
+    _routeSet = _lib.lookupFunction<
+        Int32 Function(Int32, Int32, Int32, Uint16, Pointer<Uint8>, Int32, Int32, Int32, Uint32),
+        int Function(int, int, int, int, Pointer<Uint8>, int, int, int, int)>('ame_route_set');
+    _routeRemove = _lib.lookupFunction<Void Function(Int32), void Function(int)>('ame_route_remove');
+    _routeCount = _lib.lookupFunction<Int64 Function(Int32), int Function(int)>('ame_route_count');
     _send = _lib.lookupFunction<Int32 Function(Int32, Pointer<Uint8>, Int32, Int64),
         int Function(int, Pointer<Uint8>, int, int)>('ame_send');
     _read = _lib.lookupFunction<
@@ -75,6 +86,9 @@ class MidiEngine {
   late final int Function(int, Pointer<Utf8>) _openVirtual;
   late final void Function(int) _close;
   late final int Function(int) _clear;
+  late final int Function(int, int, int, int, Pointer<Uint8>, int, int, int, int) _routeSet;
+  late final void Function(int) _routeRemove;
+  late final int Function(int) _routeCount;
   late final int Function(int, Pointer<Uint8>, int, int) _send;
   late final int Function(Pointer<Int32>, Pointer<Uint8>, int, Pointer<Int32>, Pointer<Int64>) _read;
   late final NativeCallable<_WakeC> _wake;
@@ -146,6 +160,26 @@ class MidiEngine {
 
   /// Drops what is still queued for [handle]; returns how many messages were dropped.
   int clear(int handle) => _clear(handle);
+
+  /// A route inside the engine: what arrives on input [inHandle] goes straight out to [outHandle] if it passes
+  /// (engine.h ame_route_set). Setting [id] again replaces it; closing either port removes it.
+  void setRoute(int id, int inHandle, int outHandle,
+      {int mask = 0xFFFF, List<int>? map, int transpose = 0, int lo = 0, int hi = 127, int types = 0xFF}) {
+    final m = calloc<Uint8>(16);
+    try {
+      for (var c = 0; c < 16; c++) {
+        m[c] = map == null ? c : map[c];
+      }
+      _routeSet(id, inHandle, outHandle, mask, m, transpose, lo, hi, types);
+    } finally {
+      calloc.free(m);
+    }
+  }
+
+  void removeRoute(int id) => _routeRemove(id);
+
+  /// Messages a route passed so far; -1 if there is no such route.
+  int routeCount(int id) => _routeCount(id);
 
   /// Sends whole messages, now or at [atNs] (on [nowNs]'s clock); same-time messages keep their order.
   void send(int handle, List<int> bytes, {int atNs = 0}) {
