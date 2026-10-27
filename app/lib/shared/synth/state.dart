@@ -28,6 +28,9 @@ class SynthState extends ChangeNotifier {
 
   bool _widgets = true;
 
+  /// The values moved from outside (the DAW read them from the synth through another link): redraw.
+  void changed() => notifyListeners();
+
   /// The control list, read once; [force] reads it again (after a rescan) and keeps the values of the controls that
   /// are still there.
   Future<void> load({bool force = false}) async {

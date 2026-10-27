@@ -143,6 +143,35 @@ void main() {
       expect(pat.cells[5][4]!.probability, closeTo(0.25, 0.051));
     });
 
+    testWidgets('a lock lane: a click locks the step, a double-click takes the lock off', (t) async {
+      await pump(t);
+      pat.toggle(5, 4);
+      await t.pump();
+      await t.tap(find.text('+ lock'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('brightness (CC 74)'));
+      await t.pumpAndSettle();
+      final st = key.currentState!;
+      expect(st.lock, 'cc74');
+      final grid = t.getTopLeft(find.byKey(const ValueKey('grid')));
+      await t.tapAt(grid + Offset(20, (5 - st.topRow) * st.rowH + st.rowH / 2)); // the row's label selects it
+      await t.pump(const Duration(milliseconds: 300));
+      expect(st.row, 5);
+      final lane = t.getBottomLeft(find.byKey(const ValueKey('lane')));
+      final at = lane + Offset(st.cellX(4) + st.cellW / 2, -72 * 0.75); // three quarters up
+      await t.tapAt(at);
+      await t.pump(const Duration(milliseconds: 400));
+      expect(down32to7(pat.cells[5][4]!.locks['cc74']!), closeTo(95, 2));
+      await t
+          .runAsync(() => Future.delayed(const Duration(milliseconds: 400))); // the double-click is timed by the clock
+      await t.tapAt(at);
+      await t.pump(const Duration(milliseconds: 50));
+      await t.tapAt(at);
+      await t.pump(const Duration(milliseconds: 400));
+      expect(pat.cells[5][4]!.locks, isEmpty);
+      expect(find.text('brightness'), findsOneWidget); // the lane stays while it is chosen
+    });
+
     testWidgets('64 steps in a narrow panel: pages of 16 with chips', (t) async {
       await pump(t, steps: 64, width: 600);
       final st = key.currentState!;

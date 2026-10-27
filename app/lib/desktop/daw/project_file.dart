@@ -21,6 +21,13 @@ Map<String, dynamic> projectToJson(Project p) => {
       'loop': {'on': p.loopOn, 'start': p.loopStart, 'end': p.loopEnd},
       'start': p.startBeat,
       'clockTo': [...p.clockPorts],
+      'click': {
+        if (p.click.port != null) 'port': p.click.port,
+        'channel': p.click.channel,
+        'note': p.click.note,
+        if (p.click.on) 'on': true,
+      },
+      'countIn': p.countIn,
       'tracks': [for (final t in p.tracks) _track(t)],
     };
 
@@ -35,6 +42,10 @@ Map<String, dynamic> _track(Track t) => {
       if (t.mute) 'mute': true,
       if (t.solo) 'solo': true,
       if (t.device != null) 'device': t.device,
+      if (t.box != null) 'box': t.box,
+      if (t.program != null) 'program': t.program,
+      if (t.bankMsb != null || t.bankLsb != null) 'bank': [t.bankMsb, t.bankLsb],
+      if (t.state.isNotEmpty) 'state': t.state,
       'clips': [for (final c in t.clips) _clip(c)],
     };
 
@@ -98,6 +109,7 @@ Map<String, dynamic> _pattern(Pattern p) => {
                     if (st.probability != 1) 'prob': st.probability,
                     if (st.nudge != 0) 'nudge': st.nudge,
                     if (st.repeat != 1) 'repeat': st.repeat,
+                    if (st.locks.isNotEmpty) 'locks': st.locks,
                   }
             ],
           }
@@ -125,9 +137,22 @@ Project projectFromJson(Map<String, dynamic> j) {
     loopEnd: _d(loop['end'], 16),
     startBeat: _d(j['start']),
     clockPorts: {for (final c in (j['clockTo'] as List? ?? const [])) c as String},
+    click: _readClick(j['click'] as Map<String, dynamic>? ?? const {}),
+    countIn: (j['countIn'] as num?)?.toInt() ?? 1,
     tracks: [for (final t in (j['tracks'] as List? ?? const [])) _readTrack(t as Map<String, dynamic>)],
   );
 }
+
+Click _readClick(Map<String, dynamic> j) => Click(
+    port: j['port'] as String?,
+    channel: (j['channel'] as num?)?.toInt() ?? 9,
+    note: (j['note'] as num?)?.toInt() ?? 37,
+    on: j['on'] == true);
+
+Map<String, int> _ints(Object? v) => {
+      for (final e in ((v as Map<String, dynamic>?) ?? const {}).entries)
+        if (e.value is num) e.key: (e.value as num).toInt()
+    };
 
 int _id(Object? v) {
   final id = (v as num?)?.toInt() ?? newId();
@@ -143,6 +168,11 @@ Track _readTrack(Map<String, dynamic> j) {
       mpe: j['mpe'] == true,
       input: j['input'] as String?,
       device: j['device'] as Map<String, dynamic>?,
+      box: j['box'] as String?,
+      program: (j['program'] as num?)?.toInt(),
+      bankMsb: ((j['bank'] as List?)?.elementAtOrNull(0) as num?)?.toInt(),
+      bankLsb: ((j['bank'] as List?)?.elementAtOrNull(1) as num?)?.toInt(),
+      state: _ints(j['state']),
       clips: [for (final c in (j['clips'] as List? ?? const [])) _readClip(c as Map<String, dynamic>)]);
   t
     ..monitor = j['monitor'] != false
@@ -192,7 +222,8 @@ Pattern _readPattern(Map<String, dynamic> j) {
           gate: _d(s['gate'], _defaultStep.gate),
           probability: _d(s['prob'], 1),
           nudge: _d(s['nudge']),
-          repeat: (s['repeat'] as num?)?.toInt() ?? 1);
+          repeat: (s['repeat'] as num?)?.toInt() ?? 1,
+          locks: _ints(s['locks']));
     }
     cells.add(row);
   }

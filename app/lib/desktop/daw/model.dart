@@ -107,9 +107,14 @@ class Step {
   double probability; // 0..1
   double nudge; // in steps, -0.5..0.5
   int repeat; // hits in the step, 1..4
-  Step({int? velocity, this.gate = 0.5, this.probability = 1, this.nudge = 0, this.repeat = 1})
-      : velocity = velocity ?? up7to16(100);
-  Step copy() => Step(velocity: velocity, gate: gate, probability: probability, nudge: nudge, repeat: repeat);
+  /// Parameter locks: a controller's value for this step only (lane keys as in [MidiContent.lanes], 32 bit). The
+  /// steps without one send the track's own value (compile.dart, "lockBase").
+  final Map<String, int> locks;
+  Step({int? velocity, this.gate = 0.5, this.probability = 1, this.nudge = 0, this.repeat = 1, Map<String, int>? locks})
+      : velocity = velocity ?? up7to16(100),
+        locks = locks ?? {};
+  Step copy() =>
+      Step(velocity: velocity, gate: gate, probability: probability, nudge: nudge, repeat: repeat, locks: {...locks});
 }
 
 class PatternRow {
@@ -272,9 +277,36 @@ class Track {
   /// names and the device tab its controls without the box around); null: none.
   Map<String, dynamic>? device;
 
-  Track(this.name, {this.port, this.channel = 0, this.mpe = false, this.input, List<Clip>? clips, int? id, this.device})
+  /// The box the list came from (its discovery key), for reading the synth's values again.
+  String? box;
+
+  /// Program change and bank select (0-127 each; null: not sent), sent when the project opens and when play starts.
+  int? program, bankMsb, bankLsb;
+
+  /// The synth's own settings as last set in the device tab or read from it (lane keys, 32 bit): sent when the
+  /// project opens and when play starts, after the program, so the synth sounds as it did. Not undone: it is where
+  /// the knobs are, like the synth's own memory.
+  final Map<String, int> state;
+
+  Track(this.name,
+      {this.port,
+      this.channel = 0,
+      this.mpe = false,
+      this.input,
+      List<Clip>? clips,
+      int? id,
+      this.device,
+      this.box,
+      this.program,
+      this.bankMsb,
+      this.bankLsb,
+      Map<String, int>? state})
       : clips = clips ?? [],
+        state = state ?? {},
         id = id ?? newId();
+
+  /// The channel the track's own controllers go out on: the manager channel on an MPE track.
+  int get mainChannel => mpe ? 0 : channel;
 
   Track copy({bool keepId = false}) {
     final t = Track(name,
@@ -284,7 +316,12 @@ class Track {
         input: input,
         clips: [for (final c in clips) c.copy(keepId: keepId)],
         id: keepId ? id : null,
-        device: device);
+        device: device,
+        box: box,
+        program: program,
+        bankMsb: bankMsb,
+        bankLsb: bankLsb,
+        state: {...state});
     t
       ..armed = armed
       ..monitor = monitor
@@ -305,6 +342,8 @@ class Project {
   double startBeat; // where play starts
   final List<Track> tracks;
   final Set<String> clockPorts; // outputs that get MIDI clock, Start and Stop
+  Click click;
+  int countIn; // bars counted in before recording from stopped (0: none)
 
   Project(
       {this.bpm = 120,
@@ -314,9 +353,12 @@ class Project {
       this.loopEnd = 16,
       this.startBeat = 0,
       List<Track>? tracks,
-      Set<String>? clockPorts})
+      Set<String>? clockPorts,
+      Click? click,
+      this.countIn = 1})
       : tracks = tracks ?? [],
-        clockPorts = clockPorts ?? {};
+        clockPorts = clockPorts ?? {},
+        click = click ?? Click();
 
   /// Tracks that sound: not muted, and soloed if any track is.
   Iterable<Track> get audible {
@@ -339,7 +381,9 @@ class Project {
       loopEnd: loopEnd,
       startBeat: startBeat,
       tracks: [for (final t in tracks) t.copy(keepId: true)],
-      clockPorts: {...clockPorts});
+      clockPorts: {...clockPorts},
+      click: click.copy(),
+      countIn: countIn);
 
   /// Becomes [s] (undo): this object stays the one everybody holds.
   void restore(Project s) {
@@ -355,5 +399,17 @@ class Project {
     clockPorts
       ..clear()
       ..addAll(s.clockPorts);
+    click = s.click.copy();
+    countIn = s.countIn;
   }
+}
+
+/// The metronome (docs/daw.md "Recording"): there is no audio, so a note on a port, a drum machine's rim shot. The
+/// first beat of a bar louder. It plays while [on], and always in a count-in.
+class Click {
+  String? port; // null: no click
+  int channel, note; // 0-based channel; 37: General MIDI side stick
+  bool on;
+  Click({this.port, this.channel = 9, this.note = 37, this.on = false});
+  Click copy() => Click(port: port, channel: channel, note: note, on: on);
 }

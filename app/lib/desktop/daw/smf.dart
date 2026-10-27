@@ -3,7 +3,8 @@
 // Export: type 1, a tempo track (tempo, time signature) and a track per audible track. The events come from the
 // same compiler that plays the arrangement, timed in ticks instead of nanoseconds, so a file holds exactly what play
 // sends: patterns as notes (swing, nudge, repeats, the first pass's probabilities), MIDI clips cut and repeated as
-// placed, MPE tracks on member channels with their expression and an MPE Configuration Message first.
+// placed, MPE tracks on member channels with their expression and an MPE Configuration Message first; each track's
+// program and saved synth settings at the start.
 //
 // Import: type 0 or 1, ticks per quarter note (SMPTE timing is refused). A file track with an MPE Configuration
 // Message or notes on three or more channels becomes one MPE track; any other track becomes a track per channel it
@@ -80,7 +81,9 @@ List<int> exportSmf(Project p, {int ppq = kPpq}) {
       ..port = 'smf'
       ..mute = false
       ..solo = false;
-    final ev = compile(Project(beatsPerBar: p.beatsPerBar, tracks: [one]), 0, end, (b) => (b * ppq).round(), cut: end);
+    final alone = Project(beatsPerBar: p.beatsPerBar, tracks: [one]);
+    // the program and the synth's settings first, as play sends them
+    final ev = [...setupEvents(alone, 0), ...compile(alone, 0, end, (b) => (b * ppq).round(), cut: end)];
     sortEvents(ev);
     final events = <(int, List<int>)>[
       // lower zone, 15 member channels: RPN 6 on the manager channel

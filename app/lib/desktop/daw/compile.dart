@@ -4,6 +4,7 @@
 // 20 ms, so every event belongs to exactly one window: windows join without gaps or doubles.
 import 'dart:math' as math;
 
+import 'package:airmidi/desktop/daw/lanes.dart' show lockBase;
 import 'package:airmidi/desktop/daw/model.dart';
 import 'package:airmidi/desktop/daw/time.dart';
 
@@ -115,6 +116,65 @@ List<SeqEvent> chase(Project p, double at, int ns) {
   return [for (final e in last.values) SeqEvent(ns, e.port, e.bytes)];
 }
 
+/// What a track's synth is set to before anything plays (docs/daw.md "Projects and files"): bank select, program change,
+/// then the synth's saved settings, per track that sends somewhere (muted ones too: they set the synth, they do not
+/// sound), all timed [ns]. Sent when the project opens and when play starts (before the chase, so the song's own
+/// lanes have the last word).
+List<SeqEvent> setupEvents(Project p, int ns, {Iterable<Track>? tracks}) {
+  final out = <SeqEvent>[];
+  for (final t in tracks ?? p.tracks) {
+    final port = t.port;
+    if (port == null) continue;
+    final ch = t.mainChannel;
+    if (t.program != null) {
+      if (t.bankMsb != null) out.add(SeqEvent(ns, port, [0xB0 | ch, 0, t.bankMsb!]));
+      if (t.bankLsb != null) out.add(SeqEvent(ns, port, [0xB0 | ch, 32, t.bankLsb!]));
+      out.add(SeqEvent(ns, port, [0xC0 | ch, t.program!]));
+    }
+    final keys = t.state.keys.toList()..sort();
+    for (final k in keys) {
+      final m = _lane(k, ch, t.state[k]!);
+      if (m.isNotEmpty) out.add(SeqEvent(ns, port, m));
+    }
+  }
+  return out;
+}
+
+/// The controllers [p]'s steps lock, in a fixed order.
+List<String> lockKeys(Pattern p) {
+  final keys = <String>{};
+  for (var r = 0; r < p.rows.length; r++) {
+    if (p.rows[r].mute) continue;
+    for (var s = 0; s < p.steps; s++) {
+      keys.addAll(p.cells[r][s]?.locks.keys ?? const []);
+    }
+  }
+  return keys.toList()..sort();
+}
+
+/// Parameter locks as values in time (content beats): before every group of hits that play together, each locked
+/// controller's value, the first locked step's in the group (by row), else [base]'s (the track's own value: the lock
+/// lasts one step); a controller with no base keeps its lock until the next. Every group sends, so a step that does
+/// not play (probability) never leaves its lock behind.
+Iterable<(double, String, int)> lockValues(Pattern p, Iterable<PatternHit> hits, int? Function(String) base) sync* {
+  final keys = lockKeys(p);
+  if (keys.isEmpty) return;
+  final groups = <double, List<PatternHit>>{};
+  for (final h in hits) {
+    groups.putIfAbsent(h.x, () => []).add(h);
+  }
+  for (final g in groups.entries) {
+    for (final k in keys) {
+      int? v;
+      for (final h in g.value) {
+        v ??= p.cells[h.row][h.step]?.locks[k];
+      }
+      v ??= base(k);
+      if (v != null) yield (g.key, k, v);
+    }
+  }
+}
+
 /// One hit of a pattern, in its content's time: a step, or one of a step's repeats.
 class PatternHit {
   final double x, length; // beats; x can be a little below 0 (a nudged first step) or past the end
@@ -148,15 +208,27 @@ Iterable<PatternHit> patternHits(Pattern p) sync* {
   }
 }
 
-/// A pattern as notes ("to MIDI clip"): one pass of it, the probabilities rolled as the clip's first pass plays
-/// them; a hit nudged before the start wraps to the end.
-MidiContent patternToMidi(Pattern p, int clipId) {
+/// A pattern as notes ("to MIDI clip"): one pass of it, the probabilities rolled as its first pass plays them; a
+/// hit nudged before the start wraps to the end. Its locks become lanes, a point before each step as it plays them
+/// ([base]: the track's own values).
+MidiContent patternToMidi(Pattern p, int clipId, {int? Function(String)? base}) {
   final len = p.length;
+  double wrap(double x) => x < 0 ? x + len : x;
+  final hits = [
+    for (final h in patternHits(p))
+      if (h.plays(clipId, 0)) h
+  ];
+  final lanes = <String, List<Point>>{};
+  for (final (x, k, v) in lockValues(p, hits, base ?? (_) => null)) {
+    lanes.putIfAbsent(k, () => []).add(Point(wrap(x), v));
+  }
+  for (final l in lanes.values) {
+    l.sort((a, b) => a.t.compareTo(b.t));
+  }
   return MidiContent(len,
-      notes: [
-        for (final h in patternHits(p))
-          if (h.plays(clipId, 0)) Note(h.x < 0 ? h.x + len : h.x, h.length, h.pitch, velocity: up7to16(h.velocity))
-      ]..sort((a, b) => a.start.compareTo(b.start)));
+      notes: [for (final h in hits) Note(wrap(h.x), h.length, h.pitch, velocity: up7to16(h.velocity))]
+        ..sort((a, b) => a.start.compareTo(b.start)),
+      lanes: lanes);
 }
 
 /// The events in song beats [from, to), timed by [nsAt]. Notes end by [cut] at the latest (the loop's end when the
@@ -234,10 +306,18 @@ List<SeqEvent> compile(Project p, double from, double to, int Function(double be
             if (at < passEnd && inWindow(at)) out.add(SeqEvent(nsAt(at), port, r.bytes));
           }
         } else if (content is Pattern) {
-          final ch = t.mpe ? 0 : t.channel;
-          for (final h in patternHits(content)) {
+          final ch = t.mainChannel;
+          final hits = [
+            for (final h in patternHits(content))
+              if (inWindow(base + h.x) && h.plays(c.id, pass * 100003 + k)) h
+          ];
+          // locks just before their notes (sortEvents puts controllers before note ons at the same time)
+          for (final (x, key, v) in lockValues(content, hits, (key) => lockBase(t, key))) {
+            final m = _lane(key, ch, v);
+            if (m.isNotEmpty) out.add(SeqEvent(nsAt(base + x), port, m));
+          }
+          for (final h in hits) {
             final at = base + h.x;
-            if (!inWindow(at) || !h.plays(c.id, pass * 100003 + k)) continue;
             note(at, at + h.length, ch, h.pitch, h.velocity, end: limit);
           }
         }

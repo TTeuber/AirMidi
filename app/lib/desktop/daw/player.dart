@@ -5,12 +5,20 @@
 // MIDI clock follows the continuous count, so a drum machine keeps steady time across the loop.
 //
 // Recording: armed tracks pass what their input plays through to their device (monitor), and while recording each
-// gets a take (record.dart) that the player rebuilds into its clip every tick.
+// gets a take (record.dart) that the player rebuilds into its clip every tick. Recording from stopped counts in first
+// (the project's bars of count-in, the click playing).
+//
+// Hardware (docs/daw.md A6): play starts by setting each track's synth (bank, program, its saved settings); the click
+// is a note on a port; each port has a latency offset (an output's events go out that much early, so a synth that
+// answers late still lands on the beat; an input's timestamps are taken back by its own), kept for the computer, not
+// the song.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:midi_engine/midi_engine.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:airmidi/desktop/daw/compile.dart';
 import 'package:airmidi/desktop/daw/history.dart';
@@ -63,6 +71,40 @@ class DawPlayer extends ChangeNotifier {
   bool chaseOn = true; // controllers where the song has them when play starts and when the loop starts again
   String? error;
 
+  /// Latency offsets in ms by port name (-100..100): outputs (positive: the device sounds late, so its events go out
+  /// early) and inputs (positive: what it plays arrives late, so its timestamps are taken back).
+  final outLatency = <String, double>{}, inLatency = <String, double>{};
+  static const kMaxLatency = 100.0;
+
+  int _ms(Map<String, double> m, String port) => ((m[port] ?? 0) * 1e6).round();
+
+  // How much earlier than planned the earliest port sends: the lookahead and the start grow by it.
+  int get _lead => (outLatency.values.fold(0.0, math.max) * 1e6).round();
+
+  static const _latencyKey = 'daw.latency';
+
+  Future<void> loadLatency() async {
+    try {
+      final j = jsonDecode((await SharedPreferences.getInstance()).getString(_latencyKey) ?? '{}');
+      for (final (m, k) in [(outLatency, 'out'), (inLatency, 'in')]) {
+        for (final e in ((j[k] as Map<String, dynamic>?) ?? const {}).entries) {
+          m[e.key] = (e.value as num).toDouble();
+        }
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Sets a port's offset (0 removes it) and keeps it for next time.
+  void setLatency(String port, double ms, {bool input = false}) {
+    final m = input ? inLatency : outLatency;
+    ms = ms.clamp(-kMaxLatency, kMaxLatency).roundToDouble();
+    ms == 0 ? m.remove(port) : m[port] = ms;
+    SharedPreferences.getInstance()
+        .then((prefs) => prefs.setString(_latencyKey, jsonEncode({'out': outLatency, 'in': inLatency})));
+    notifyListeners();
+  }
+
   bool get playing => _tl != null;
 
   /// Opens the inputs the armed tracks listen to (call after arming or changing an input).
@@ -100,6 +142,13 @@ class DawPlayer extends ChangeNotifier {
     return (project.loopStart + (c - project.loopEnd) - k * len, k + 1);
   }
 
+  /// Beats left to count in (0 when not counting in).
+  double get countInLeft {
+    final tl = _tl;
+    if (tl == null) return 0;
+    return math.max(0, project.startBeat - tl.beatAt(engine.nowNs));
+  }
+
   /// Where play is now, in song beats (the start position when stopped).
   double get beat {
     final tl = _tl;
@@ -119,8 +168,8 @@ class DawPlayer extends ChangeNotifier {
       }
       final take = takes[t];
       if (take == null || tl == null) continue;
-      final c = tl.beatAt(tNs);
-      if (c < project.startBeat) continue; // before the first beat
+      final c = tl.beatAt(tNs - _ms(inLatency, input));
+      if (c < project.startBeat) continue; // before the first beat (in the count-in)
       take.add(songAt(c).$1, bytes);
     }
   }
@@ -151,6 +200,7 @@ class DawPlayer extends ChangeNotifier {
   void _send(String port, List<int> bytes, int atNs) {
     final h = _handle(port);
     if (h == null) return;
+    if (atNs > 0) atNs = math.max(1, atNs - _ms(outLatency, port));
     try {
       engine.send(h, bytes, atNs: atNs);
     } catch (e) {
@@ -158,19 +208,23 @@ class DawPlayer extends ChangeNotifier {
     }
   }
 
+  /// Plays from the start marker; [record] counts in first (the project's bars, 0: none).
   void play({bool record = false}) {
     if (playing) return;
     error = null;
-    final start = engine.nowNs + _startDelay, from = project.startBeat;
-    _tl = Timeline(start, project.bpm, anchorBeat: from);
-    _until = from;
+    final from = project.startBeat;
+    final pre = record ? project.countIn * project.beatsPerBar.toDouble() : 0.0;
+    final tl = _tl = Timeline(engine.nowNs + _startDelay + _lead, project.bpm, anchorBeat: from - pre);
+    _until = from - pre;
+    final first = tl.nsAt(from); // the song's first beat, after the count-in
+    sendSetup(); // bank, program, the synth's settings: now, well before the first note
     final spp = (from * 4).round().clamp(0, 16383); // Song Position in sixteenths
     for (final p in project.clockPorts) {
-      _send(p, [0xF2, spp & 0x7F, spp >> 7], start - 1000000);
-      _send(p, [spp == 0 ? 0xFA : 0xFB], start); // Start, or Continue from the position
+      _send(p, [0xF2, spp & 0x7F, spp >> 7], first - 1000000);
+      _send(p, [spp == 0 ? 0xFA : 0xFB], first); // Start, or Continue from the position
     }
     if (chaseOn) {
-      for (final e in chase(project, from, start - 500000)) {
+      for (final e in chase(project, from, first - 500000)) {
         _send(e.port, e.bytes, e.tNs); // half a millisecond before the first beat
       }
     }
@@ -216,11 +270,12 @@ class DawPlayer extends ChangeNotifier {
       }
       notifyListeners();
     }
-    final to = tl.beatAt(now + _lookahead);
+    final to = tl.beatAt(now + _lookahead + _lead);
     if (to <= _until) return;
     final out = <SeqEvent>[];
+    _countInClicks(out, tl, to);
     // the window in pieces that each lie inside one pass of the loop; notes end at the loop's end
-    var a = _until;
+    var a = math.max(_until, project.startBeat); // the song starts after the count-in
     while (a < to) {
       final (s, pass) = songAt(a);
       final delta = a - s;
@@ -232,10 +287,16 @@ class DawPlayer extends ChangeNotifier {
       }
       out.addAll(compile(project, s, end - delta, (b) => tl.nsAt(b + delta),
           cut: _looping ? project.loopEnd : double.infinity, pass: pass, notes: _notes));
+      if (project.click.on) {
+        // the song's own beats, so a loop starting off the beat still clicks on it
+        for (var b = (s - 1e-9).ceil(); b < end - delta - 1e-9; b++) {
+          _click(out, tl.nsAt(b + delta), b % project.beatsPerBar == 0);
+        }
+      }
       a = end;
     }
     if (project.clockPorts.isNotEmpty) {
-      for (var j = ((_until - project.startBeat) * 24).ceil(); project.startBeat + j / 24 < to; j++) {
+      for (var j = math.max(0, ((_until - project.startBeat) * 24).ceil()); project.startBeat + j / 24 < to; j++) {
         final at = tl.nsAt(project.startBeat + j / 24);
         for (final p in project.clockPorts) {
           out.add(SeqEvent(at, p, const [0xF8]));
@@ -248,6 +309,31 @@ class DawPlayer extends ChangeNotifier {
     }
     _until = to;
     _notes.removeWhere((n) => n.offNs < now);
+  }
+
+  void _countInClicks(List<SeqEvent> out, Timeline tl, double to) {
+    final start = project.startBeat, bpb = project.beatsPerBar;
+    if (_until >= start) return;
+    for (var i = 0; start - project.countIn * bpb + i < start; i++) {
+      final b = start - project.countIn * bpb + i;
+      if (b >= _until - 1e-9 && b < to - 1e-9) _click(out, tl.nsAt(b), i % bpb == 0);
+    }
+  }
+
+  void _click(List<SeqEvent> out, int ns, bool accent) {
+    final c = project.click, port = c.port;
+    if (port == null) return;
+    final off = ns + 40000000;
+    out.add(SeqEvent(ns, port, [0x90 | c.channel, c.note, accent ? 127 : 80]));
+    out.add(SeqEvent(off, port, [0x80 | c.channel, c.note, 0]));
+    _notes.add(ScheduledNote(port, c.channel, c.note, off));
+  }
+
+  /// Sets every track's synth now: bank, program, its saved settings (when a project opens; play does it too).
+  void sendSetup({Iterable<Track>? tracks}) {
+    for (final e in setupEvents(project, 0, tracks: tracks)) {
+      _send(e.port, e.bytes, 0);
+    }
   }
 
   /// Stops at once: what is queued is dropped, notes that may be sounding get their note off now.

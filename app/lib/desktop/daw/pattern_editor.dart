@@ -6,6 +6,11 @@
 // the lane, M mutes it, a right-click opens rename, note up/down, move, remove. Long patterns show 16 steps a page
 // (and follow the playhead while playing, if "follow" is on). The lane: drag a bar, or sweep across; double-click
 // puts a step's setting back to its default.
+//
+// Parameter locks (A6): "+ lock" adds a lane for a controller (the synth's own names first). A step's bar there is
+// its value for that step only; a double-click or right-click takes the lock off. The steps without one send the
+// track's own value (the line across the lane: the device tab's setting, or the synth's default), so a lock lasts
+// one step. A step with locks has a mark in its corner.
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -13,7 +18,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Step;
 
 import 'package:airmidi/desktop/daw/history.dart';
+import 'package:airmidi/desktop/daw/lanes.dart';
 import 'package:airmidi/desktop/daw/model.dart';
+import 'package:airmidi/shared/synth/controls.dart' show Device;
 import 'package:airmidi/shared/play/keys.dart' show Pads;
 import 'package:airmidi/shared/ui/theme.dart';
 
@@ -28,6 +35,7 @@ class PatternEditor extends StatefulWidget {
   final VoidCallback changed;
   final int playStep; // the step playing now, -1 when this clip is not playing
   final void Function(int pitch, bool on, int velocity)? audition;
+  final Device? device; // the track's synth: names and readings for the lock lanes
   const PatternEditor(
       {super.key,
       required this.pattern,
@@ -35,7 +43,8 @@ class PatternEditor extends StatefulWidget {
       required this.history,
       required this.changed,
       this.playStep = -1,
-      this.audition});
+      this.audition,
+      this.device});
 
   @override
   State<PatternEditor> createState() => PatternEditorState();
@@ -46,6 +55,8 @@ enum _Mode { none, paint, erase, velocity }
 class PatternEditorState extends State<PatternEditor> {
   int row = 0, page = 0;
   StepParam param = StepParam.velocity;
+  String? lock; // the lane shows this controller's locks instead of [param]
+  final _added = <String>{}; // lock lanes added here that have no locks yet
   bool follow = true;
   int topRow = 0; // rows scrolled off the top
 
@@ -279,6 +290,53 @@ class PatternEditorState extends State<PatternEditor> {
 
   // ---- the lane
 
+  /// The lock lanes: every controller a step locks (muted rows too), and the ones just added.
+  List<String> get lockLanes {
+    final keys = {..._added};
+    for (var r = 0; r < p.rows.length; r++) {
+      for (var s = 0; s < p.steps; s++) {
+        keys.addAll(p.cells[r][s]?.locks.keys ?? const []);
+      }
+    }
+    return keys.toList()..sort();
+  }
+
+  Future<void> _addLock(Offset at) async {
+    final have = lockLanes.toSet();
+    final v = await _menu(at, [
+      for (final (title, k) in laneChoices(widget.device))
+        if (!have.contains(k)) (title, k),
+    ]);
+    if (v != null) {
+      setState(() {
+        _added.add(v);
+        lock = v;
+      });
+    }
+  }
+
+  void _lockAt(Offset pos, int buttons, {bool down = false}) {
+    final s = stepAt(pos.dx), k = lock;
+    if (s == null || k == null || row >= p.rows.length) return;
+    final st = p.cells[row][s];
+    if (st == null) return;
+    final now = DateTime.now();
+    final dbl = down && s == _lastLaneStep && now.difference(_lastLane).inMilliseconds < 350;
+    if (down && (dbl || buttons == kSecondaryMouseButton)) {
+      // off: the step sends the track's own value again
+      if (st.locks.containsKey(k)) _edit(() => st.locks.remove(k));
+      _lastLane = DateTime(0);
+      return;
+    }
+    if (down) {
+      _lastLane = now;
+      _lastLaneStep = s;
+    }
+    _mark();
+    setState(() => st.locks[k] = laneValueAt(k, 1 - pos.dy / _laneH));
+    widget.changed();
+  }
+
   (double, double) _range(StepParam q) => switch (q) {
         StepParam.velocity => (1, 127),
         StepParam.gate => (0.05, 2),
@@ -509,7 +567,19 @@ class PatternEditorState extends State<PatternEditor> {
             for (final q in StepParam.values)
               Padding(
                   padding: const EdgeInsets.only(right: 4),
-                  child: chip(q.name, param == q, () => setState(() => param = q))),
+                  child: chip(
+                      q.name,
+                      lock == null && param == q,
+                      () => setState(() {
+                            param = q;
+                            lock = null;
+                          }))),
+            const SizedBox(width: 10),
+            for (final k in lockLanes)
+              Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: chip(laneTitle(k, widget.device), lock == k, () => setState(() => lock = k))),
+            menuChip('+ lock', _addLock),
           ]),
         ),
       ),
@@ -520,9 +590,9 @@ class PatternEditorState extends State<PatternEditor> {
           behavior: HitTestBehavior.opaque,
           onPointerDown: (e) {
             _marked = false;
-            _laneAt(e.localPosition, down: true);
+            lock == null ? _laneAt(e.localPosition, down: true) : _lockAt(e.localPosition, e.buttons, down: true);
           },
-          onPointerMove: (e) => _laneAt(e.localPosition),
+          onPointerMove: (e) => lock == null ? _laneAt(e.localPosition) : _lockAt(e.localPosition, e.buttons),
           child: CustomPaint(size: Size.infinite, painter: _LanePainter(this)),
         ),
       ),
@@ -587,6 +657,9 @@ class _GridPainter extends CustomPainter {
                   ..color = cBg
                   ..strokeWidth = 1.5);
           }
+          if (step.locks.isNotEmpty) {
+            c.drawRect(Rect.fromLTWH(cell.left + 2, cell.bottom - 6, 4, 4), Paint()..color = cBg);
+          }
           if (step.nudge != 0) {
             final nx = cell.center.dx + step.nudge * cell.width;
             c.drawLine(
@@ -626,6 +699,7 @@ class _LanePainter extends CustomPainter {
     c.drawRect(Rect.fromLTWH(_labelW, 0, size.width - _labelW, size.height), Paint()..color = const Color(0xFF10171C));
     final p = s.p;
     if (p.rows.isEmpty) return;
+    if (s.lock != null) return _locks(c, size, s.lock!);
     final (lo, hi) = s._range(s.param);
     final centre = s.param == StepParam.nudge;
     if (centre) {
@@ -647,6 +721,32 @@ class _LanePainter extends CustomPainter {
         StepParam.repeat => '${step.repeat}x',
       };
       if (w >= 22) _text(c, label, Offset(x + 2, 2), size: 10, color: cGrey);
+    }
+  }
+
+  void _locks(Canvas c, Size size, String k) {
+    final p = s.p, d = s.widget.device, base = lockBase(s.widget.track, k);
+    double y(int v) => size.height * (1 - laneFraction(k, v));
+    if (base != null) {
+      c.drawLine(Offset(_labelW, y(base)), Offset(size.width, y(base)), Paint()..color = cGrey.withValues(alpha: 0.6));
+    }
+    _text(c, base == null ? 'no own value: a lock lasts to the next' : 'own value ${laneDisplay(k, base, d)}',
+        const Offset(0, 2),
+        size: 10, color: cGrey, maxW: _labelW - 6);
+    final centre = laneCentred(k);
+    for (var st = s.first; st < s.first + s.shown; st++) {
+      final step = p.cells[s.row][st];
+      if (step == null) continue;
+      final x = s.cellX(st) + 3, w = s.cellW - 6, v = step.locks[k];
+      if (v == null) {
+        // no lock: a thin mark where the step is, at the value it sends
+        final at = base == null ? size.height - 2 : y(base);
+        c.drawRect(Rect.fromLTWH(x, at - 1, w, 2), Paint()..color = cGrey);
+        continue;
+      }
+      final top = y(v), from = centre ? size.height / 2 : size.height;
+      c.drawRect(Rect.fromLTRB(x, math.min(top, from), x + w, math.max(top, from)), Paint()..color = cAc);
+      if (w >= 22) _text(c, laneDisplay(k, v, d), Offset(x + 2, 2), size: 10, color: cN, maxW: w);
     }
   }
 

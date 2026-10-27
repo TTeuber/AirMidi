@@ -4,6 +4,8 @@
 //   ext.airmidi.tap   a tap at x, y (logical pixels); buttons=2 for a right click
 //   ext.airmidi.drag  a press at x0, y0 moved in steps to x1, y1 and let go
 //   ext.airmidi.key   a key down or up: physical (USB HID usage) and logical key ids, as the keyboard sends them
+//   ext.airmidi.text  the focused text field's text set to "text" (typing comes through the text input channel,
+//                     not key events)
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
@@ -67,6 +69,19 @@ void registerDrive() {
     // deprecated, but in Flutter 3.27 still the path from the platform to the focus system
     // ignore: deprecated_member_use
     ServicesBinding.instance.keyEventManager.keyMessageHandler?.call(KeyMessage([e], null));
+    return developer.ServiceExtensionResponse.result('{}');
+  });
+  developer.registerExtension('ext.airmidi.text', (method, params) async {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    final field = ctx == null
+        ? null
+        : (ctx.widget is EditableText ? (ctx as StatefulElement).state as EditableTextState : null) ??
+            ctx.findAncestorStateOfType<EditableTextState>();
+    if (field == null) return developer.ServiceExtensionResponse.error(1, 'no text field has the focus');
+    final text = params['text'] ?? '';
+    field.userUpdateTextEditingValue(
+        TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length)),
+        SelectionChangedCause.keyboard);
     return developer.ServiceExtensionResponse.result('{}');
   });
 }

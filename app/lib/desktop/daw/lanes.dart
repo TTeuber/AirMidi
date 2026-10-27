@@ -64,6 +64,21 @@ String laneTitle(String key, Device? d) {
   return switch (key) { 'bend' => 'pitch bend', 'pressure' => 'pressure', 'program' => 'program', _ => key };
 }
 
+/// The track's list as a Device, parsed once per list.
+final _parsed = Expando<Device>();
+Device? deviceOf(Track t) {
+  final j = t.device;
+  if (j == null) return null;
+  return _parsed[j] ??= Device.fromApi(j);
+}
+
+/// A lane's value on [t] when nothing in a clip sets it: the synth's saved setting, else its list's default.
+int? lockBase(Track t, String key) {
+  final s = t.state[key];
+  if (s != null) return s;
+  return _control(key, deviceOf(t))?.def;
+}
+
 bool laneCentred(String key) => key == 'bend' || key == 'note:bend';
 
 /// A lane's value from 0..1 (its height), at the resolution it is sent with: bends 14 bit, the rest 7.

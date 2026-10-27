@@ -4,8 +4,9 @@
 #   uv run --with websocket-client python tool/drive.py <vm-service-url> tap X Y      (rtap X Y: a right click)
 #   uv run --with websocket-client python tool/drive.py <vm-service-url> drag X0 Y0 X1 Y1
 #   uv run --with websocket-client python tool/drive.py <vm-service-url> keys "a s d+ d- tab+ tab-"
-#     each word: a key pressed and released, or key+ (down) / key- (up); letters, ; ' tab space backspace escape,
+#     each word: a key pressed and released, or key+ (down) / key- (up); letters, digits, ; ' tab space backspace escape,
 #     the arrows (up down left right) and meta / shift / alt (hold one with "meta+ a meta-")
+#   uv run --with websocket-client python tool/drive.py <vm-service-url> text "42"   (the focused text field's text)
 # The URL is the "Dart VM service is listening on http://127.0.0.1:PORT/TOKEN=/" line the app prints at start.
 import json
 import shutil
@@ -26,11 +27,12 @@ def call(ws, method, params, n=[0]):
 
 
 # USB HID usages and Flutter logical key ids
-HID = {**{c: 0x00070004 + i for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}, ";": 0x00070033, "'": 0x00070034,
+HID = {**{c: 0x00070004 + i for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")},
+       **{c: 0x0007001E + i for i, c in enumerate("1234567890")}, ";": 0x00070033, "'": 0x00070034,
        "tab": 0x0007002B, "space": 0x0007002C, "backspace": 0x0007002A, "escape": 0x00070029, "right": 0x0007004F,
        "left": 0x00070050, "down": 0x00070051, "up": 0x00070052, "meta": 0x000700E3, "shift": 0x000700E1,
        "alt": 0x000700E2}
-LOGICAL = {**{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz;'"}, "tab": 0x0100000009, "space": 0x20,
+LOGICAL = {**{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz;'0123456789"}, "tab": 0x0100000009, "space": 0x20,
            "backspace": 0x0100000008, "escape": 0x010000001B, "right": 0x0100000303, "left": 0x0100000302,
            "down": 0x0100000301, "up": 0x0100000304, "meta": 0x0200000106, "shift": 0x0200000102, "alt": 0x0200000104}
 
@@ -55,6 +57,8 @@ def main():
     elif cmd == "drag":
         call(ws, "ext.airmidi.drag", {"isolateId": iso, "x0": sys.argv[3], "y0": sys.argv[4], "x1": sys.argv[5],
                                       "y1": sys.argv[6]})
+    elif cmd == "text":
+        call(ws, "ext.airmidi.text", {"isolateId": iso, "text": sys.argv[3]})
     elif cmd == "keys":
         import time
         for w in sys.argv[3].split():

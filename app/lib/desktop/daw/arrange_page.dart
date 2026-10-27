@@ -8,6 +8,10 @@
 // copy and paste (at the start marker, on the selected clip's track), cmd-T split at the playhead, cmd-S save now,
 // cmd-O open. After a click in
 // the bottom panel the editor gets the keys first (the piano roll's delete removes notes, not the clip).
+//
+// Hardware (A6): a track's program and bank (its header's menu), its synth's settings kept with the project (the
+// device tab: "read from the synth", "send to the synth"; everything goes out again when the project opens and when
+// play starts), the click and count-in, and the ports' latency offsets (the transport).
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -24,6 +28,7 @@ import 'package:airmidi/desktop/daw/compile.dart' show patternToMidi;
 import 'package:airmidi/desktop/daw/devices.dart';
 import 'package:airmidi/desktop/daw/history.dart';
 import 'package:airmidi/desktop/daw/keys_bus.dart';
+import 'package:airmidi/desktop/daw/lanes.dart' show deviceOf, lockBase;
 import 'package:airmidi/desktop/daw/model.dart';
 import 'package:airmidi/desktop/daw/pattern_editor.dart';
 import 'package:airmidi/desktop/daw/piano_roll.dart';
@@ -61,8 +66,17 @@ class ArrangePage extends StatefulWidget {
 
 class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStateMixin {
   late final DawPlayer player = _player ??= DawPlayer(_project, _history, DesktopMidi.engine);
-  late final ProjectStore store = _store ??= ProjectStore(_project, _history)..start();
-  late final TrackSynths synths = _synths ??= TrackSynths(player, DesktopMidi.engine);
+  late final ProjectStore store = _store ??= _startStore();
+  late final TrackSynths synths = _synths ??= TrackSynths(player, DesktopMidi.engine, _project);
+
+  // The first time: the last project opens, and its synths are set as it left them.
+  ProjectStore _startStore() {
+    final s = ProjectStore(_project, _history);
+    s.start().then((_) => player.sendSetup());
+    player.loadLatency();
+    return s;
+  }
+
   Track? track; // the track the device tab shows: the last clicked header, or the selected clip's
   String panelTab = 'clip'; // or 'device'
   String? note; // what a fetch is doing
@@ -122,13 +136,16 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     }
   }
 
+  // The synths' settings are where their knobs are, not part of undo: they go back onto the restored tracks.
   void _undo() => setState(() {
         if (history.undo()) _reselect();
+        synths.keepAll();
         player.syncInputs();
       });
 
   void _redo() => setState(() {
         if (history.redo()) _reselect();
+        synths.keepAll();
         player.syncInputs();
       });
 
@@ -178,7 +195,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   void _toMidi(Clip c) {
     final pat = c.content;
     if (pat is! Pattern) return;
-    _edit(() => c.content = patternToMidi(pat, c.id));
+    final t = p.trackOf(c);
+    _edit(() => c.content = patternToMidi(pat, c.id, base: t == null ? null : (k) => lockBase(t, k)));
   }
 
   void _paste(Track t, double at) {
@@ -260,6 +278,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     final r = await _menu(at, [
       ('rename', 'rename'),
       ('synth controls from ...', 'device'),
+      ('program and bank${t.program == null ? '' : ' (${t.program! + 1})'} ...', 'program'),
       if (i > 0) ('move up', 'up'),
       if (i < p.tracks.length - 1) ('move down', 'down'),
       ('remove', 'remove'),
@@ -269,6 +288,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
         await _rename('track name', t.name, (v) => t.name = v);
       case 'device':
         await _deviceMenu(t, at);
+      case 'program':
+        await _programDialog(t);
       case 'up':
         _edit(() => p.tracks.insert(i - 1, p.tracks.removeAt(i)));
       case 'down':
@@ -292,6 +313,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   void _opened() {
     selected = null;
     player.syncInputs();
+    player.sendSetup(); // the synths as the project left them
     focus.requestFocus();
   }
 
@@ -394,7 +416,10 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       if (v is Sighting) {
         setState(() => note = 'asking ${v.name} for its synth\'s controls');
         final j = await fetchDeviceList(widget.discovery!, v);
-        _edit(() => t.device = j);
+        _edit(() {
+          t.device = j;
+          t.box = v.key;
+        });
         setState(() => note = '${t.name}: ${deviceName(j)}, ${deviceOf(t)!.controls.length} controls');
       } else if (v == 'file') {
         final f = await openFile(acceptedTypeGroups: [
@@ -415,6 +440,73 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     focus.requestFocus();
   }
 
+  // Program 1-128 as synths number them; a blank field is not sent.
+  Future<void> _programDialog(Track t) async {
+    String show(int? v, {int plus = 0}) => v == null ? '' : '${v + plus}';
+    final prog = TextEditingController(text: show(t.program, plus: 1)),
+        msb = TextEditingController(text: show(t.bankMsb)),
+        lsb = TextEditingController(text: show(t.bankLsb));
+    Widget field(String label, TextEditingController c) => SizedBox(
+          width: 110,
+          child: TextField(
+              controller: c,
+              decoration: InputDecoration(labelText: label, labelStyle: const TextStyle(color: cGrey, fontSize: 12)),
+              style: const TextStyle(color: cN, fontSize: 14)),
+        );
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: cBg,
+        title: Text('${t.name}: program and bank', style: const TextStyle(color: cN, fontSize: 15)),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Wrap(spacing: 14, children: [field('program 1-128', prog), field('bank MSB', msb), field('bank LSB', lsb)]),
+          const SizedBox(height: 10),
+          const Text('Sent when the project opens and when play starts, before the synth\'s settings. Blank: not sent.',
+              style: TextStyle(color: cGrey, fontSize: 12)),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('ok'))],
+      ),
+    );
+    if (ok == true) {
+      int? read(TextEditingController c, int lo, int hi) {
+        return int.tryParse(c.text.trim())?.clamp(lo, hi);
+      }
+
+      final pg = read(prog, 1, 128);
+      _edit(() {
+        t.program = pg == null ? null : pg - 1;
+        t.bankMsb = read(msb, 0, 127);
+        t.bankLsb = read(lsb, 0, 127);
+      });
+      player.sendSetup(tracks: [t]);
+    }
+    focus.requestFocus();
+  }
+
+  Future<void> _readSynth(Track t, Offset at) async {
+    final boxes = [
+      for (final s in widget.discovery?.list ?? const <Sighting>[])
+        if (s.id != null && (s.onWifi || s.onBle)) s
+    ]..sort((a, b) => (a.key == t.box ? 0 : 1).compareTo(b.key == t.box ? 0 : 1));
+    final s = boxes.isEmpty
+        ? null
+        : await _menu<Sighting>(at, [
+            for (final s in boxes) ('${s.name} (${s.onWifi ? 'wi-fi' : 'bluetooth'})', s),
+          ]);
+    if (s == null) {
+      if (boxes.isEmpty) setState(() => note = 'no box found yet: the synth answers through the box it is on');
+      return focus.requestFocus();
+    }
+    setState(() => note = 'asking ${s.name} where ${t.name}\'s synth is set');
+    try {
+      final (r, n) = await synths.readCurrent(t, widget.discovery!, s);
+      setState(() => note = n > 0 ? '${t.name}: $n values read from the synth ($r)' : 'no values came back ($r)');
+    } catch (e) {
+      setState(() => note = 'could not read the synth: $e');
+    }
+    focus.requestFocus();
+  }
+
   Widget _devicePanel() {
     final t = track ?? (p.tracks.isEmpty ? null : p.tracks.first);
     if (t == null) return const SizedBox.shrink();
@@ -430,8 +522,27 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       );
     }
     final (synth, link) = got;
-    return SynthControls(
-        key: ObjectKey(synth), synth: synth, link: link, column: 300, padding: const EdgeInsets.all(4));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          menuChip('read from the synth', (at) => _readSynth(t, at)),
+          chip('send to the synth', false, () {
+            player.sendSetup(tracks: [t]);
+            setState(() => note = '${t.name}: program and settings sent');
+          }),
+          Text(
+              t.state.isEmpty
+                  ? 'the synth\'s own defaults: nothing kept yet'
+                  : '${t.state.length} settings kept with the project, sent when it opens and when play starts',
+              style: const TextStyle(color: cGrey, fontSize: 12)),
+        ]),
+      ),
+      Expanded(
+        child: SynthControls(
+            key: ObjectKey(synth), synth: synth, link: link, column: 300, padding: const EdgeInsets.all(4)),
+      ),
+    ]);
   }
 
   // ---- keys
@@ -568,8 +679,9 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   }
 
   Widget _transport(double playhead) {
-    final b = player.beat, bpb = p.beatsPerBar;
-    final pos = '${b ~/ bpb + 1}.${b.floor() % bpb + 1}.${(b * 4).floor() % 4 + 1}';
+    final b = player.beat, bpb = p.beatsPerBar, left = player.countInLeft;
+    final pos = left > 0 ? 'count ${left.ceil()}' : '${b ~/ bpb + 1}.${b.floor() % bpb + 1}.${(b * 4).floor() % 4 + 1}';
+    final click = p.click;
     Widget button(String label, VoidCallback tap, {bool lit = false, Color? litColor}) => GestureDetector(
           onTap: tap,
           child: Container(
@@ -608,12 +720,109 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
               for (final o in player.outputs) ('${p.clockPorts.contains(o) ? '✓ ' : '   '}$o', o),
             ],
             (o) => setState(() => p.clockPorts.contains(o) ? p.clockPorts.remove(o) : p.clockPorts.add(o))),
+        _pick<String>(
+            click.port == null ? 'click: none' : 'click ${click.on ? 'on' : 'off'}',
+            [
+              if (click.port != null) (click.on ? 'off' : 'on', 'toggle'),
+              for (final o in player.outputs) ('${click.port == o ? '✓ ' : '   '}to $o', 'port:$o'),
+              if (click.port != null) ('   to none', 'port:'),
+              ('note and channel ... (${pitchName(click.note)}, ch ${click.channel + 1})', 'note'),
+            ],
+            (v) => switch (v) {
+                  'toggle' => _edit(() => click.on = !click.on),
+                  'note' => _clickDialog(),
+                  _ => _edit(() {
+                      click.port = v.length > 5 ? v.substring(5) : null;
+                      if (click.port != null) click.on = true;
+                    }),
+                }),
+        _pick<int>(
+            'count-in ${p.countIn == 0 ? 'off' : p.countIn == 1 ? '1 bar' : '${p.countIn} bars'}',
+            const [('off', 0), ('1 bar', 1), ('2 bars', 2)],
+            (n) => _edit(() => p.countIn = n)),
+        TextButton(onPressed: _latencyDialog, child: const Text('latency')),
         TextButton(
           onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => KeysPage(link: KeysBusLink()))),
           child: const Text('keys'),
         ),
       ]),
     );
+  }
+
+  Future<void> _clickDialog() async {
+    final c = p.click;
+    final note = TextEditingController(text: '${c.note}'), ch = TextEditingController(text: '${c.channel + 1}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: cBg,
+        title: const Text('the click', style: TextStyle(color: cN, fontSize: 15)),
+        content: Wrap(spacing: 14, children: [
+          for (final (label, ctl) in [('note 0-127 (37: side stick)', note), ('channel 1-16', ch)])
+            SizedBox(
+              width: 170,
+              child: TextField(
+                  controller: ctl,
+                  decoration:
+                      InputDecoration(labelText: label, labelStyle: const TextStyle(color: cGrey, fontSize: 12)),
+                  style: const TextStyle(color: cN, fontSize: 14)),
+            ),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('ok'))],
+      ),
+    );
+    if (ok == true) {
+      _edit(() {
+        c.note = (int.tryParse(note.text.trim()) ?? c.note).clamp(0, 127);
+        c.channel = ((int.tryParse(ch.text.trim()) ?? c.channel + 1) - 1).clamp(0, 15);
+      });
+    }
+    focus.requestFocus();
+  }
+
+  // Each port's offset in ms, kept for this computer (not the song): an output's events go out that much early, an
+  // input's timestamps are taken back by it.
+  Future<void> _latencyDialog() async {
+    Widget row(String port, bool input, void Function(void Function()) set) {
+      final m = input ? player.inLatency : player.outLatency, v = m[port] ?? 0;
+      return Row(children: [
+        Expanded(
+            child: Text('${input ? '← ' : '→ '}$port',
+                style: const TextStyle(color: cN, fontSize: 13), overflow: TextOverflow.ellipsis)),
+        stepper('', '${v.round()} ms', () => set(() => player.setLatency(port, v - 1, input: input)),
+            () => set(() => player.setLatency(port, v + 1, input: input))),
+        chip('-10', false, () => set(() => player.setLatency(port, v - 10, input: input))),
+        const SizedBox(width: 4),
+        chip('+10', false, () => set(() => player.setLatency(port, v + 10, input: input))),
+      ]);
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, set) => AlertDialog(
+          backgroundColor: cBg,
+          title: const Text('latency per port', style: TextStyle(color: cN, fontSize: 15)),
+          content: SizedBox(
+            width: 520,
+            child: ListView(shrinkWrap: true, children: [
+              const Text(
+                  'An output that sounds late (a synth over Bluetooth): a positive offset sends its events that much '
+                  'early. An input that arrives late: a positive offset moves what it records back. Kept for this '
+                  'computer, not the song.',
+                  style: TextStyle(color: cGrey, fontSize: 12)),
+              const SizedBox(height: 8),
+              for (final o in player.outputs) row(o, false, set),
+              const Divider(color: Color(0xFF1C2329)),
+              for (final i in player.inputs)
+                if (i != kKeysInput) row(i, true, set),
+            ]),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('done'))],
+        ),
+      ),
+    );
+    focus.requestFocus();
   }
 
   Widget _roll(Clip c, MidiContent content, double at) {
@@ -826,6 +1035,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                   history: history,
                   changed: () => setState(() {}),
                   playStep: at < 0 ? -1 : (at / content.stepBeats).floor(),
+                  device: deviceOf(p.trackOf(c)!),
                   audition: (pitch, on, vel) => player.audition(p.trackOf(c)!, pitch, on, vel))
               : _roll(c, content as MidiContent, at),
         ),

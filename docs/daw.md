@@ -95,9 +95,9 @@ fill). There is no way back: a free-time clip does not fit a grid without losing
   velocity lane.
 - **Per row length (later):** rows of different lengths drift against each other, the polymeter the step tracks
   have now per track.
-- **Parameter locks (later):** a step can also set a control of the device (the filter opens on step 7 only).
-  MIDI-CI names make these readable. It is what makes a step sequencer play a hardware synth well; it comes after
-  the basics work.
+- **Parameter locks:** a step can also set a control of the device (the filter opens on step 7 only).
+  MIDI-CI names make these readable. It is what makes a step sequencer play a hardware synth well. A lock lasts one
+  step: the steps without one send the track's own value (its synth's saved setting, or the list's default).
 
 ### Every clip is its own
 
@@ -158,8 +158,8 @@ steps with swing, nudge and probability), plus clock.
   left. Notes that began before the start are not started (note chase off, as in most DAWs; an option later).
 - **Clock** out per port as now; follow Logic later (docs/desktop.md D5).
 - **Latency offset per port** (ms, positive or negative): a synth over BLE and a drum machine over USB answer at
-  different delays, so each port's events move by its offset. Measured once with a loopback; a calibration tool
-  later.
+  different delays, so each port's events move by its offset. Kept for the computer, not the song (the same synth
+  answers as late in every project). Set by hand for now; a calibration tool with a loopback later.
 
 ## Recording
 
@@ -180,10 +180,10 @@ steps with swing, nudge and probability), plus clock.
   user-selected-files entitlement.
 - **Standard MIDI File** export: type 1, a track per track, patterns rendered to notes. Import: each SMF track
   becomes a track with one MIDI clip.
-- **Device state with the project (later):** a MIDI-CI device reports its current values (the MIDI Message Report
-  the synth page already asks for). The project can keep them per track and send them back when it opens, so the
-  box's synth sounds the same next time. For other hardware: program change and bank select per track, sent on
-  open and on play.
+- **Device state with the project:** a MIDI-CI device reports its current values (the MIDI Message Report
+  the synth page already asks for). The project keeps them per track and sends them back when it opens and when
+  play starts, so the box's synth sounds the same next time. For other hardware: program change and bank select
+  per track, sent the same way, first.
 
 ## Phases
 
@@ -308,10 +308,43 @@ notes, loops, swing, chase, undo), timing through a mido port, the pages driven 
   defaults; device state is A6). Fixed on the way: menu chips ("rows", "+ row", "+ lane") never opened their menus
   (an inner tap detector won the gesture).
 
+- **A6 (2026-10-27):** hardware. Program change and bank select per track (the header's menu, "program and bank":
+  program 1-128, MSB, LSB, blank fields not sent). The synth's settings with the project (`Track.state`, lane keys
+  at 32 bit): what the device tab sets and what the synth's knobs send back is kept on the track, and "read from the
+  synth" asks the box for a MIDI Message Report (the box the list came from, or another; the synth's answer comes
+  over the box's own link, its Wi-Fi web socket or BLE MIDI) and keeps every value. Bank, program and settings go
+  out when a project opens (and the app starts with it), when play starts (before the chase, so the song's lanes win)
+  and on "send to the synth"; MIDI file export writes them at the start of each track. They are not undone (they are
+  where the knobs are): after undo the synths' values go back onto the restored tracks. The click (transport:
+  a port, note and channel, General MIDI side stick on channel 10 by default, the bar's first beat louder) and the
+  count-in (off, 1 or 2 bars, when recording from stopped; the click plays in it even when off; the position shows
+  "count n"). Latency per port (transport, "latency": outputs and inputs, -100 to 100 ms, kept in the app's
+  settings): an output's events go out that much early (the lookahead and the start grow by the largest), an input's
+  timestamps are taken back by it. Parameter locks in the sequencer ("+ lock": the synth's controls first, then
+  the common ones; a step's bar is its lock, double-click or right-click takes it off; the line across the lane is
+  the track's own value, and a step with locks has a mark in its corner): every group of steps that play together
+  sends each locked controller, the first locked step's value (by row) or the own value, so a lock lasts one step
+  and a step that does not play leaves nothing behind; with no own value a lock lasts to the next. "to MIDI clip"
+  turns the locks into lane points that play the same. Tests (`test/hardware_test.dart`, `pattern_test.dart`): the
+  setup's order and channels, locks (one step, the locked step winning at the same time, no own value, the list's
+  default, windows joining, to MIDI clip, chase), files, export, the player with a fake engine (count-in with the
+  click, the click on, an output's offset), the lock lane driven by the mouse. Tried in the app with the box on its
+  RTP session and daisy_synth on its TRS: program 5 / bank 1, 2 sent on play (CC 0, CC 32, program 4); the count-in
+  bar of four clicks 545.4 ms apart at 110 bpm, the first louder, then the song's; daisy's cutoff set to CC 74 = 100
+  from outside the app and read back through the box ("19 values read from the synth (ok)", cutoff 4.7 kHz), all
+  19 kept in the project; "send to the synth" 22 messages into the box's RTP port and out of its TRS; a pattern with
+  step 9's cutoff locked at 110 Hz playing CC 74 = 32 before that step and 100 (the own value) before the others,
+  to the IAC bus and through the box to daisy (36 messages in, 88 bytes out on TRS); an IAC offset of +20 ms moving
+  its notes 19.9 ms ahead of the click on another port; a Vibrato drag kept as the track's setting. Not tried: BLE
+  for "read from the synth", input offsets (no loopback in this setup), program changes heard on a synth that has
+  programs (daisy has none). Seen on the way: something else on this Mac (not the DAW: a plain script does the same)
+  repeats bank select on the IAC bus. The drive tool gained digits and `text` (a text field's text, through a new
+  debug hook command).
+
 ## Decided (2026-10-26, the user)
 
 1. Every clip is its own (no shared patterns); clips copy to other tracks.
 2. Both clip kinds on any track.
 3. The editor in the bottom panel.
 4. MPE replayed on fresh member channels.
-5. Parameter locks later (A6).
+5. Parameter locks later (they came in A6).
