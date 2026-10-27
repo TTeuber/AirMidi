@@ -94,7 +94,8 @@ void main() {
     });
 
     test('the view stops where the rows stop being MIDI notes', () {
-      expect(moved(F, six, const PinchStep(50, 100, 50, 9000, 1, 1)).view, -40); // the low e strip can go down to note 0
+      expect(
+          moved(F, six, const PinchStep(50, 100, 50, 9000, 1, 1)).view, -40); // the low e strip can go down to note 0
       final high = moved(F, six, const PinchStep(50, 900, 50, -9000, 1, 1)).view;
       expect(64 + high + 20 - 0.5, closeTo(127, 1e-9)); // the bottom row of the high e strip is g9
     });
@@ -176,7 +177,10 @@ void main() {
 
   test('key guide: g major keeps g a b c d e f#, greys the rest', () {
     const g = 7;
-    final inG = [for (var m = 0; m < 12; m++) if (inKey(60 + m, g, 'maj')) noteName(60 + m).substring(0, noteName(60 + m).length - 1)];
+    final inG = [
+      for (var m = 0; m < 12; m++)
+        if (inKey(60 + m, g, 'maj')) noteName(60 + m).substring(0, noteName(60 + m).length - 1)
+    ];
     expect(inG, ['c', 'd', 'e', 'f#', 'g', 'a', 'b']);
     expect(inKey(61, g, 'off'), isTrue); // no key: everything is in
     expect(isRoot(43, g) && !isRoot(45, g), isTrue);

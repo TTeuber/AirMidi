@@ -11,7 +11,12 @@ void main() {
   test('setup: MPE configuration on the manager channel, ±48 on each member', () {
     final m = mpeSetup(3);
     expect(m.take(6), [
-      [0xB0, 101, 0], [0xB0, 100, 6], [0xB0, 6, 3], [0xB0, 38, 0], [0xB0, 101, 127], [0xB0, 100, 127]
+      [0xB0, 101, 0],
+      [0xB0, 100, 6],
+      [0xB0, 6, 3],
+      [0xB0, 38, 0],
+      [0xB0, 101, 127],
+      [0xB0, 100, 127]
     ]);
     expect(m.length, 6 * 4);
     expect(m[6 + 2], [0xB1, 6, 48]); // strip 0 = channel 2
@@ -108,10 +113,12 @@ void main() {
   });
 
   test('UMP: MIDI 1.0 channel voice words, big-endian', () {
-    expect(umpWords([
-      [0x91, 50, 100],
-      [0xE1, 0, 64]
-    ]), [0x20, 0x91, 50, 100, 0x20, 0xE1, 0, 64]);
+    expect(
+        umpWords([
+          [0x91, 50, 100],
+          [0xE1, 0, 64]
+        ]),
+        [0x20, 0x91, 50, 100, 0x20, 0xE1, 0, 64]);
   });
 
   test('BLE MIDI in: header and timestamps out, running status kept', () {

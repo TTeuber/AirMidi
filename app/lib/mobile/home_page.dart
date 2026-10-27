@@ -10,7 +10,8 @@ import 'package:airmidi/mobile/android_midi.dart';
 import 'package:airmidi/shared/boxes.dart';
 import 'package:airmidi/shared/discovery.dart';
 import 'package:airmidi/shared/link/link.dart';
-import 'package:airmidi/shared/ui/strips_page.dart';
+import 'package:airmidi/mobile/play_page.dart';
+import 'package:airmidi/shared/ui/theme.dart';
 
 class MobileHome extends StatefulWidget {
   const MobileHome({super.key});
@@ -22,7 +23,7 @@ class MobileHome extends StatefulWidget {
 class _MobileHomeState extends State<MobileHome> {
   final discovery = Discovery();
   late final boxes =
-      Boxes(discovery, playLabel: 'play the strips', play: (link, synth) => StripsPage(link: link, synth: synth));
+      Boxes(discovery, playLabel: 'play', play: (link, synth) => PlayPage(link: link, synth: synth, closeLink: true));
   final host = TextEditingController();
   String? error; // the last connect failure, kept until the next attempt
   bool busy = false;
@@ -71,7 +72,7 @@ class _MobileHomeState extends State<MobileHome> {
       if (mounted) setState(() => busy = false);
     }
     if (link == null || !mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => StripsPage(link: link)));
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => PlayPage(link: link)));
     await link.close().catchError((_) {});
   }
 
@@ -192,7 +193,7 @@ class _MobileHomeState extends State<MobileHome> {
             ]),
           ],
         ),
-        TextButton(onPressed: () => _open(() async => const StripsPage()), child: const Text('play without a box')),
+        TextButton(onPressed: () => _open(() async => const PlayPage()), child: const Text('play without a box')),
       ]),
     );
   }

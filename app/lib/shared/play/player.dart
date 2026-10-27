@@ -112,10 +112,10 @@ class Player {
     _busy = false;
   }
 
+  /// Notes off; the link stays open (whoever opened it closes it: the strips may be one of several surfaces on it).
   Future<void> dispose() async {
     _tick?.cancel();
     _setupTimer?.cancel();
     await allOff();
-    await link?.close();
   }
 }

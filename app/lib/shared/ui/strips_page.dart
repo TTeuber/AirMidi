@@ -44,7 +44,8 @@ class Settings {
 class StripsPage extends StatefulWidget {
   final MidiLink? link;
   final SynthState? synth; // the box's MIDI-CI device, for the synth page; null without a box
-  const StripsPage({super.key, this.link, this.synth});
+  final VoidCallback? onSurface; // the phone: a bar button to switch to the keys or pads
+  const StripsPage({super.key, this.link, this.synth, this.onSurface});
 
   @override
   State<StripsPage> createState() => _StripsPageState();
@@ -241,6 +242,11 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
             child: Row(children: [
               _barButton(widget.synth == null ? 'back' : 'box', () => Navigator.of(context).maybePop()),
               _barButton('synth', _openSynth, enabled: widget.synth != null && widget.link != null),
+              if (widget.onSurface != null)
+                _barButton('strips', () {
+                  _leaveMove();
+                  widget.onSurface!();
+                }),
               _barButton(moving ? 'done' : 'move', _toggleMove, lit: moving),
               _barButton(
                   showSettings ? 'done' : 'layout',

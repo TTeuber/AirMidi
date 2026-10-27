@@ -32,7 +32,8 @@ void main() {
     expect(names(s[0]), 'XY,Env Amt,ENV');
     final pad = s[0].items[0] as XyPad, fenv = s[0].items[2] as Envelope;
     expect([pad.x.title, pad.y.title], ['Cutoff', 'Resonance']);
-    expect([for (final c in fenv.controls) c.title], ['Filter Attack', 'Filter Decay', 'Filter Sustain', 'Filter Release']);
+    expect([for (final c in fenv.controls) c.title],
+        ['Filter Attack', 'Filter Decay', 'Filter Sustain', 'Filter Release']);
     expect(fenv.title, ''); // /filter/env in section filter: nothing more to say
     final amp = s[1].items.single as Envelope;
     expect([for (final c in amp.controls) c.title], ['Amp Attack', 'Amp Decay', 'Amp Sustain', 'Amp Release']);
@@ -54,7 +55,8 @@ void main() {
     final d = Device.fromApi({
       'controls': [
         for (final (g, n) in [('amp', 0), ('filter', 10)])
-          for (final (i, st) in ['attack', 'decay', 'sustain', 'release'].indexed) ctl(st, 20 + n + i, path: '/env/$g/$st'),
+          for (final (i, st) in ['attack', 'decay', 'sustain', 'release'].indexed)
+            ctl(st, 20 + n + i, path: '/env/$g/$st'),
       ],
     });
     final s = sections(d);
@@ -80,7 +82,11 @@ void main() {
 
   test('three of four stages make no envelope', () {
     final d = Device.fromApi({
-      'controls': [ctl('a', 1, path: '/env/attack'), ctl('d', 2, path: '/env/decay'), ctl('r', 3, path: '/env/release')],
+      'controls': [
+        ctl('a', 1, path: '/env/attack'),
+        ctl('d', 2, path: '/env/decay'),
+        ctl('r', 3, path: '/env/release')
+      ],
     });
     expect(names(sections(d).single), 'a,d,r');
   });
@@ -120,12 +126,27 @@ void main() {
       final want = 20 * math.pow(2, 10 * x); // engine/controls.cpp cutoffHz
       expect(hertz(d, cutoff)! / want, closeTo(1, 0.01), reason: 'x=$x');
     }
-    expect([for (final t in ['500Hz', '1.2k', '20 kHz', '3s']) hertzOf(t)], [500, 1200, 20000, null]);
-    expect([for (final hz in [480.0, 1234.0, 12400.0]) formatHertz(hz)], ['480 Hz', '1.2 kHz', '12 kHz']);
+    expect([
+      for (final t in ['500Hz', '1.2k', '20 kHz', '3s']) hertzOf(t)
+    ], [
+      500,
+      1200,
+      20000,
+      null
+    ]);
+    expect([
+      for (final hz in [480.0, 1234.0, 12400.0]) formatHertz(hz)
+    ], [
+      '480 Hz',
+      '1.2 kHz',
+      '12 kHz'
+    ]);
   });
 
   test('wave shapes from value names', () {
-    expect([for (final t in ['Saw', 'Sawtooth', 'Square', 'Tri', 'Sine', 'Pulse', 'Noise', 'Super']) waveShapeOf(t)], [
+    expect([
+      for (final t in ['Saw', 'Sawtooth', 'Square', 'Tri', 'Sine', 'Pulse', 'Noise', 'Super']) waveShapeOf(t)
+    ], [
       WaveShape.saw,
       WaveShape.saw,
       WaveShape.square,
@@ -142,8 +163,16 @@ void main() {
     expect(secondsOf('1.5 s'), 1.5);
     expect(secondsOf('1k'), isNull);
     expect(secondsOf('0ms'), isNull);
-    expect([for (final s in [0.0012, 0.0045, 0.0273, 0.35, 1.23, 12.4]) formatSeconds(s)],
-        ['1.2 ms', '4.5 ms', '27 ms', '350 ms', '1.2 s', '12 s']);
+    expect([
+      for (final s in [0.0012, 0.0045, 0.0273, 0.35, 1.23, 12.4]) formatSeconds(s)
+    ], [
+      '1.2 ms',
+      '4.5 ms',
+      '27 ms',
+      '350 ms',
+      '1.2 s',
+      '12 s'
+    ]);
   });
 
   test('shape: segments by knob position, sustain at its level', () {

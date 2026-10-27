@@ -24,7 +24,8 @@ class DesktopHome extends StatefulWidget {
 class _DesktopHomeState extends State<DesktopHome> {
   final discovery = Discovery();
   // the desktop has no touch screen: the keys first, the strips a button away
-  late final boxes = Boxes(discovery, playLabel: 'play', play: (link, synth) => KeysPage(link: link, synth: synth));
+  late final boxes =
+      Boxes(discovery, playLabel: 'play', play: (link, synth) => KeysPage(link: link, synth: synth, closeLink: true));
   final host = TextEditingController();
   String? error; // the last connect failure, kept until the next attempt
   bool busy = false;

@@ -5,13 +5,51 @@ import 'package:flutter_test/flutter_test.dart';
 Map<String, dynamic> api() => {
       'info': {'manufacturer': 'Daisy', 'model': 'Poly Synth'},
       'controls': [
-        {'title': 'Cutoff', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [74], 'priority': 1, 'default': 2164392960, 'ctrlMapId': 'cutoff'},
-        {'title': 'Wave', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [70], 'priority': 1, 'default': 0, 'typeHint': 'valueSelect', 'ctrlMapId': 'wave'},
-        {'title': 'Glide', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [65], 'priority': 1, 'default': 0, 'typeHint': 'toggle'},
-        {'title': 'Detune', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [94], 'priority': 2, 'default': 1352663040},
+        {
+          'title': 'Cutoff',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [74],
+          'priority': 1,
+          'default': 2164392960,
+          'ctrlMapId': 'cutoff'
+        },
+        {
+          'title': 'Wave',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [70],
+          'priority': 1,
+          'default': 0,
+          'typeHint': 'valueSelect',
+          'ctrlMapId': 'wave'
+        },
+        {
+          'title': 'Glide',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [65],
+          'priority': 1,
+          'default': 0,
+          'typeHint': 'toggle'
+        },
+        {
+          'title': 'Detune',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [94],
+          'priority': 2,
+          'default': 1352663040
+        },
         {'title': 'Bend', 'channel': 1, 'ctrlType': 'pBend', 'priority': 2, 'default': 2147483648},
         {'title': 'Pressure', 'channel': 2, 'ctrlType': 'polyPress', 'priority': 1}, // per note: not shown
-        {'title': 'Hidden', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [3], 'priority': 5},
+        {
+          'title': 'Hidden',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [3],
+          'priority': 5
+        },
       ],
       'maps': {
         'cutoff': [
@@ -38,7 +76,8 @@ void main() {
   test('kinds: fader, a picker over named values, a toggle', () {
     final d = Device.fromApi(api());
     final k = {for (final c in d.controls) c.title: d.kind(c)};
-    expect(k, {'Cutoff': Kind.fader, 'Wave': Kind.select, 'Glide': Kind.toggle, 'Detune': Kind.fader, 'Bend': Kind.fader});
+    expect(
+        k, {'Cutoff': Kind.fader, 'Wave': Kind.select, 'Glide': Kind.toggle, 'Detune': Kind.fader, 'Bend': Kind.fader});
     expect(d.options(d.controls[1]).map((o) => o.title), ['Saw', 'Square', 'Triangle']);
   });
 
@@ -72,7 +111,11 @@ void main() {
   test('a profile when there is no MIDI-CI list', () {
     final d = Device.fromApi({
       'profile': [
-        {'title': 'Volume', 'ctrlType': 'cc', 'ctrlIndex': [7]}
+        {
+          'title': 'Volume',
+          'ctrlType': 'cc',
+          'ctrlIndex': [7]
+        }
       ]
     });
     expect(d.controls.single.title, 'Volume');

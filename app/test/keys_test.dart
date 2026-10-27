@@ -114,4 +114,15 @@ void main() {
     expect(noteName(60), 'c4');
     expect(isBlack(61), isTrue);
   });
+
+  test('phone keys: two octaves, the higher on top; velocity by where the key is struck', () {
+    final g = KeyRows(60, 700, 400); // rows of 200 px, 8 white keys of 87.5 px each
+    expect(g.hit(10, 390)!.$1, 60); // bottom row, c4
+    expect(g.hit(10, 190)!.$1, 72); // top row, c5
+    expect(g.hit(690, 390)!.$1, 72); // the bottom row's last key is the next c
+    expect(g.hit(87.5 * 0.68 + 20, 210)!.$1, 61); // a black key, near its top
+    final soft = g.hit(10, 205)!.$2, hard = g.hit(10, 395)!.$2;
+    expect(soft < 50 && hard > 120, isTrue);
+    expect(g.hit(10, 400), isNull);
+  });
 }

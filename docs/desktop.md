@@ -139,7 +139,9 @@ by hand there.
 
 Done 2026-10-26: the split (`lib/shared`, `lib/mobile`, `lib/desktop`; the box page takes each app's play page).
 
-Order: phone keys and pads; the router; the desktop play view (keys and synth controls on one
+Done 2026-10-26: phone keys and pads (docs/app.md).
+
+Order: the router; the desktop play view (keys and synth controls on one
 page); then the DAW (design doc, arrangement and piano roll first).
 
 ## Open

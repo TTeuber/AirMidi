@@ -180,6 +180,14 @@ Status (2026-10-24):
   the page scrolls only from the faders, headings and readouts.
 - The box page shows the box's web page address in Network and Setup mode (2026-10-26): its IP and `<name>.local`,
   both open the browser (url_launcher); tried on the Pixel, both load the page.
+- Keys and pads (2026-10-26): "play" opens one page per link that swaps the surface (`mobile/play_page.dart`; the
+  bar's surface button: strips / keys / pads), so switching does not reconnect. Keys (`mobile/touch_keys_page.dart`):
+  two octaves stacked, a note per finger, a slide plays each key it reaches, velocity from where the key is struck,
+  octave buttons; it turns the strips' MPE zone off first (MCM with no members). Pads (`mobile/pads_page.dart`): 4 x 4
+  on the GM drum map, channel 10, velocity from where the finger lands, banks of 16. Logic shared with the desktop
+  (`shared/play/keys.dart`). Tried on the Pixel through the box (Wi-Fi) to daisy_synth: 4 taps and a slide c4..g4 = 18
+  messages out of the box's TRS, 3 pads = 6. A slide that starts at a screen edge is Android's back gesture: both
+  pages keep 10 px from the edges. The strips player no longer closes the link (whoever opened it does).
 - Direct to a computer (2026-10-26, "Without a box" above): USB tried end to end (the Mac logged the setup once, the
   note with its bend first, 114 bends of a slide, the note off; back and reopen works). The user played Logic over
   both USB and BLE, both work.
@@ -219,3 +227,4 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-26 | Synth page in sections by `paramPath`; ADSR groups become an envelope editor (path first, then titles like "Amp Attack") | user: reusable widgets instead of a slider per parameter; standard M2-117 data, no extension needed |
 | 2026-10-26 | XY pad for cutoff + resonance, wave icons, a graphics on/off switch; daisy_synth gets a separate filter envelope (CCs 86, 87, 89, 90; v0.2) | user: more widgets to try, and to compare the page with and without them |
 | 2026-10-26 | Desktop app planned (docs/desktop.md): same Flutter app, macOS first, Windows/Linux later; one native MIDI engine on libremidi via ffi; one tracks page with clip and step tracks; the sequencer on the computer, leading the clock by default, following Logic as a second mode | user: no `.local` name to know, the web page's limits as features grow, Windows/Linux someday, clips record live playing from any input |
+| 2026-10-26 | One project, two apps (lib/shared, lib/mobile, lib/desktop); piano keys and drum pads on the phone next to the strips | user: the desktop should not copy the phone's pages; keys and pads as playing surfaces on the phone too |

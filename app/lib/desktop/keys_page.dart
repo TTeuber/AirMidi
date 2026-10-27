@@ -15,7 +15,8 @@ import 'package:airmidi/shared/ui/synth_page.dart';
 class KeysPage extends StatefulWidget {
   final MidiLink link;
   final SynthState? synth; // the box's MIDI-CI device; null without a box
-  const KeysPage({super.key, required this.link, this.synth});
+  final bool closeLink; // the page was handed a link of its own (a box's): it closes it
+  const KeysPage({super.key, required this.link, this.synth, this.closeLink = false});
 
   @override
   State<KeysPage> createState() => _KeysPageState();
@@ -42,6 +43,7 @@ class _KeysPageState extends State<KeysPage> {
   @override
   void dispose() {
     _send(keys.allOff());
+    if (widget.closeLink) widget.link.close().catchError((_) {});
     wheelTimer?.cancel();
     life.dispose();
     focus.dispose();
@@ -266,34 +268,6 @@ class _KeysPageState extends State<KeysPage> {
             style: TextStyle(color: on ? cBg : cN, fontSize: 12)),
       ),
     );
-  }
-}
-
-/// Where the keys of [lo]..[hi] are in a [w] x [h] box: white keys side by side, black keys on top over the top 60 %.
-class PianoGeometry {
-  final int lo, hi;
-  final double w, h;
-  late final List<int> whites = [
-    for (var n = lo; n <= hi; n++)
-      if (!isBlack(n)) n
-  ];
-  late final double ww = w / whites.length;
-  PianoGeometry(this.lo, this.hi, this.w, this.h);
-
-  double whiteX(int n) => whites.indexOf(n) * ww;
-
-  /// A black key sits across the boundary after the white key below it.
-  Rect blackRect(int n) => Rect.fromLTWH(whiteX(n - 1) + ww * 0.68, 0, ww * 0.64, h * 0.6);
-
-  Rect rect(int n) => isBlack(n) ? blackRect(n) : Rect.fromLTWH(whiteX(n), 0, ww, h);
-
-  int? noteAt(double x, double y) {
-    if (x < 0 || x >= w || y < 0 || y > h) return null;
-    for (var n = lo; n <= hi; n++) {
-      if (isBlack(n) && blackRect(n).contains(Offset(x, y))) return n;
-    }
-    final i = (x / ww).floor().clamp(0, whites.length - 1);
-    return whites[i];
   }
 }
 

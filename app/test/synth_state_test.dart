@@ -13,8 +13,20 @@ class FakeConfig implements ConfigClient {
     reads++;
     return {
       'controls': [
-        {'title': 'Attack', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [73], 'default': 0},
-        {'title': 'Cutoff', 'channel': 1, 'ctrlType': 'cc', 'ctrlIndex': [74], 'default': 2147483648},
+        {
+          'title': 'Attack',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [73],
+          'default': 0
+        },
+        {
+          'title': 'Cutoff',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [74],
+          'default': 2147483648
+        },
       ]
     };
   }

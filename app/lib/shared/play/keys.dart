@@ -153,3 +153,56 @@ List<int> bendAt(int ch, double v) {
   final b = (8192 + v.clamp(-1.0, 1.0) * 8191).round().clamp(0, 16383);
   return [0xE0 | ch, b & 0x7F, b >> 7];
 }
+
+/// Where the keys of [lo]..[hi] are in a [w] x [h] box: white keys side by side, black keys on top over the top 60 %.
+class PianoGeometry {
+  final int lo, hi;
+  final double w, h;
+  late final List<int> whites = [
+    for (var n = lo; n <= hi; n++)
+      if (!isBlack(n)) n
+  ];
+  late final double ww = w / whites.length;
+  PianoGeometry(this.lo, this.hi, this.w, this.h);
+
+  double whiteX(int n) => whites.indexOf(n) * ww;
+
+  /// A black key sits across the boundary after the white key below it.
+  Rect blackRect(int n) => Rect.fromLTWH(whiteX(n - 1) + ww * 0.68, 0, ww * 0.64, h * 0.6);
+
+  Rect rect(int n) => isBlack(n) ? blackRect(n) : Rect.fromLTWH(whiteX(n), 0, ww, h);
+
+  int? noteAt(double x, double y) {
+    if (x < 0 || x >= w || y < 0 || y > h) return null;
+    for (var n = lo; n <= hi; n++) {
+      if (isBlack(n) && blackRect(n).contains(Offset(x, y))) return n;
+    }
+    final i = (x / ww).floor().clamp(0, whites.length - 1);
+    return whites[i];
+  }
+}
+
+/// The phone's keys: [rows] octaves stacked (the highest on top), each from c to the next c, in a [w] x [h] box.
+class KeyRows {
+  final int low, rows;
+  final double w, h;
+  late final double rowH = h / rows;
+  late final List<PianoGeometry> octaves = [
+    for (var r = 0; r < rows; r++) PianoGeometry(lowOf(r), lowOf(r) + 12, w, rowH)
+  ];
+  KeyRows(this.low, this.w, this.h, {this.rows = 2});
+
+  /// The c that starts row [r] (0 = top).
+  int lowOf(int r) => low + 12 * (rows - 1 - r);
+
+  /// The note under (x, y) and how hard it was struck: harder towards the front (bottom) of the key, 40..127.
+  (int, int)? hit(double x, double y) {
+    if (y < 0 || y >= h) return null;
+    final r = (y / rowH).floor().clamp(0, rows - 1);
+    final g = octaves[r], ly = y - r * rowH;
+    final n = g.noteAt(x, ly);
+    if (n == null) return null;
+    final k = g.rect(n);
+    return (n, (40 + 87 * ((ly - k.top) / k.height).clamp(0.0, 1.0)).round());
+  }
+}
