@@ -5,7 +5,11 @@
 // the white keys from C, the row above the black keys between them. Z/X move an octave, C/V change the velocity,
 // Tab holds the sustain pedal. Keys are matched by position (physical key), so other keyboard layouts get the same
 // shape.
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
+
+import 'package:airmidi/shared/strips/strips.dart' show PinchStep;
 
 /// Semitones above the octave's C, by physical key.
 final kKeyNotes = <PhysicalKeyboardKey, int>{
@@ -182,27 +186,53 @@ class PianoGeometry {
   }
 }
 
-/// The phone's keys: [rows] octaves stacked (the highest on top), each from c to the next c, in a [w] x [h] box.
-class KeyRows {
-  final int low, rows;
-  final double w, h;
-  late final double rowH = h / rows;
-  late final List<PianoGeometry> octaves = [
-    for (var r = 0; r < rows; r++) PianoGeometry(lowOf(r), lowOf(r) + 12, w, rowH)
-  ];
-  KeyRows(this.low, this.w, this.h, {this.rows = 2});
+/// The white key [n] is on, counted from note 0 (a black key: the white key below it). 75 white keys in 0..127.
+int whiteIndex(int n) => n ~/ 12 * 7 + const [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][n % 12];
+const kWhiteKeys = 75;
 
-  /// The c that starts row [r] (0 = top).
-  int lowOf(int r) => low + 12 * (rows - 1 - r);
+/// The note of white key [i].
+int whiteNote(int i) => i ~/ 7 * 12 + const [0, 2, 4, 5, 7, 9, 11][i % 7];
+
+/// The phone's keys (landscape): one keyboard across a [w] x [h] box, scrolled [view] white keys up from note 0, each
+/// white key [ww] px wide; black keys on top over the top 60 %, as on [PianoGeometry].
+class PianoView {
+  final double view, ww, w, h;
+  PianoView(this.view, this.ww, this.w, this.h);
+
+  double xOf(double white) => (white - view) * ww;
+
+  /// The notes at least partly on screen.
+  int get lo => whiteNote(view.floor().clamp(0, kWhiteKeys - 1));
+  int get hi => math.min(127, whiteNote(((view + w / ww).ceil() - 1).clamp(0, kWhiteKeys - 1)) + 1);
+
+  Rect rect(int n) => isBlack(n)
+      ? Rect.fromLTWH(xOf(whiteIndex(n - 1).toDouble()) + ww * 0.68, 0, ww * 0.64, h * 0.6)
+      : Rect.fromLTWH(xOf(whiteIndex(n).toDouble()), 0, ww, h);
 
   /// The note under (x, y) and how hard it was struck: harder towards the front (bottom) of the key, 40..127.
   (int, int)? hit(double x, double y) {
-    if (y < 0 || y >= h) return null;
-    final r = (y / rowH).floor().clamp(0, rows - 1);
-    final g = octaves[r], ly = y - r * rowH;
-    final n = g.noteAt(x, ly);
-    if (n == null) return null;
-    final k = g.rect(n);
-    return (n, (40 + 87 * ((ly - k.top) / k.height).clamp(0.0, 1.0)).round());
+    if (x < 0 || x >= w || y < 0 || y >= h) return null;
+    int? n;
+    for (var b = lo; b <= hi; b++) {
+      if (isBlack(b) && rect(b).contains(Offset(x, y))) n = b;
+    }
+    if (n == null) {
+      final i = (view + x / ww).floor();
+      if (i < 0 || i >= kWhiteKeys) return null;
+      n = whiteNote(i);
+    }
+    final k = rect(n);
+    return (n, (40 + 87 * ((y - k.top) / k.height).clamp(0.0, 1.0)).round());
   }
+}
+
+const kKeyWidthRange = (7.0, 30.0); // mm, a white key
+
+/// Move mode on the phone's keys: one finger scrolls, two pinched across change the key width round their centre
+/// (the key under it stays under it). Scroll ends on the keyboard's ends. Returns (view, white key width in mm).
+(double, double) movedKeys(double view, double widthMm, double w, double pxPerMm, PinchStep p) {
+  final ww0 = widthMm * pxPerMm;
+  final width = (widthMm * p.sx).clamp(kKeyWidthRange.$1, kKeyWidthRange.$2), ww1 = width * pxPerMm;
+  final v = view + p.fx / ww0 - p.nx / ww1;
+  return (v.clamp(0.0, math.max(0.0, kWhiteKeys - w / ww1)), width);
 }

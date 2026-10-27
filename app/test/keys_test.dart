@@ -1,4 +1,5 @@
 import 'package:airmidi/shared/play/keys.dart';
+import 'package:airmidi/shared/strips/strips.dart' show PinchStep;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -115,14 +116,33 @@ void main() {
     expect(isBlack(61), isTrue);
   });
 
-  test('phone keys: two octaves, the higher on top; velocity by where the key is struck', () {
-    final g = KeyRows(60, 700, 400); // rows of 200 px, 8 white keys of 87.5 px each
-    expect(g.hit(10, 390)!.$1, 60); // bottom row, c4
-    expect(g.hit(10, 190)!.$1, 72); // top row, c5
-    expect(g.hit(690, 390)!.$1, 72); // the bottom row's last key is the next c
-    expect(g.hit(87.5 * 0.68 + 20, 210)!.$1, 61); // a black key, near its top
-    final soft = g.hit(10, 205)!.$2, hard = g.hit(10, 395)!.$2;
+  test('phone keys: one keyboard scrolled by white keys; velocity by where the key is struck', () {
+    expect([whiteIndex(0), whiteIndex(60), whiteIndex(61), whiteIndex(127)], [0, 35, 35, 74]);
+    expect([whiteNote(35), whiteNote(36), whiteNote(74)], [60, 62, 127]);
+    final g = PianoView(35, 80, 800, 300); // c4 at the left edge, ten white keys of 80 px
+    expect(g.hit(10, 290)!.$1, 60);
+    expect(g.hit(790, 290)!.$1, 76); // e5, the tenth white key
+    expect(g.hit(80 * 0.68 + 20, 20)!.$1, 61); // a black key, near its top
+    expect((g.lo, g.hi), (60, 77)); // e5 and the f just past it (its edge is on screen)
+    final soft = g.hit(10, 5)!.$2, hard = g.hit(10, 295)!.$2;
     expect(soft < 50 && hard > 120, isTrue);
-    expect(g.hit(10, 400), isNull);
+    expect(g.hit(10, 300), isNull);
+    final half = PianoView(35.5, 80, 800, 300); // half a key scrolled: c4's right half at the left
+    expect(half.hit(10, 290)!.$1, 60);
+    expect(half.hit(50, 290)!.$1, 62);
+  });
+
+  test('phone keys move mode: a drag scrolls, a pinch keeps the key under the fingers', () {
+    // one finger 160 px left: two white keys of 80 px (10 mm at 8 px/mm) up
+    var (v, w) = movedKeys(35, 10, 800, 8, const PinchStep(400, 100, 240, 100, 1, 1));
+    expect((v, w), (37.0, 10.0));
+    // the fingers spread to twice as far apart round x = 400: keys twice as wide, the key at 400 stays there
+    (v, w) = movedKeys(35, 10, 800, 8, const PinchStep(400, 100, 400, 100, 2, 1));
+    expect(w, 20.0);
+    expect(v + 400 / (20 * 8), 35 + 400 / (10 * 8));
+    // clamped at the ends and to the width range
+    expect(movedKeys(1, 10, 800, 8, const PinchStep(0, 0, 800, 0, 1, 1)).$1, 0.0);
+    expect(movedKeys(70, 10, 800, 8, const PinchStep(800, 0, 0, 0, 1, 1)).$1, 75 - 800 / 80);
+    expect(movedKeys(35, 10, 800, 8, const PinchStep(400, 0, 400, 0, 9, 1)).$2, kKeyWidthRange.$2);
   });
 }

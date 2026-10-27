@@ -1,6 +1,7 @@
 // The phone's ways to play one link (docs/app.md): the strips, piano keys, drum pads. One page holds the link and
 // swaps the surface, so switching does not reconnect; the bar's surface button opens the choice.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:airmidi/mobile/pads_page.dart';
 import 'package:airmidi/mobile/touch_keys_page.dart';
@@ -22,9 +23,27 @@ class PlayPage extends StatefulWidget {
 
 class _PlayPageState extends State<PlayPage> {
   Surface surface = Surface.strips;
+  final keysView = KeysView();
+
+  @override
+  void initState() {
+    super.initState();
+    _screen();
+  }
+
+  // The keys lie across the phone, the strips and pads stand up. After the frame: the surface that was there sets
+  // its own modes when it goes.
+  void _screen() => WidgetsBinding.instance.addPostFrameCallback((_) {
+        SystemChrome.setPreferredOrientations(surface == Surface.keys
+            ? [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]
+            : [DeviceOrientation.portraitUp]);
+        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      });
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     if (widget.closeLink) widget.link?.close().catchError((_) {});
     super.dispose();
   }
@@ -55,13 +74,16 @@ class _PlayPageState extends State<PlayPage> {
         ),
       ),
     );
-    if (s != null && mounted) setState(() => surface = s);
+    if (s != null && mounted && s != surface) {
+      setState(() => surface = s);
+      _screen();
+    }
   }
 
   @override
   Widget build(BuildContext context) => switch (surface) {
         Surface.strips => StripsPage(link: widget.link, synth: widget.synth, onSurface: _choose),
-        Surface.keys => TouchKeysPage(link: widget.link, synth: widget.synth, onSurface: _choose),
+        Surface.keys => TouchKeysPage(link: widget.link, synth: widget.synth, onSurface: _choose, view: keysView),
         Surface.pads => PadsPage(link: widget.link, synth: widget.synth, onSurface: _choose),
       };
 }

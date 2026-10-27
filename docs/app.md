@@ -188,6 +188,13 @@ Status (2026-10-24):
   (`shared/play/keys.dart`). Tried on the Pixel through the box (Wi-Fi) to daisy_synth: 4 taps and a slide c4..g4 = 18
   messages out of the box's TRS, 3 pads = 6. A slide that starts at a screen edge is Android's back gesture: both
   pages keep 10 px from the edges. The strips player no longer closes the link (whoever opened it does).
+- Keys in landscape with a move mode (2026-10-26, user): one keyboard across the phone held sideways (the play page
+  turns the screen per surface: keys landscape, strips and pads portrait), scrolled by white keys (`PianoView`). Move
+  mode as on the strips: one finger drags the keys along, two pinched across change the white key's width (7-30 mm,
+  14 to start; `movedKeys` keeps the key under the fingers' centre), and on lifting the view glides onto a whole key.
+  oct -/+ glide seven white keys. The play page keeps the view, so a surface switch does not lose it. Tried on the
+  Pixel: the layout, a drag settling on a whole key, back to portrait on leaving; the pinch is in the widget test
+  (adb cannot pinch).
 - Direct to a computer (2026-10-26, "Without a box" above): USB tried end to end (the Mac logged the setup once, the
   note with its bend first, 114 bends of a slide, the note off; back and reopen works). The user played Logic over
   both USB and BLE, both work.
