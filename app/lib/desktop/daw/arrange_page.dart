@@ -9,6 +9,7 @@
 // cmd-O open. After a click in
 // the bottom panel the editor gets the keys first (the piano roll's delete removes notes, not the clip).
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -20,6 +21,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'package:airmidi/desktop/daw/compile.dart' show patternToMidi;
+import 'package:airmidi/desktop/daw/devices.dart';
 import 'package:airmidi/desktop/daw/history.dart';
 import 'package:airmidi/desktop/daw/keys_bus.dart';
 import 'package:airmidi/desktop/daw/model.dart';
@@ -32,6 +34,8 @@ import 'package:airmidi/desktop/daw/store.dart';
 import 'package:airmidi/desktop/daw/timeline.dart';
 import 'package:airmidi/desktop/desktop_midi.dart';
 import 'package:airmidi/desktop/keys_page.dart';
+import 'package:airmidi/shared/discovery.dart';
+import 'package:airmidi/shared/ui/synth_page.dart' show SynthControls;
 import 'package:airmidi/shared/ui/theme.dart';
 
 Project _fresh() => Project(tracks: [
@@ -42,12 +46,14 @@ final _project = _fresh();
 final _history = History(_project);
 DawPlayer? _player;
 ProjectStore? _store;
+TrackSynths? _synths;
 Clip? _clipboard;
 
 const kHeaderW = 230.0;
 
 class ArrangePage extends StatefulWidget {
-  const ArrangePage({super.key});
+  final Discovery? discovery; // the boxes the desktop has found: where a track's synth controls come from
+  const ArrangePage({super.key, this.discovery});
 
   @override
   State<ArrangePage> createState() => _ArrangePageState();
@@ -56,12 +62,16 @@ class ArrangePage extends StatefulWidget {
 class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStateMixin {
   late final DawPlayer player = _player ??= DawPlayer(_project, _history, DesktopMidi.engine);
   late final ProjectStore store = _store ??= ProjectStore(_project, _history)..start();
+  late final TrackSynths synths = _synths ??= TrackSynths(player, DesktopMidi.engine);
+  Track? track; // the track the device tab shows: the last clicked header, or the selected clip's
+  String panelTab = 'clip'; // or 'device'
+  String? note; // what a fetch is doing
   late final Ticker ticker = createTicker((_) => setState(() {})); // the playhead
   final view = ArrangeView();
   final focus = FocusNode();
   StreamSubscription<void>? _ports;
   Clip? selected;
-  double panelH = 330;
+  double panelH = 400;
   bool editorKeys = false; // the last click was in the bottom panel
   GlobalKey<PianoRollState> rollKey = GlobalKey();
   int? _rollFor; // the clip the roll's state belongs to
@@ -249,6 +259,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     final i = p.tracks.indexOf(t);
     final r = await _menu(at, [
       ('rename', 'rename'),
+      ('synth controls from ...', 'device'),
       if (i > 0) ('move up', 'up'),
       if (i < p.tracks.length - 1) ('move down', 'down'),
       ('remove', 'remove'),
@@ -256,6 +267,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     switch (r) {
       case 'rename':
         await _rename('track name', t.name, (v) => t.name = v);
+      case 'device':
+        await _deviceMenu(t, at);
       case 'up':
         _edit(() => p.tracks.insert(i - 1, p.tracks.removeAt(i)));
       case 'down':
@@ -307,9 +320,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
 
   Future<void> _export() async {
     final at = await getSaveLocation(
-        acceptedTypeGroups: [_midiFiles],
-        initialDirectory: ProjectStore.defaultDir,
-        suggestedName: store.name);
+        acceptedTypeGroups: [_midiFiles], initialDirectory: ProjectStore.defaultDir, suggestedName: store.name);
     if (at != null) {
       try {
         await File(at.path).writeAsBytes(exportSmf(p));
@@ -364,6 +375,63 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
         await _open(r.substring(7));
     }
     focus.requestFocus();
+  }
+
+  // ---- a track's synth
+
+  Future<void> _deviceMenu(Track t, Offset at) async {
+    final boxes = [
+      for (final s in widget.discovery?.list ?? const <Sighting>[])
+        if (s.id != null && (s.onWifi || s.onBle)) s
+    ];
+    final v = await _menu<Object>(at, [
+      for (final s in boxes) ('${s.name} (${s.onWifi ? 'wi-fi' : 'bluetooth'}): its synth', s),
+      if (boxes.isEmpty) ('no box found yet', 'none-found'),
+      ('a control list file (JSON) ...', 'file'),
+      if (t.device != null) ('none', 'clear'),
+    ]);
+    try {
+      if (v is Sighting) {
+        setState(() => note = 'asking ${v.name} for its synth\'s controls');
+        final j = await fetchDeviceList(widget.discovery!, v);
+        _edit(() => t.device = j);
+        setState(() => note = '${t.name}: ${deviceName(j)}, ${deviceOf(t)!.controls.length} controls');
+      } else if (v == 'file') {
+        final f = await openFile(acceptedTypeGroups: [
+          const XTypeGroup(label: 'JSON', extensions: ['json'])
+        ]);
+        if (f != null) {
+          final j = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+          checkDeviceList(j);
+          _edit(() => t.device = j);
+          setState(() => note = '${t.name}: ${deviceName(j)}');
+        }
+      } else if (v == 'clear') {
+        _edit(() => t.device = null);
+      }
+    } catch (e) {
+      setState(() => note = 'could not get the controls: $e');
+    }
+    focus.requestFocus();
+  }
+
+  Widget _devicePanel() {
+    final t = track ?? (p.tracks.isEmpty ? null : p.tracks.first);
+    if (t == null) return const SizedBox.shrink();
+    final got = synths.of(t);
+    if (got == null) {
+      return Center(
+        child: Text(
+            t.device == null
+                ? '${t.name} has no synth controls yet: right-click its header, "synth controls from ...", and pick '
+                    'a box (it reads them from the synth on its TRS jacks) or a control list file.'
+                : '${t.name} sends nowhere yet: pick its port in the header ("→ send to").',
+            style: const TextStyle(color: cGrey, fontSize: 13)),
+      );
+    }
+    final (synth, link) = got;
+    return SynthControls(
+        key: ObjectKey(synth), synth: synth, link: link, column: 300, padding: const EdgeInsets.all(4));
   }
 
   // ---- keys
@@ -463,7 +531,10 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                           playhead: () => playhead,
                           changed: () => setState(() {}),
                           actions: ArrangeActions(
-                            select: (c) => setState(() => selected = c),
+                            select: (c) => setState(() {
+                              selected = c;
+                              if (c != null) track = p.trackOf(c);
+                            }),
                             open: (c) => setState(() {
                               selected = c;
                               panelH = math.max(panelH, 220);
@@ -519,6 +590,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
         button('rec', () => player.playing ? player.setRecording(!player.recording) : player.play(record: true),
             lit: player.recording, litColor: red),
         button('loop', () => setState(() => p.loopOn = !p.loopOn), lit: p.loopOn),
+        chip('chase', player.chaseOn, () => setState(() => player.chaseOn = !player.chaseOn)),
         chip(player.replace ? 'replace' : 'overdub', player.replace,
             () => setState(() => player.replace = !player.replace)),
         stepper('bpm', p.bpm.round().toString(), () => player.setBpm(p.bpm - 1), () => player.setBpm(p.bpm + 1)),
@@ -561,6 +633,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       playBeat: at,
       pasteAt: inside ? (p.startBeat - c.start + c.offset) % len : 0,
       beatsPerBar: p.beatsPerBar,
+      device: deviceOf(t),
     );
   }
 
@@ -630,11 +703,15 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
           ),
         );
     return GestureDetector(
+      onTap: () => setState(() => track = t),
       onSecondaryTapDown: (d) => _trackMenu(t, d.globalPosition),
       onDoubleTap: () => _rename('track name', t.name, (v) => t.name = v),
       child: Container(
         height: kTrackH,
-        decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF1C2329)))),
+        decoration: BoxDecoration(
+          color: identical(t, track) ? cAc.withValues(alpha: 0.07) : null,
+          border: const Border(bottom: BorderSide(color: Color(0xFF1C2329))),
+        ),
         child: Row(children: [
           Container(width: 5, color: trackHue(i)),
           Expanded(
@@ -684,6 +761,26 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   }
 
   Widget _panel(double playhead) {
+    final t = track ?? (p.tracks.isEmpty ? null : p.tracks.first);
+    final tabs = Row(children: [
+      chip('clip', panelTab == 'clip', () => setState(() => panelTab = 'clip')),
+      const SizedBox(width: 4),
+      chip('device${t == null ? '' : ' · ${t.name}'}', panelTab == 'device', () => setState(() => panelTab = 'device')),
+      const SizedBox(width: 12),
+      if (note != null)
+        Expanded(
+            child: Text(note!, style: const TextStyle(color: cGrey, fontSize: 12), overflow: TextOverflow.ellipsis)),
+    ]);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(height: 28, child: tabs),
+        Expanded(child: panelTab == 'device' ? _devicePanel() : _clipPanel(playhead)),
+      ]),
+    );
+  }
+
+  Widget _clipPanel(double playhead) {
     final c = selected;
     if (c == null) {
       return const Center(
@@ -702,7 +799,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+      padding: const EdgeInsets.fromLTRB(0, 6, 0, 10), // the panel pads the sides already
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Wrap(spacing: 14, crossAxisAlignment: WrapCrossAlignment.center, children: [
           GestureDetector(

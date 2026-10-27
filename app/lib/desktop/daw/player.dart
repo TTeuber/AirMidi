@@ -60,6 +60,7 @@ class DawPlayer extends ChangeNotifier {
   Timer? _timer;
   bool recording = false;
   bool replace = false; // recording in the loop range: the first pass clears the clip instead of adding to it
+  bool chaseOn = true; // controllers where the song has them when play starts and when the loop starts again
   String? error;
 
   bool get playing => _tl != null;
@@ -168,6 +169,11 @@ class DawPlayer extends ChangeNotifier {
       _send(p, [0xF2, spp & 0x7F, spp >> 7], start - 1000000);
       _send(p, [spp == 0 ? 0xFA : 0xFB], start); // Start, or Continue from the position
     }
+    if (chaseOn) {
+      for (final e in chase(project, from, start - 500000)) {
+        _send(e.port, e.bytes, e.tNs); // half a millisecond before the first beat
+      }
+    }
     if (record) setRecording(true);
     _timer = Timer.periodic(_tick, (_) => _schedule());
     _schedule();
@@ -220,6 +226,10 @@ class DawPlayer extends ChangeNotifier {
       final delta = a - s;
       var end = _looping ? math.min(to, a + (project.loopEnd - s)) : to;
       if (end <= a) end = to; // rounding at the loop's end
+      if (chaseOn && pass > 0 && (s - project.loopStart).abs() < 1e-9) {
+        // the loop starts again: controllers back to where they are at its start
+        out.addAll(chase(project, project.loopStart, tl.nsAt(s + delta) - 1000));
+      }
       out.addAll(compile(project, s, end - delta, (b) => tl.nsAt(b + delta),
           cut: _looping ? project.loopEnd : double.infinity, pass: pass, notes: _notes));
       a = end;
@@ -269,6 +279,9 @@ class DawPlayer extends ChangeNotifier {
     _tl = null;
     notifyListeners();
   }
+
+  /// [bytes] to [port] now (the device tab's controls).
+  void sendNow(String port, List<int> bytes) => _send(port, bytes, 0);
 
   /// A note on or off on [t]'s device now (the piano roll's keys, a note drawn or moved).
   void audition(Track t, int pitch, bool on, int velocity) {

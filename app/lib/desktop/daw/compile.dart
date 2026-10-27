@@ -54,12 +54,66 @@ List<int> _lane(String name, int ch, int v) {
   return const [];
 }
 
+/// How finely a ramp plays: a value every 1/64 beat at most (8 ms at 120 bpm), and only when the message changes.
+const kRampStep = 1 / 64;
+
+/// The values [pts] sends in [from, to) (times in the points' own frame): each point, and along a ramp the grid
+/// steps where [message] changes. The same values come out however the windows fall.
+Iterable<(double, int)> laneValues(List<Point> pts, double from, double to, List<int> Function(int) message) sync* {
+  for (var i = 0; i < pts.length; i++) {
+    final p = pts[i];
+    if (p.t >= from && p.t < to) yield (p.t, p.v);
+    if (!p.ramp || i + 1 >= pts.length) continue;
+    final q = pts[i + 1], span = q.t - p.t;
+    if (span <= 0 || q.t <= from || p.t >= to) continue;
+    int at(int k) => p.v + ((q.v - p.v) * (k * kRampStep / span)).round();
+    final n = (span / kRampStep).ceil();
+    for (var k = math.max(1, ((from - p.t) / kRampStep).floor()); k < n; k++) {
+      final t = p.t + k * kRampStep;
+      if (t >= to) break;
+      if (t < from) continue;
+      final v = at(k);
+      if (!_same(message(v), message(at(k - 1)))) yield (t, v);
+    }
+  }
+}
+
+bool _same(List<int> a, List<int> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 List<int> _expression(String name, int ch, int v) => switch (name) {
       'bend' => _lane('bend', ch, v),
       'pressure' => _lane('pressure', ch, v),
       'timbre' => [0xB0 | ch, 74, down32to7(v)],
       _ => const [],
     };
+
+/// Controller chase (docs/daw.md "Playback"): the last value of every controller, bend, channel pressure and program
+/// before song beat [at], per port and channel, all timed [ns]. Sent first when play starts in the middle (the
+/// synth's filter is where the song has it, not where it was left) and where the loop starts again. MPE notes' own
+/// expression is not chased: it belongs to notes that are not sounding.
+List<SeqEvent> chase(Project p, double at, int ns) {
+  if (at <= 0) return const [];
+  final ev = compile(p, 0, at, (b) => (b * 1e6).round());
+  sortEvents(ev);
+  final last = <String, SeqEvent>{};
+  final mpePorts = {
+    for (final t in p.audible)
+      if (t.mpe && t.port != null) t.port!
+  };
+  for (final e in ev) {
+    final type = e.bytes[0] & 0xF0, ch = e.bytes[0] & 0x0F;
+    if (type != 0xB0 && type != 0xE0 && type != 0xD0 && type != 0xC0) continue;
+    if (mpePorts.contains(e.port) && ch != 0) continue;
+    last['${e.port} $type $ch ${type == 0xB0 ? e.bytes[1] : ''}'] = e;
+  }
+  return [for (final e in last.values) SeqEvent(ns, e.port, e.bytes)];
+}
 
 /// One hit of a pattern, in its content's time: a step, or one of a step's repeats.
 class PatternHit {
@@ -156,17 +210,21 @@ List<SeqEvent> compile(Project p, double from, double to, int Function(double be
             }
             if (!t.mpe) continue;
             for (final e in n.expression.entries) {
-              for (final pt in e.value) {
-                final pa = at + math.max(0.0, pt.t);
-                if (pa < off && inWindow(pa)) out.add(SeqEvent(nsAt(pa), port, _expression(e.key, ch, pt.v)));
+              // points before the note on (sent just before it) play at its start
+              final pts = [for (final pt in e.value) pt.t < 0 ? Point(0, pt.v, ramp: pt.ramp) : pt];
+              List<int> msg(int v) => _expression(e.key, ch, v);
+              for (final (t, v) in laneValues(pts, from - at, math.min(to, off) - at, msg)) {
+                final pa = at + t;
+                if (pa < off && inWindow(pa)) out.add(SeqEvent(nsAt(pa), port, msg(v)));
               }
             }
           }
           for (final l in content.lanes.entries) {
-            for (final pt in l.value) {
-              final at = base + pt.t;
+            List<int> msg(int v) => _lane(l.key, main, v);
+            for (final (t, v) in laneValues(l.value, from - base, math.min(to, passEnd) - base, msg)) {
+              final at = base + t;
               if (at < passEnd && inWindow(at)) {
-                final m = _lane(l.key, main, pt.v);
+                final m = msg(v);
                 if (m.isNotEmpty) out.add(SeqEvent(nsAt(at), port, m));
               }
             }

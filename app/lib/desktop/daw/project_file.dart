@@ -34,6 +34,7 @@ Map<String, dynamic> _track(Track t) => {
       if (!t.monitor) 'monitor': false,
       if (t.mute) 'mute': true,
       if (t.solo) 'solo': true,
+      if (t.device != null) 'device': t.device,
       'clips': [for (final c in t.clips) _clip(c)],
     };
 
@@ -52,7 +53,7 @@ Map<String, dynamic> _clip(Clip c) {
 }
 
 List<List<num>> _points(List<Point> ps) => [
-      for (final p in ps) [p.t, p.v]
+      for (final p in ps) [p.t, p.v, if (p.ramp) 1]
     ];
 
 Map<String, dynamic> _midi(MidiContent m) => {
@@ -105,8 +106,10 @@ Map<String, dynamic> _pattern(Pattern p) => {
 
 double _d(Object? v, [double or = 0]) => v == null ? or : (v as num).toDouble();
 
-List<Point> _readPoints(Object? v) =>
-    [for (final p in (v as List? ?? const [])) Point(_d((p as List)[0]), (p[1] as num).toInt())];
+List<Point> _readPoints(Object? v) => [
+      for (final p in (v as List? ?? const []))
+        if (p case final List p) Point(_d(p[0]), (p[1] as num).toInt(), ramp: p.length > 2 && p[2] == 1)
+    ];
 
 /// Reads a project; throws FormatException for a file that is not one (or is newer than this app).
 Project projectFromJson(Map<String, dynamic> j) {
@@ -139,6 +142,7 @@ Track _readTrack(Map<String, dynamic> j) {
       channel: (j['channel'] as num?)?.toInt() ?? 0,
       mpe: j['mpe'] == true,
       input: j['input'] as String?,
+      device: j['device'] as Map<String, dynamic>?,
       clips: [for (final c in (j['clips'] as List? ?? const [])) _readClip(c as Map<String, dynamic>)]);
   t
     ..monitor = j['monitor'] != false

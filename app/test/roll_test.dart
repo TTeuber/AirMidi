@@ -1,8 +1,10 @@
+import 'package:airmidi/desktop/daw/compile.dart';
 import 'package:airmidi/desktop/daw/history.dart';
 import 'package:airmidi/desktop/daw/model.dart';
 import 'package:airmidi/desktop/daw/piano_roll.dart';
 import 'package:airmidi/desktop/daw/record.dart';
 import 'package:airmidi/desktop/daw/roll_edit.dart';
+import 'package:airmidi/desktop/daw/time.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -114,7 +116,7 @@ void main() {
       ));
       await t.pump();
       // the note grid: right of the keys, under the bar, above the velocity lane
-      return const Rect.fromLTRB(64, 34, 1200, 500 - 64);
+      return const Rect.fromLTRB(64, 34, 1200, 500 - 72 - 28);
     }
 
     testWidgets('double-click draws a note on the grid; drag moves it a beat and up a row; delete removes it',
@@ -165,12 +167,70 @@ void main() {
       await t.pump();
       expect(s.selected.length, 2);
       // the velocity lane: the first stalk dragged to the bottom takes both down by as much
-      final lane = Offset(g.left + s.x(0), 500 - 64 + 2.0);
+      final lane = Offset(g.left + s.x(0), 500 - 72 + 2.0);
       final v = await t.startGesture(lane, kind: PointerDeviceKind.mouse);
       await v.moveTo(Offset(lane.dx, 500 + 20)); // past the lane's bottom: the lowest velocity
       await v.up();
       await t.pump();
       expect(m.notes.map((n) => down16to7(n.velocity)).toList(), [1, 1]);
+    });
+
+    testWidgets('a controller lane: add points, drag one, make it glide, remove it', (t) async {
+      await pump(t);
+      final s = key.currentState!;
+      s.showLane('cc74');
+      await t.pump();
+      final top = t.getTopLeft(find.byKey(const ValueKey('lane')));
+      Offset at(double beat, double f) => top + Offset(s.x(beat), 4 + (1 - f) * (72 - 8));
+      await t.tapAt(at(0, 0.25));
+      await t.pump(const Duration(milliseconds: 400));
+      await t.tapAt(at(2, 1));
+      await t.pump(const Duration(milliseconds: 400));
+      final pts = m.lanes['cc74']!;
+      expect([for (final p in pts) (p.t, down32to7(p.v))], [(0.0, 32), (2.0, 127)]);
+      // drag the first up to the middle and a beat on
+      final d = await t.startGesture(at(0, 0.25), kind: PointerDeviceKind.mouse);
+      await d.moveTo(at(1, 0.5));
+      await d.up();
+      await t.pump(const Duration(milliseconds: 400));
+      expect([for (final p in pts) (p.t, down32to7(p.v))], [(1.0, 64), (2.0, 127)]);
+      // a double-click makes it glide to the next; a right-click removes the last
+      await t.tapAt(at(1, 0.5));
+      await t.pump(const Duration(milliseconds: 50));
+      await t.tapAt(at(1, 0.5));
+      await t.pump(const Duration(milliseconds: 400));
+      expect(pts.first.ramp, isTrue);
+      final r = await t.startGesture(at(2, 1), kind: PointerDeviceKind.mouse, buttons: kSecondaryMouseButton);
+      await r.up();
+      await t.pump();
+      expect(pts.length, 1);
+    });
+
+    testWidgets("an MPE note's own bend: points relative to the note, played on its channel", (t) async {
+      await pump(t);
+      track.mpe = true;
+      final s = key.currentState!;
+      final n = m.notes.single; // 0..1, c4
+      s.setSelected({n});
+      s.showLane('note:bend');
+      await t.pump();
+      expect(s.lanePoints!.$2, 0.0); // the note's start
+      final top = t.getTopLeft(find.byKey(const ValueKey('lane')));
+      await t.tapAt(top + Offset(s.x(0.5), 4 + (1 - 0.75) * (72 - 8)));
+      await t.pump(const Duration(milliseconds: 400));
+      final bend = n.expression['bend']!.single;
+      expect(bend.t, 0.5);
+      expect(down32to14(bend.v), closeTo(16383 * 0.75, 64));
+      // played: centred at the note on, then the bend half a beat in, on the note's member channel
+      final ev = compile(Project(tracks: [track]), 0, 4, Timeline(0, 120).nsAt);
+      sortEvents(ev);
+      final bends = [
+        for (final e in ev)
+          if (e.bytes[0] & 0xF0 == 0xE0) e
+      ];
+      expect(bends.length, 2);
+      expect(bends.map((e) => e.bytes[0]).toSet(), {0xE1});
+      expect(bends[1].tNs, 250000000);
     });
   });
 }

@@ -206,9 +206,9 @@ class _KeysPainter extends CustomPainter {
   _KeysPainter(this.g, this.on, this.moving);
 
   void _label(Canvas canvas, String t, Rect k, Color c) {
-    final tp = TextPainter(
-        text: TextSpan(text: t, style: TextStyle(color: c, fontSize: 12)), textDirection: TextDirection.ltr)
-      ..layout();
+    final tp =
+        TextPainter(text: TextSpan(text: t, style: TextStyle(color: c, fontSize: 12)), textDirection: TextDirection.ltr)
+          ..layout();
     tp.paint(canvas, Offset(k.center.dx - tp.width / 2, k.bottom - tp.height - 8));
   }
 

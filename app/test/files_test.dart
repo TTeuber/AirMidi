@@ -30,6 +30,7 @@ Project song() {
   ], lanes: {
     'cc1': [const Point(0, 0), const Point(2, 0x80000000)],
     'bend': [const Point(3, 0xA0000000)],
+    'cc74': [const Point(0, 0, ramp: true), Point(2, up7to32(127))],
   }, other: [
     const RawEvent(0.5, [0xA0, 60, 40])
   ]);
@@ -44,7 +45,20 @@ Project song() {
     'TR-8'
   }, tracks: [
     Track('drums', port: 'TR-8', channel: 9, clips: [Clip('beat', 0, 6, pat), Clip('beat 2', 8, 4, pat.copy())]),
-    Track('bass', port: 'box', channel: 1, clips: [Clip('line', 4, 8, midi, offset: 1)])..mute = true,
+    Track('bass', port: 'box', channel: 1, clips: [
+      Clip('line', 4, 8, midi, offset: 1)
+    ], device: {
+      'info': {'manufacturer': 'Daisy', 'model': 'Poly Synth'},
+      'controls': [
+        {
+          'title': 'Cutoff',
+          'channel': 1,
+          'ctrlType': 'cc',
+          'ctrlIndex': [74]
+        }
+      ],
+    })
+      ..mute = true,
     Track('strips', port: 'synth', mpe: true, input: 'keys page', clips: [Clip('take', 0, 4, mpe, loops: false)])
       ..monitor = false,
   ]);
@@ -73,6 +87,9 @@ void main() {
     expect(back.tracks[2].clips.single.id, p.tracks[2].clips.single.id); // ids kept: the same probabilities
     expect((back.tracks[1].mute, back.tracks[2].mpe, back.tracks[2].monitor), (true, true, false));
     expect(back.clockPorts, {'TR-8'});
+    expect(back.tracks[1].device!['controls'], isNotEmpty); // the synth's list goes with the project
+    expect((back.tracks[1].clips.single.content as MidiContent).lanes['cc74']!.first.ramp, isTrue);
+    expect(played(back, all: true), played(p, all: true)); // the ramp plays the same after reopening
     expect(newId() > p.tracks[2].clips.single.id, isTrue);
     expect(text, contains('"format": "airmidi project"'));
   });

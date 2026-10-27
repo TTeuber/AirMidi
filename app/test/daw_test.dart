@@ -233,4 +233,44 @@ void main() {
     final copy = back.copy();
     expect(copy.id, isNot(back.id));
   });
+
+  test('a ramp plays as a stream: a value each time the message changes, the same however the windows fall', () {
+    final m = MidiContent(4, lanes: {
+      'cc74': [Point(0, up7to32(0), ramp: true), Point(1, up7to32(127)), Point(3, up7to32(10))]
+    });
+    final p = oneClip(Clip('c', 0, 4, m));
+    final all = show(compile(p, 0, 4, at));
+    // 0 .. 127 over one beat: a new value every 1/64 beat while it changes, then the held 127, then 10
+    final values = [for (final e in all) int.parse(e.split(', ').last.replaceAll(']', ''))];
+    expect(values.first, 0);
+    expect(values.length, 1 + 63 + 1 + 1);
+    expect(values.sublist(values.length - 2), [127, 10]);
+    final pieces = <SeqEvent>[];
+    for (var a = 0.0; a < 4; a += 0.37) {
+      pieces.addAll(compile(p, a, math.min(4, a + 0.37), at));
+    }
+    expect(show(pieces), all);
+  });
+
+  test('chase: the last controller values before the start, per port and channel; none of an MPE note', () {
+    final m = MidiContent(8, lanes: {
+      'cc74': [Point(0, up7to32(10)), Point(2, up7to32(90)), Point(6, up7to32(30))],
+      'program': [Point(0, up7to32(5))],
+    });
+    final mpe = MidiContent(8, notes: [
+      Note(0, 4, 60, expression: {
+        'bend': [const Point(1, 0x90000000)]
+      })
+    ], lanes: {
+      'cc1': [Point(1, up7to32(64))]
+    });
+    final p = Project(tracks: [
+      Track('a', port: 'a', channel: 2, clips: [Clip('c', 0, 8, m)]),
+      Track('b', port: 'b', mpe: true, clips: [Clip('d', 0, 8, mpe)]),
+    ]);
+    final got = {for (final e in chase(p, 4, 77)) '${e.port} ${e.bytes}'};
+    expect(got, {'a [178, 74, 90]', 'a [194, 5]', 'b [176, 1, 64]'}); // cc 74 at 90 (not 30, after 4)
+    expect(chase(p, 4, 77).every((e) => e.tNs == 77), isTrue);
+    expect(chase(p, 0, 0), isEmpty);
+  });
 }

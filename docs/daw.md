@@ -285,6 +285,29 @@ notes, loops, swing, chase, undo), timing through a mido port, the pages driven 
   container, the app restarted with the beat back, ~/Music/airmidi made, the save dialog opening there. Not tried in
   the app: picking a file in the open or save dialogs (the terminal cannot click in them).
 
+- **A5 (2026-10-27):** controllers. A track can hold its synth's MIDI-CI control list (`devices.dart`; the track
+  header's menu, "synth controls from ...": a box the desktop has found, over Wi-Fi or BLE, `/api/ci/device`, or a
+  JSON file; saved with the project). The piano roll's lane row (`lanes.dart`): velocity, the clip's controller lanes
+  named by the synth ("Cutoff" for CC 74, its readings in Hz or ms while dragging) or by General MIDI, "+ lane" (the
+  synth's controls first, then common ones it does not name, any CC, bend, pressure, program), and on an MPE track
+  the selected note's own bend, pressure and timbre (points from the note's start). Points: click adds, drag moves,
+  double-click makes it ramp to the next, right-click removes, draw mode draws along a drag; a ramp plays as a
+  stream (a value every 1/64 beat at most, only when the message changes; `laneValues`, the same however the windows
+  fall). Controller chase (`chase` in compile.dart, the transport's "chase", on by default): the last value of every
+  controller, bend, pressure and program before the start goes out just before the first beat, and again where the
+  loop starts over; MPE notes' own expression is not chased. The bottom panel's "device" tab: the play view's
+  SynthControls for the selected track's list, sending through the track's port and following the input of the
+  same name (not the app's own port, whose other side is the app itself). Tests: ramps (stream, windows), chase,
+  the lane editor (add, drag, ramp, remove), an MPE note's bend edited and played on its channel, lists and ramps
+  saved. Tried in the app with the box on Wi-Fi and daisy_synth on its TRS: the list fetched ("Daisy Poly Synth, 19
+  controls"), the device tab with daisy's envelopes and XY pad, a Vibrato drag sending CC 1 rising 4 to 49, the "+
+  lane" menu with daisy's names, a Cutoff ramp 12 to 115 over two beats (a value every 7-16 ms) restarting with the
+  loop, the chase sending Cutoff 115 before a start at beat 4 (and nothing with chase off). Not tried: the last hop
+  to daisy through the box from the DAW (it needs the box as a CoreMIDI port: its network session connected in
+  Audio MIDI Setup, or BLE MIDI); the box's own "current values" report is not asked (values start at the list's
+  defaults; device state is A6). Fixed on the way: menu chips ("rows", "+ row", "+ lane") never opened their menus
+  (an inner tap detector won the gesture).
+
 ## Decided (2026-10-26, the user)
 
 1. Every clip is its own (no shared patterns); clips copy to other tracks.

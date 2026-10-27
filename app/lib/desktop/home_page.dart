@@ -150,7 +150,8 @@ class _DesktopHomeState extends State<DesktopHome> {
           child: const Text('router'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ArrangePage())),
+          onPressed: () =>
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => ArrangePage(discovery: discovery))),
           child: const Text('arrangement'),
         ),
       ]),

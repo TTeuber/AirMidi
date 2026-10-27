@@ -40,11 +40,12 @@ int down32to14(int v) => v >> 18;
 const kCentre32 = 0x80000000; // a bend's centre at 32 bit
 
 /// A value at a time: a controller lane's point (beats from the content's start) or a note's expression point
-/// (beats from the note's start).
+/// (beats from the note's start). It holds until the next point, or with [ramp] glides there.
 class Point {
   final double t;
   final int v;
-  const Point(this.t, this.v);
+  final bool ramp;
+  const Point(this.t, this.v, {this.ramp = false});
 }
 
 class Note {
@@ -267,7 +268,11 @@ class Track {
   bool armed = false, monitor = true, mute = false, solo = false;
   final List<Clip> clips;
 
-  Track(this.name, {this.port, this.channel = 0, this.mpe = false, this.input, List<Clip>? clips, int? id})
+  /// The synth's MIDI-CI control list, as the box's /api/ci/device gives it (kept with the project, so the lanes have
+  /// names and the device tab its controls without the box around); null: none.
+  Map<String, dynamic>? device;
+
+  Track(this.name, {this.port, this.channel = 0, this.mpe = false, this.input, List<Clip>? clips, int? id, this.device})
       : clips = clips ?? [],
         id = id ?? newId();
 
@@ -278,7 +283,8 @@ class Track {
         mpe: mpe,
         input: input,
         clips: [for (final c in clips) c.copy(keepId: keepId)],
-        id: keepId ? id : null);
+        id: keepId ? id : null,
+        device: device);
     t
       ..armed = armed
       ..monitor = monitor

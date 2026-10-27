@@ -458,13 +458,9 @@ class PatternEditorState extends State<PatternEditor> {
                 () => _edit(() => p.swing = (p.swing - 0.02).clamp(0.5, 0.75)),
                 () => _edit(() => p.swing = (p.swing + 0.02).clamp(0.5, 0.75))),
             const SizedBox(width: 6),
-            Builder(
-                builder: (context) => GestureDetector(
-                    onTapDown: (d) => _rowsMenu(d.globalPosition), child: chip('rows ▾', false, () {}))),
+            menuChip('rows ▾', _rowsMenu),
             const SizedBox(width: 4),
-            Builder(
-                builder: (context) =>
-                    GestureDetector(onTapDown: (d) => _addRow(d.globalPosition), child: chip('+ row', false, () {}))),
+            menuChip('+ row', _addRow),
             const SizedBox(width: 14),
             const Text('shift ', style: TextStyle(color: cGrey, fontSize: 12)),
             chip('◀', false, () => _edit(() => rotateSteps(p, -1))),
@@ -667,6 +663,16 @@ Widget stepper(String label, String value, VoidCallback down, VoidCallback up) =
       IconButton(
           onPressed: up, icon: const Icon(Icons.add, size: 14), color: cAc, visualDensity: VisualDensity.compact),
     ]);
+
+/// A chip that opens a menu where it was clicked.
+Widget menuChip(String label, void Function(Offset global) open) => GestureDetector(
+      onTapDown: (d) => open(d.globalPosition),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(border: Border.all(color: cGrey)),
+        child: Text(label, style: const TextStyle(color: cN, fontSize: 12)),
+      ),
+    );
 
 Widget chip(String label, bool on, VoidCallback? tap) => GestureDetector(
       onTap: tap,
