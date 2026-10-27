@@ -4,7 +4,8 @@
 #   uv run --with websocket-client python tool/drive.py <vm-service-url> tap X Y      (rtap X Y: a right click)
 #   uv run --with websocket-client python tool/drive.py <vm-service-url> drag X0 Y0 X1 Y1
 #   uv run --with websocket-client python tool/drive.py <vm-service-url> keys "a s d+ d- tab+ tab-"
-#     each word: a key pressed and released, or key+ (down) / key- (up); letters, ; ' and tab
+#     each word: a key pressed and released, or key+ (down) / key- (up); letters, ; ' tab space backspace escape,
+#     the arrows (up down left right) and meta / shift / alt (hold one with "meta+ a meta-")
 # The URL is the "Dart VM service is listening on http://127.0.0.1:PORT/TOKEN=/" line the app prints at start.
 import json
 import shutil
@@ -26,8 +27,12 @@ def call(ws, method, params, n=[0]):
 
 # USB HID usages and Flutter logical key ids
 HID = {**{c: 0x00070004 + i for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}, ";": 0x00070033, "'": 0x00070034,
-       "tab": 0x0007002B}
-LOGICAL = {**{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz;'"}, "tab": 0x0100000009}
+       "tab": 0x0007002B, "space": 0x0007002C, "backspace": 0x0007002A, "escape": 0x00070029, "right": 0x0007004F,
+       "left": 0x00070050, "down": 0x00070051, "up": 0x00070052, "meta": 0x000700E3, "shift": 0x000700E1,
+       "alt": 0x000700E2}
+LOGICAL = {**{c: ord(c) for c in "abcdefghijklmnopqrstuvwxyz;'"}, "tab": 0x0100000009, "space": 0x20,
+           "backspace": 0x0100000008, "escape": 0x010000001B, "right": 0x0100000303, "left": 0x0100000302,
+           "down": 0x0100000301, "up": 0x0100000304, "meta": 0x0200000106, "shift": 0x0200000102, "alt": 0x0200000104}
 
 
 def key(ws, iso, k, down):

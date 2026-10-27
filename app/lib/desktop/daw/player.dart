@@ -59,6 +59,7 @@ class DawPlayer extends ChangeNotifier {
   double _until = 0; // continuous beats scheduled so far
   Timer? _timer;
   bool recording = false;
+  bool replace = false; // recording in the loop range: the first pass clears the clip instead of adding to it
   String? error;
 
   bool get playing => _tl != null;
@@ -187,7 +188,7 @@ class DawPlayer extends ChangeNotifier {
     if (armed.isEmpty) return;
     history.mark(); // undo takes the whole take away
     for (final t in armed) {
-      takes[t] = Take.start(project, t, at);
+      takes[t] = Take.start(project, t, at, replace: replace);
     }
   }
 
@@ -267,6 +268,14 @@ class DawPlayer extends ChangeNotifier {
     }
     _tl = null;
     notifyListeners();
+  }
+
+  /// A note on or off on [t]'s device now (the piano roll's keys, a note drawn or moved).
+  void audition(Track t, int pitch, bool on, int velocity) {
+    final port = t.port;
+    if (port == null) return;
+    final ch = t.mpe ? 1 : t.channel;
+    _send(port, [(on ? 0x90 : 0x80) | ch, pitch, on ? velocity.clamp(1, 127) : 0], 0);
   }
 
   /// A new tempo. While playing it takes over where scheduling has got to (up to ~120 ms ahead already went out at

@@ -21,16 +21,17 @@ class Take {
   double _last = 0;
   bool dirty = false;
 
-  Take(this.track, this.clip, {required this.grow, this.beatsPerBar = 4})
-      : _before = (clip.content as MidiContent).copy();
+  Take(this.track, this.clip, {required this.grow, this.beatsPerBar = 4, bool replace = false})
+      : _before = replace ? MidiContent((clip.content as MidiContent).length) : (clip.content as MidiContent).copy();
 
   /// A new take on [t] where recording starts at [startBeat]: into the MIDI clip that spans the loop range if
-  /// there is one (overdub), else a new clip over the loop range; without a loop, a new clip from the bar.
-  static Take start(Project p, Track t, double startBeat) {
+  /// there is one (overdub; [replace]: what it had is dropped), else a new clip over the loop range; without a loop,
+  /// a new clip from the bar.
+  static Take start(Project p, Track t, double startBeat, {bool replace = false}) {
     if (p.loopOn && p.loopEnd > p.loopStart) {
       for (final c in t.clips) {
         if (c.content is MidiContent && c.start <= p.loopStart + 1e-9 && c.end >= p.loopEnd - 1e-9) {
-          return Take(t, c, grow: false, beatsPerBar: p.beatsPerBar);
+          return Take(t, c, grow: false, beatsPerBar: p.beatsPerBar, replace: replace);
         }
       }
       final len = p.loopEnd - p.loopStart;

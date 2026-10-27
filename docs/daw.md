@@ -230,6 +230,23 @@ notes, loops, swing, chase, undo), timing through a mido port, the pages driven 
   take, moving it a bar and onto another track, clock (20.83 ms ticks, Start, Stop), split at the start marker.
   The old step and clip tracks (`desktop/tracks*`) are gone. Not tried: alt-drag (the drive hook cannot hold alt).
 
+- **A2 (2026-10-27):** the piano roll edits (`piano_roll.dart`, the edits as functions in `roll_edit.dart`). Draw
+  (double-click, or click in draw mode, B; a drag sets the length), select (click, shift-click, box, cmd-A, Esc),
+  move (snapped, pitch by row, the group kept inside 0..127 and after beat 0), alt-drag copies, resize the end or the
+  start, delete (double-click or right-click a note, delete key); arrows move a semitone or a grid step (shift: an
+  octave or a bar); cmd-C / V (at the start marker inside the clip) / D (after itself); grids 1/4 to 1/32, 1/8T,
+  1/16T, off; quantize (Q, strength 25-100 %, ends optional; lengths kept otherwise), legato (chords stay chords),
+  transpose and octave, velocity up and down, all on the selection or every note when none is selected; the velocity
+  lane (drag a stalk, a selected group moves together, or sweep across). Keys down the left are a keyboard (drum
+  names on a channel 10 track); clicking one plays it on the track's device, and so does a note being drawn, moved
+  or transposed. Keys go to the roll after a click in the bottom panel (its delete removes notes, not the clip).
+  Recording: overdub or replace (the take in the loop range starts from an empty clip; undo brings the old notes
+  back). Tests (`test/roll_test.dart`): the edit functions, replace, and the widget driven by the mouse (draw, move,
+  delete, resize, box select, the velocity lane on a group). Tried in the app through the IAC bus: four notes drawn
+  played back exactly on their beats and sixteenths; box select, cmd-A, the up arrow, cmd-Z, backspace, a lowered
+  velocity (21 out), a key click auditioned, alt-drag copied a note a beat and a half later. The drive tool gained
+  `drag`, `rtap` (right click) and the keys space, backspace, escape, the arrows and meta / shift / alt.
+
 ## Decided (2026-10-26, the user)
 
 1. Every clip is its own (no shared patterns); clips copy to other tracks.

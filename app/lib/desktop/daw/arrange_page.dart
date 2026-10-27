@@ -4,7 +4,8 @@
 // yet, A4), so leaving the page does not stop play.
 //
 // Keys: space play/stop, R record, L loop, cmd-Z / shift-cmd-Z undo/redo, delete, cmd-D duplicate, cmd-C / cmd-V
-// copy and paste (at the start marker, on the selected clip's track), cmd-T split at the playhead.
+// copy and paste (at the start marker, on the selected clip's track), cmd-T split at the playhead. After a click in
+// the bottom panel the editor gets the keys first (the piano roll's delete removes notes, not the clip).
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -48,7 +49,10 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   final focus = FocusNode();
   StreamSubscription<void>? _ports;
   Clip? selected;
-  double panelH = 280;
+  double panelH = 330;
+  bool editorKeys = false; // the last click was in the bottom panel
+  GlobalKey<PianoRollState> rollKey = GlobalKey();
+  int? _rollFor; // the clip the roll's state belongs to
 
   Project get p => _project;
   History get history => _history;
@@ -246,10 +250,12 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   // ---- keys
 
   KeyEventResult _key(FocusNode node, KeyEvent e) {
+    if (e is KeyRepeatEvent && editorKeys && rollKey.currentState?.key(e) == true) return KeyEventResult.handled;
     if (e is! KeyDownEvent) return KeyEventResult.ignored;
     final k = e.logicalKey, keys = HardwareKeyboard.instance;
     final cmd = keys.isMetaPressed || keys.isControlPressed, shift = keys.isShiftPressed;
     final c = selected;
+    if (editorKeys && rollKey.currentState?.key(e) == true) return KeyEventResult.handled;
     if (k == LogicalKeyboardKey.space) {
       player.playing ? player.stop() : player.play();
     } else if (k == LogicalKeyboardKey.keyR && !cmd) {
@@ -303,34 +309,37 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                 child: Text(player.error!, style: const TextStyle(color: Color(0xFFAB6D6C), fontSize: 12)),
               ),
             Expanded(
-              child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                SizedBox(width: kHeaderW, child: _headers()),
-                Expanded(
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Ruler(project: p, view: view, playhead: () => playhead, changed: () => setState(() {})),
-                    Expanded(
-                      child: Lanes(
-                        project: p,
-                        history: history,
-                        view: view,
-                        selected: selected,
-                        recording: {for (final t in player.takes.values) t.clip},
-                        playhead: () => playhead,
-                        changed: () => setState(() {}),
-                        actions: ArrangeActions(
-                          select: (c) => setState(() => selected = c),
-                          open: (c) => setState(() {
-                            selected = c;
-                            panelH = math.max(panelH, 220);
-                          }),
-                          emptyMenu: _emptyMenu,
-                          clipMenu: _clipMenu,
+              child: Listener(
+                onPointerDown: (_) => editorKeys = false,
+                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  SizedBox(width: kHeaderW, child: _headers()),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      Ruler(project: p, view: view, playhead: () => playhead, changed: () => setState(() {})),
+                      Expanded(
+                        child: Lanes(
+                          project: p,
+                          history: history,
+                          view: view,
+                          selected: selected,
+                          recording: {for (final t in player.takes.values) t.clip},
+                          playhead: () => playhead,
+                          changed: () => setState(() {}),
+                          actions: ArrangeActions(
+                            select: (c) => setState(() => selected = c),
+                            open: (c) => setState(() {
+                              selected = c;
+                              panelH = math.max(panelH, 220);
+                            }),
+                            emptyMenu: _emptyMenu,
+                            clipMenu: _clipMenu,
+                          ),
                         ),
                       ),
-                    ),
-                  ]),
-                ),
-              ]),
+                    ]),
+                  ),
+                ]),
+              ),
             ),
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -340,7 +349,10 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                 child: Container(height: 7, color: const Color(0xFF1C2329)),
               ),
             ),
-            SizedBox(height: panelH, child: _panel(playhead)),
+            SizedBox(
+              height: panelH,
+              child: Listener(onPointerDown: (_) => editorKeys = true, child: _panel(playhead)),
+            ),
           ]),
         ),
       ),
@@ -370,6 +382,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
         button('rec', () => player.playing ? player.setRecording(!player.recording) : player.play(record: true),
             lit: player.recording, litColor: red),
         button('loop', () => setState(() => p.loopOn = !p.loopOn), lit: p.loopOn),
+        chip(player.replace ? 'replace' : 'overdub', player.replace,
+            () => setState(() => player.replace = !player.replace)),
         stepper('bpm', p.bpm.round().toString(), () => player.setBpm(p.bpm - 1), () => player.setBpm(p.bpm + 1)),
         SizedBox(width: 70, child: Text(pos, style: const TextStyle(color: cN, fontSize: 15))),
         _pick<double>(
@@ -390,6 +404,26 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
           child: const Text('keys'),
         ),
       ]),
+    );
+  }
+
+  Widget _roll(Clip c, MidiContent content, double at) {
+    if (_rollFor != c.id) {
+      rollKey = GlobalKey(); // a new clip: a fresh view, fitted to it
+      _rollFor = c.id;
+    }
+    final t = p.trackOf(c)!, len = content.length;
+    final inside = p.startBeat >= c.start && p.startBeat < c.end && len > 0;
+    return PianoRoll(
+      key: rollKey,
+      content: content,
+      track: t,
+      history: history,
+      changed: () => setState(() {}),
+      audition: (pitch, on, vel) => player.audition(t, pitch, on, vel),
+      playBeat: at,
+      pasteAt: inside ? (p.startBeat - c.start + c.offset) % len : 0,
+      beatsPerBar: p.beatsPerBar,
     );
   }
 
@@ -555,7 +589,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                   history: history,
                   changed: () => setState(() {}),
                   playStep: at < 0 ? -1 : (at / content.stepBeats).floor())
-              : PianoRoll(content: content as MidiContent, playBeat: at),
+              : _roll(c, content as MidiContent, at),
         ),
       ]),
     );

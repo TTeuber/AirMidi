@@ -145,6 +145,12 @@ class Pads {
         49: 'crash',
         50: 'high tom 2',
         51: 'ride',
+        52: 'china',
+        53: 'ride bell',
+        54: 'tambourine',
+        55: 'splash',
+        56: 'cowbell',
+        57: 'crash 2',
       }[note] ??
       '';
 

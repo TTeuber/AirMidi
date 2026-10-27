@@ -160,7 +160,7 @@ in a 1200 x 780 window (it scrolls a little at that size); a click on a fader se
 messages and a pad = 2 out of the box's TRS.
 
 Order: the DAW, designed in docs/daw.md (phases A1-A6: arrangement, piano roll, sequencer, files, controllers, hardware).
-A1, the arrangement, done 2026-10-26 (it replaces the D3/D4 tracks page; status in docs/daw.md). Next: A2, the piano roll.
+A1, the arrangement, done 2026-10-26 (it replaces the D3/D4 tracks page; status in docs/daw.md). A2, the piano roll's editing, done 2026-10-27. Next: A3, the sequencer.
 
 ## Open
 
