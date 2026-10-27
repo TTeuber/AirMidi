@@ -99,12 +99,11 @@ fill). There is no way back: a free-time clip does not fit a grid without losing
   MIDI-CI names make these readable. It is what makes a step sequencer play a hardware synth well; it comes after
   the basics work.
 
-### Patterns are shared
+### Every clip is its own
 
-A pattern clip points at a pattern in its track's pattern list (A, B, C ...), the way a drum machine chains
-patterns. Editing A changes every A clip on the track. "Make unique" copies it to a new letter. Arranging a song
-then means placing A A B A, and fixing the hi-hat once fixes it everywhere. MIDI clips are copied, not shared, when
-duplicated (shared "alias" MIDI clips are a possible later addition).
+Every clip, pattern or MIDI, owns its content (user decision 2026-10-26). Duplicating a clip copies it, and a copy
+can go to another track (drag it onto that track, or copy and paste), so a drum pattern can be tried on a second
+drum machine. Editing one clip never changes another.
 
 ## Model
 
@@ -118,11 +117,10 @@ Track
   name, colour, mute, solo
   device: port name, channel (0-15) or MPE zone (manager channel + member count), MIDI-CI device id (optional)
   input (for recording), arm, monitor
-  patterns: {letter: Pattern}         the pattern clips' contents
   clips: [Clip]                       placements on the timeline
 Clip
   start, length (beats on the timeline), offset (where in the content it starts), loops: bool
-  content: MidiContent | PatternRef(letter)
+  content: MidiContent | Pattern      owned by the clip; a copy copies it
 MidiContent
   length (beats, the loop length), notes: [Note], lanes: {controller: [Point]}, other: [raw events]
 Note
@@ -195,7 +193,7 @@ steps with swing, nudge and probability), plus clock.
 - **A2, the piano roll:** notes, the velocity lane, snap, quantize, transpose, audition, recording into the clip
   (raw recordings turned into notes, MPE included).
 - **A3, the sequencer:** the grid, row sets, length and step size, swing, the per-step lane (velocity, gate,
-  probability, nudge, repeat), the pattern list with make unique, "to MIDI clip".
+  probability, nudge, repeat), "to MIDI clip".
 - **A4, files:** save, open, autosave, recent projects, SMF export and import.
 - **A5, controllers:** controller lanes with MIDI-CI names, MPE expression editing, controller chase, the device
   tab.
@@ -209,14 +207,10 @@ steps with swing, nudge and probability), plus clock.
 Tests as now: the model and the compiler in Dart unit tests (windows join without gaps or doubles, clip ends cut
 notes, loops, swing, chase, undo), timing through a mido port, the pages driven with `tool/drive.py`.
 
-## Open questions (with what I would pick)
+## Decided (2026-10-26, the user)
 
-1. **Shared patterns per track** (A, B ... as above) or every pattern clip its own content? I would pick shared:
-   it is how drum machines work, and "make unique" covers the other case.
-2. **Both clip kinds on any track**, or pattern tracks and MIDI tracks? I would pick any track, so a fill can sit on
-   the drum track.
-3. **The editor in the bottom panel** or in its own window? I would pick the bottom panel, with a button to pop it
-   out on a second screen later.
-4. **MPE replayed on fresh channels** (needed for editing) rather than on the channels it was recorded on? I would
-   pick fresh channels. The only cost: a recording no longer comes back byte for byte.
-5. **Parameter locks** in A3 or later? I would pick later (A6): the grid has to feel right first.
+1. Every clip is its own (no shared patterns); clips copy to other tracks.
+2. Both clip kinds on any track.
+3. The editor in the bottom panel.
+4. MPE replayed on fresh member channels.
+5. Parameter locks later (A6).
