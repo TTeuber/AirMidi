@@ -16,8 +16,9 @@ List<String> show(List<SeqEvent> ev) {
   return [for (final e in ev) '${(e.tNs / ms).round()} ${e.bytes}'];
 }
 
-Project oneClip(Clip c, {bool mpe = false, int channel = 0}) =>
-    Project(tracks: [Track('t', port: 'p', channel: channel, mpe: mpe, clips: [c])]);
+Project oneClip(Clip c, {bool mpe = false, int channel = 0}) => Project(tracks: [
+      Track('t', port: 'p', channel: channel, mpe: mpe, clips: [c])
+    ]);
 
 void main() {
   test('MIDI 1.0 values up to MIDI 2.0 and back', () {
@@ -60,7 +61,10 @@ void main() {
     pat.cells[2][15]!.nudge = 0.4;
     pat.cells[2][6]!.repeat = 3;
     pat.cells[2][9]!.probability = 0.5;
-    final mid = MidiContent(3, notes: [Note(0.1, 0.4, 60), Note(2.9, 0.5, 64)], lanes: {
+    final mid = MidiContent(3, notes: [
+      Note(0.1, 0.4, 60),
+      Note(2.9, 0.5, 64)
+    ], lanes: {
       'cc1': [const Point(0.3, 0x40000000), const Point(2.5, 0)]
     });
     final p = Project(tracks: [
@@ -135,7 +139,10 @@ void main() {
   test('mute and solo; notes end at the cut (the loop end)', () {
     final c1 = Clip('a', 0, 4, MidiContent(4, notes: [Note(0, 4, 60)]));
     final c2 = Clip('b', 0, 4, MidiContent(4, notes: [Note(0, 1, 70)]));
-    final p = Project(tracks: [Track('a', port: 'a', clips: [c1]), Track('b', port: 'b', clips: [c2])]);
+    final p = Project(tracks: [
+      Track('a', port: 'a', clips: [c1]),
+      Track('b', port: 'b', clips: [c2])
+    ]);
     expect(compile(p, 0, 4, at).map((e) => e.port).toSet(), {'a', 'b'});
     p.tracks[1].solo = true;
     expect(compile(p, 0, 4, at).map((e) => e.port).toSet(), {'b'});
@@ -206,7 +213,9 @@ void main() {
 
   test('undo and redo put the project back, ids and all', () {
     final c = Clip('a', 0, 4, MidiContent(4, notes: [Note(0, 1, 60)]));
-    final p = Project(tracks: [Track('t', clips: [c])]);
+    final p = Project(tracks: [
+      Track('t', clips: [c])
+    ]);
     final h = History(p);
     h.mark();
     p.tracks.single.clips.single.start = 8;

@@ -24,7 +24,7 @@ import 'package:airmidi/desktop/daw/roll_edit.dart';
 import 'package:airmidi/shared/play/keys.dart' show Pads;
 import 'package:airmidi/shared/ui/theme.dart';
 
-const _keysW = 64.0, _laneH = 64.0, _barH = 34.0;
+const _laneH = 64.0, _barH = 34.0;
 
 List<Note> _clipboard = [];
 
@@ -85,6 +85,9 @@ class PianoRollState extends State<PianoRoll> {
 
   MidiContent get m => widget.content;
 
+  // drum names need more room than note names
+  double get _keysW => !widget.track.mpe && widget.track.channel == 9 ? 104 : 64;
+
   @override
   void didUpdateWidget(PianoRoll oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -105,7 +108,8 @@ class PianoRollState extends State<PianoRoll> {
     final w = size.width - _keysW;
     ppb = w / math.max(1.0, m.length);
     left = 0;
-    var lo = 60, hi = 72;
+    // centred on the clip's notes (an empty clip: around c4 to c5)
+    var lo = m.notes.isEmpty ? 60 : 127, hi = m.notes.isEmpty ? 72 : 0;
     for (final n in m.notes) {
       lo = math.min(lo, n.pitch);
       hi = math.max(hi, n.pitch);
@@ -434,9 +438,9 @@ class PianoRollState extends State<PianoRoll> {
           SizedBox(
             height: _laneH,
             child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              const SizedBox(
+              SizedBox(
                 width: _keysW,
-                child: Center(child: Text('velocity', style: TextStyle(color: cGrey, fontSize: 10))),
+                child: const Center(child: Text('velocity', style: TextStyle(color: cGrey, fontSize: 10))),
               ),
               Expanded(
                 child: Listener(

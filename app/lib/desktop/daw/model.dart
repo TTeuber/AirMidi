@@ -162,6 +162,70 @@ List<PatternRow> gmDrumRows() => [
       PatternRow(36, 'kick'),
     ];
 
+/// A fuller General MIDI kit, kick at the bottom.
+List<PatternRow> gmKitRows() => [
+      PatternRow(51, 'ride'),
+      PatternRow(49, 'crash'),
+      PatternRow(50, 'high tom'),
+      PatternRow(47, 'mid tom'),
+      PatternRow(45, 'low tom'),
+      PatternRow(46, 'open hat'),
+      PatternRow(44, 'pedal hat'),
+      PatternRow(42, 'hat'),
+      PatternRow(39, 'clap'),
+      PatternRow(37, 'rim'),
+      PatternRow(38, 'snare'),
+      PatternRow(36, 'kick'),
+    ];
+
+/// Scales for a pattern's rows, as semitones above the key.
+const kRowScales = <String, List<int>>{
+  'major': [0, 2, 4, 5, 7, 9, 11],
+  'minor': [0, 2, 3, 5, 7, 8, 10],
+  'dorian': [0, 2, 3, 5, 7, 9, 10],
+  'mixolydian': [0, 2, 4, 5, 7, 9, 10],
+  'pentatonic major': [0, 2, 4, 7, 9],
+  'pentatonic minor': [0, 3, 5, 7, 10],
+  'blues': [0, 3, 5, 6, 7, 10],
+  'chromatic': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+};
+
+/// The notes of [scale] on [key] (0 = c) for [octaves] octaves from octave [octave] (4: from c4), and the key's
+/// note an octave up to close it; the highest row on top.
+List<PatternRow> scaleRows(int key, String scale, int octave, int octaves) {
+  final low = 12 * (octave + 1) + key, steps = kRowScales[scale] ?? kRowScales['chromatic']!;
+  final notes = [
+    for (var o = 0; o < octaves; o++)
+      for (final s in steps) low + 12 * o + s,
+    low + 12 * octaves,
+  ].where((n) => n >= 0 && n <= 127);
+  return [for (final n in notes.toList().reversed) PatternRow(n, pitchName(n))];
+}
+
+/// Steps of [row] (every row when null) moved by [d] steps, the ones pushed off the end coming back at the start.
+void rotateSteps(Pattern p, int d, {int? row}) {
+  final n = p.steps;
+  for (var r = 0; r < p.rows.length; r++) {
+    if (row != null && r != row) continue;
+    final old = p.cells[r].sublist(0, n);
+    for (var s = 0; s < n; s++) {
+      p.cells[r][((s + d) % n + n) % n] = old[s];
+    }
+  }
+}
+
+/// Twice as long, the second half a copy of the first (up to [kMaxSteps]).
+void doublePattern(Pattern p) {
+  final n = p.steps;
+  if (n * 2 > kMaxSteps) return;
+  for (final row in p.cells) {
+    for (var s = 0; s < n; s++) {
+      row[n + s] = row[s]?.copy();
+    }
+  }
+  p.steps = n * 2;
+}
+
 const _names = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
 String pitchName(int n) => '${_names[n % 12]}${n ~/ 12 - 1}';
 

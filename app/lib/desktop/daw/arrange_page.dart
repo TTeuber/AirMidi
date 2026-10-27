@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import 'package:airmidi/desktop/daw/compile.dart' show patternToMidi;
 import 'package:airmidi/desktop/daw/history.dart';
 import 'package:airmidi/desktop/daw/keys_bus.dart';
 import 'package:airmidi/desktop/daw/model.dart';
@@ -150,6 +151,13 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     });
   }
 
+  // The pattern's steps become notes (one pass: probabilities rolled as its first pass plays them); no way back.
+  void _toMidi(Clip c) {
+    final pat = c.content;
+    if (pat is! Pattern) return;
+    _edit(() => c.content = patternToMidi(pat, c.id));
+  }
+
   void _paste(Track t, double at) {
     final c = _clipboard;
     if (c == null) return;
@@ -204,6 +212,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       ('duplicate', 'dup'),
       ('split at the playhead', 'split'),
       ('copy', 'copy'),
+      if (c.isPattern) ('to MIDI clip', 'midi'),
       ('delete', 'delete'),
     ]);
     switch (r) {
@@ -215,6 +224,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
         _split(c, player.beat);
       case 'copy':
         _clipboard = c.copy();
+      case 'midi':
+        _toMidi(c);
       case 'delete':
         _delete(c);
     }
@@ -580,15 +591,19 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                 () => _edit(() => content.length += 1)),
           if (content is MidiContent)
             Text('${content.notes.length} notes', style: const TextStyle(color: cGrey, fontSize: 12)),
+          if (content is Pattern) chip('to MIDI clip', false, () => _toMidi(c)),
         ]),
         const SizedBox(height: 4),
         Expanded(
           child: content is Pattern
               ? PatternEditor(
+                  key: ValueKey(c.id),
                   pattern: content,
+                  track: p.trackOf(c)!,
                   history: history,
                   changed: () => setState(() {}),
-                  playStep: at < 0 ? -1 : (at / content.stepBeats).floor())
+                  playStep: at < 0 ? -1 : (at / content.stepBeats).floor(),
+                  audition: (pitch, on, vel) => player.audition(p.trackOf(c)!, pitch, on, vel))
               : _roll(c, content as MidiContent, at),
         ),
       ]),

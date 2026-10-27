@@ -8,8 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-List<(double, double, int)> show(Iterable<Note> ns) =>
-    [for (final n in ns) (double.parse(n.start.toStringAsFixed(4)), double.parse(n.length.toStringAsFixed(4)), n.pitch)];
+List<(double, double, int)> show(Iterable<Note> ns) => [
+      for (final n in ns) (double.parse(n.start.toStringAsFixed(4)), double.parse(n.length.toStringAsFixed(4)), n.pitch)
+    ];
 
 void main() {
   test('move keeps the group inside the clip and the MIDI range', () {
@@ -67,10 +68,14 @@ void main() {
   test('replace: a take in the loop starts from an empty clip; undo brings the old notes back', () {
     final t = Track('synth', port: 's');
     final p = Project(loopOn: true, loopStart: 0, loopEnd: 4, tracks: [t]);
-    final first = Take.start(p, t, 0)..add(0.5, [0x90, 60, 100])..add(1, [0x80, 60, 0]);
+    final first = Take.start(p, t, 0)
+      ..add(0.5, [0x90, 60, 100])
+      ..add(1, [0x80, 60, 0]);
     first.finish(2);
     final h = History(p)..mark();
-    final again = Take.start(p, t, 0, replace: true)..add(2, [0x90, 67, 100])..add(3, [0x80, 67, 0]);
+    final again = Take.start(p, t, 0, replace: true)
+      ..add(2, [0x90, 67, 100])
+      ..add(3, [0x80, 67, 0]);
     again.finish(4);
     expect((t.clips.single.content as MidiContent).notes.map((n) => n.pitch), [67]);
     h.undo();
@@ -130,10 +135,12 @@ void main() {
       await drag.up();
       await t.pump(const Duration(milliseconds: 400));
       expect(show(m.notes), [(0.0, 1.0, 60), (3.0, 0.25, 65)]);
-      expect(s.key(const KeyDownEvent(
-          physicalKey: PhysicalKeyboardKey.backspace,
-          logicalKey: LogicalKeyboardKey.backspace,
-          timeStamp: Duration.zero)), isTrue);
+      expect(
+          s.key(const KeyDownEvent(
+              physicalKey: PhysicalKeyboardKey.backspace,
+              logicalKey: LogicalKeyboardKey.backspace,
+              timeStamp: Duration.zero)),
+          isTrue);
       expect(show(m.notes), [(0.0, 1.0, 60)]);
       history.undo(); // the project holds copies after undo; the delete is undone there
       expect((history.project.tracks.single.clips.single.content as MidiContent).notes.length, 2);

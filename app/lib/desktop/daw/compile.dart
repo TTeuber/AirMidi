@@ -61,6 +61,50 @@ List<int> _expression(String name, int ch, int v) => switch (name) {
       _ => const [],
     };
 
+/// One hit of a pattern, in its content's time: a step, or one of a step's repeats.
+class PatternHit {
+  final double x, length; // beats; x can be a little below 0 (a nudged first step) or past the end
+  final int row, step, hit, pitch, velocity; // velocity 7 bit
+  final double probability;
+  const PatternHit(this.x, this.length, this.row, this.step, this.hit, this.pitch, this.velocity, this.probability);
+
+  /// Whether this hit sounds in [pass] of the clip [clipId]: always at probability 1, else a roll that is the same
+  /// every time for the same hit and pass.
+  bool plays(int clipId, int pass) =>
+      probability >= 1 || _roll(clipId, pass, row * kMaxSteps + step, hit) < probability;
+}
+
+/// Every hit of [p] (unmuted rows), with swing, nudge, repeats and gate applied: what the compiler plays each pass
+/// and what "to MIDI clip" writes.
+Iterable<PatternHit> patternHits(Pattern p) sync* {
+  final sb = p.stepBeats;
+  for (var r = 0; r < p.rows.length; r++) {
+    final row = p.rows[r];
+    if (row.mute) continue;
+    for (var s = 0; s < p.steps; s++) {
+      final st = p.cells[r][s];
+      if (st == null) continue;
+      final x = s * sb + (s.isOdd ? (p.swing - 0.5) * 2 * sb : 0) + st.nudge * sb;
+      final hits = st.repeat.clamp(1, 4), each = sb / hits;
+      final len = math.min(st.gate * sb, hits > 1 ? each * 0.9 : double.infinity);
+      for (var h = 0; h < hits; h++) {
+        yield PatternHit(x + h * each, len, r, s, h, row.note, down16to7(st.velocity), st.probability);
+      }
+    }
+  }
+}
+
+/// A pattern as notes ("to MIDI clip"): one pass of it, the probabilities rolled as the clip's first pass plays
+/// them; a hit nudged before the start wraps to the end.
+MidiContent patternToMidi(Pattern p, int clipId) {
+  final len = p.length;
+  return MidiContent(len,
+      notes: [
+        for (final h in patternHits(p))
+          if (h.plays(clipId, 0)) Note(h.x < 0 ? h.x + len : h.x, h.length, h.pitch, velocity: up7to16(h.velocity))
+      ]..sort((a, b) => a.start.compareTo(b.start)));
+}
+
 /// The events in song beats [from, to), timed by [nsAt]. Notes end by [cut] at the latest (the loop's end when the
 /// stretch ends there). [pass] tells repeats of the song loop apart (each pass rolls its own probabilities).
 /// [notes] collects the notes started, for stopping.
@@ -132,26 +176,11 @@ List<SeqEvent> compile(Project p, double from, double to, int Function(double be
             if (at < passEnd && inWindow(at)) out.add(SeqEvent(nsAt(at), port, r.bytes));
           }
         } else if (content is Pattern) {
-          final sb = content.stepBeats, ch = t.mpe ? 0 : t.channel;
-          for (var r = 0; r < content.rows.length; r++) {
-            final row = content.rows[r];
-            if (row.mute) continue;
-            for (var s = 0; s < content.steps; s++) {
-              final st = content.cells[r][s];
-              if (st == null) continue;
-              final x = s * sb + (s.isOdd ? (content.swing - 0.5) * 2 * sb : 0) + st.nudge * sb;
-              final hits = st.repeat.clamp(1, 4), each = sb / hits;
-              for (var h = 0; h < hits; h++) {
-                final at = base + x + h * each;
-                if (!inWindow(at)) continue;
-                if (st.probability < 1 && _roll(c.id, pass * 100003 + k, r * kMaxSteps + s, h) >= st.probability) {
-                  continue;
-                }
-                note(at, at + math.min(st.gate * sb, hits > 1 ? each * 0.9 : double.infinity), ch, row.note,
-                    down16to7(st.velocity),
-                    end: limit);
-              }
-            }
+          final ch = t.mpe ? 0 : t.channel;
+          for (final h in patternHits(content)) {
+            final at = base + h.x;
+            if (!inWindow(at) || !h.plays(c.id, pass * 100003 + k)) continue;
+            note(at, at + h.length, ch, h.pitch, h.velocity, end: limit);
           }
         }
       }

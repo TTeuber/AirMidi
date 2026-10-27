@@ -247,6 +247,24 @@ notes, loops, swing, chase, undo), timing through a mido port, the pages driven 
   velocity (21 out), a key click auditioned, alt-drag copied a note a beat and a half later. The drive tool gained
   `drag`, `rtap` (right click) and the keys space, backspace, escape, the arrows and meta / shift / alt.
 
+- **A3 (2026-10-27):** the sequencer (`pattern_editor.dart`, one canvas for the grid and labels, one for the lane).
+  A click adds a step and plays it, a drag paints along (every cell between two pointer events, so a fast drag
+  skips none); a click on a step removes it, up/down sets its velocity (the fill's height), sideways erases along.
+  The lane under the grid edits the selected row's velocity, gate (0.05-2 steps), probability, nudge (+-half a
+  step) or repeat (1-4), by dragging or sweeping, double-click for the default; steps show their chance (a dot),
+  repeats (ticks) and nudge (a mark). Rows: GM 6 or 12 rows, or a scale (key, eight scales including chromatic, from
+  an octave, one or two octaves); + row (the GM drums not there yet, or a semitone above); a label's M mutes, a
+  click selects it for the lane, a right-click renames, moves the note, moves or removes the row. Length 1-64 with
+  "double" (the second half a copy), step sizes 1/8, 1/16, 1/32, 1/8T, 1/16T, swing, shift (rotate) left/right, pages
+  of 16 when the steps are too narrow, following the playhead. "to MIDI clip" (panel and clip menu):
+  `patternHits` is now what both playback and the conversion read, so the MIDI clip plays exactly what the pattern's
+  first pass played (probabilities rolled the same; a step nudged before the start wraps to the end). The piano roll
+  opens centred on the clip's notes and has a wider key column with drum names on a channel 10 track. Tests
+  (`test/pattern_test.dart`): conversion = playback, the wrap, scales, rotate, double, the widget (add and audition,
+  a fast paint, sideways erase, remove, undo, velocity by drag, the lane, pages). Tried in the app through mido: a
+  beat of kick, snare and painted hats with a velocity sweep (112 down to 10 out) and a 4x repeat (31.25 ms apart),
+  then "to MIDI clip": the bar's 50 events identical before and after.
+
 ## Decided (2026-10-26, the user)
 
 1. Every clip is its own (no shared patterns); clips copy to other tracks.
