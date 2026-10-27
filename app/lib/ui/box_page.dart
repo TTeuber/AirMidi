@@ -3,6 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../link/config.dart';
 import '../link/link.dart';
@@ -233,7 +234,33 @@ class _BoxPageState extends State<BoxPage> {
       _row('wi-fi ${wifi['state']}${(wifi['ip'] ?? '') != '' ? ' · ${wifi['ip']}' : ''}'
           '${(wifi['ssid'] ?? '') != '' ? ' · ${wifi['ssid']}' : ''}'),
       for (final b in ble) _row('ble ${b['state']} · ${(b['interval_ms'] as num).toStringAsFixed(2)} ms · mtu ${b['mtu']}'),
+      _web(s, wifi),
     ];
+  }
+
+  // The box's own web page: only while it is on Wi-Fi (Network mode) or has its access point up (Setup mode). The
+  // .local name is the box's name; the address always works, the name only where the browser resolves mDNS.
+  Widget _web(Map<String, dynamic> s, Map wifi) {
+    final ip = wifi['ip'] as String? ?? '';
+    final up = (wifi['state'] == 'connected' || wifi['state'] == 'access point') && ip.isNotEmpty;
+    if (!up) return _row('web page: in network or setup mode', dim: true);
+    Widget link(String url) => GestureDetector(
+          onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Text(url, style: const TextStyle(color: cAc, fontSize: 14, decoration: TextDecoration.underline)),
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF1A2228)))),
+      child: Wrap(runSpacing: 6, children: [
+        const Padding(
+            padding: EdgeInsets.only(right: 12), child: Text('web page', style: TextStyle(color: cN, fontSize: 14))),
+        link('http://$ip'),
+        if ((s['name'] as String? ?? '').isNotEmpty) link('http://${s['name']}.local'),
+      ]),
+    );
   }
 }
 

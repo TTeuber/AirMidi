@@ -178,6 +178,8 @@ Status (2026-10-24):
   kit: pad and filter attack moved, the report read back 2.7 kHz / 54 / 960 ms. A rescan now asks for the values
   again (it cut off the report that was under way). With the widgets on most of the page claims its touches, so
   the page scrolls only from the faders, headings and readouts.
+- The box page shows the box's web page address in Network and Setup mode (2026-10-26): its IP and `<name>.local`,
+  both open the browser (url_launcher); tried on the Pixel, both load the page.
 - Direct to a computer (2026-10-26, "Without a box" above): USB tried end to end (the Mac logged the setup once, the
   note with its bend first, 114 bends of a slide, the note off; back and reopen works). The user played Logic over
   both USB and BLE, both work.
