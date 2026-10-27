@@ -6,11 +6,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../link/link.dart';
-import '../play/keys.dart';
-import '../synth/state.dart';
-import 'strips_page.dart';
-import 'synth_page.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/play/keys.dart';
+import 'package:airmidi/shared/synth/state.dart';
+import 'package:airmidi/shared/ui/strips_page.dart';
+import 'package:airmidi/shared/ui/synth_page.dart';
 
 class KeysPage extends StatefulWidget {
   final MidiLink link;

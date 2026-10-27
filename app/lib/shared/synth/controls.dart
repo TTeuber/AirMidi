@@ -76,10 +76,14 @@ class Device {
         if (e.value is List)
           e.key: [
             for (final o in e.value as List)
-              if (o is Map && o['title'] is String && o['value'] is num) MapEntry(o['title'], (o['value'] as num).toInt())
+              if (o is Map && o['title'] is String && o['value'] is num)
+                MapEntry(o['title'], (o['value'] as num).toInt())
           ]
     };
-    final controls = [for (final c in all) if (c is Map<String, dynamic>) Control.fromJson(c)].whereType<Control>().toList();
+    final controls = [
+      for (final c in all)
+        if (c is Map<String, dynamic>) Control.fromJson(c)
+    ].whereType<Control>().toList();
     for (var i = 0; i < controls.length; i++) {
       controls[i].order = i;
     }

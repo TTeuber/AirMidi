@@ -6,8 +6,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
-import '../midi/packets.dart';
-import 'link.dart';
+import 'package:airmidi/shared/midi/packets.dart';
+import 'package:airmidi/shared/link/link.dart';
 
 class MidiDeviceEntry {
   final int id;
@@ -26,7 +26,8 @@ class AndroidMidi {
     final list = await _calls.invokeListMethod<Map>('devices') ?? [];
     return [
       for (final d in list)
-        MidiDeviceEntry(d['id'] as int, d['name'] as String, d['type'] as String, d['inputs'] as int, d['outputs'] as int)
+        MidiDeviceEntry(
+            d['id'] as int, d['name'] as String, d['type'] as String, d['inputs'] as int, d['outputs'] as int)
     ];
   }
 
@@ -34,8 +35,8 @@ class AndroidMidi {
   static Stream<void> get changes => events.where((e) => e['event'] == 'devices');
 
   static Future<AndroidMidiLink> openBluetooth(String address, String name) async {
-    final r = await _calls.invokeMapMethod<String, dynamic>('openBluetooth', {'address': address})
-        .timeout(const Duration(seconds: 15));
+    final r = await _calls
+        .invokeMapMethod<String, dynamic>('openBluetooth', {'address': address}).timeout(const Duration(seconds: 15));
     return AndroidMidiLink._(r!['handle'] as int, name, 'ble');
   }
 
@@ -69,8 +70,10 @@ class AndroidMidiLink implements MidiLink {
   bool get repeatSetup => false;
 
   @override
-  Future<void> send(List<List<int>> msgs) =>
-      AndroidMidi._calls.invokeMethod('send', {'handle': handle, 'bytes': Uint8List.fromList([for (final m in msgs) ...m])});
+  Future<void> send(List<List<int>> msgs) => AndroidMidi._calls.invokeMethod('send', {
+        'handle': handle,
+        'bytes': Uint8List.fromList([for (final m in msgs) ...m])
+      });
 
   @override
   Future<void> close() => AndroidMidi._calls.invokeMethod('close', {'handle': handle});

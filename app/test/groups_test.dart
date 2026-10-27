@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:airmidi/synth/controls.dart';
-import 'package:airmidi/synth/groups.dart';
+import 'package:airmidi/shared/synth/controls.dart';
+import 'package:airmidi/shared/synth/groups.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Device daisy() =>

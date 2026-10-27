@@ -1,4 +1,4 @@
-import 'package:airmidi/play/keys.dart';
+import 'package:airmidi/shared/play/keys.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 

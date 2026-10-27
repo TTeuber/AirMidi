@@ -120,7 +120,7 @@ and runs the same screens over HTTP. Only built if BLE setup turns out unreliabl
 ## Without a box: a computer or any MIDI device
 
 The strips also play a Mac (or any MIDI device) directly, no box in between. Everything that is not an airmidi box goes
-through Android's MIDI service (`android.media.midi`, `MainActivity.kt` + `lib/link/android_midi.dart`), not the BLE
+through Android's MIDI service (`android.media.midi`, `MainActivity.kt` + `lib/mobile/android_midi.dart`), not the BLE
 plugin:
 
 - **BLE:** the Mac advertises (Audio MIDI Setup > MIDI Studio > Bluetooth > Advertise) and appears in the app's
@@ -168,11 +168,11 @@ Status (2026-10-24):
   (`Pinch`, `moved`, `settled`, `quantized`) with tests; drag, snap and press tried on the Pixel 9a. Not saved yet.
 - Synth page by control path (2026-10-26, docs/system "Control paths"): a section per first `paramPath` segment
   (filter, env, fx, osc for daisy_synth), and attack/decay/sustain/release under one path drawn as an envelope you drag
-  (`lib/synth/groups.dart`, `ui/envelope_editor.dart`): peak = attack, decay corner = decay across and sustain up/down,
+  (`lib/shared/synth/groups.dart`, `shared/ui/envelope_editor.dart`): peak = attack, decay corner = decay across and sustain up/down,
   sustain end = sustain, last point = release; times between the synth's named points on a log scale. Tried on the
   kit through the box: release set to 420 ms came back from the synth's report as 440 ms (its 7-bit CC step).
-- XY pad and wave icons (2026-10-26): cutoff + resonance under one path become a pad (`ui/xy_pad.dart`, a 2-pole
-  low-pass curve with its peak at the dot), a picker of wave names shows icons (`ui/wave_icon.dart`); "graphics" in
+- XY pad and wave icons (2026-10-26): cutoff + resonance under one path become a pad (`shared/ui/xy_pad.dart`, a 2-pole
+  low-pass curve with its peak at the dot), a picker of wave names shows icons (`shared/ui/wave_icon.dart`); "graphics" in
   the synth page's bar turns all widgets off for comparison. daisy_synth 0.2 has a filter envelope of its own, so
   the page shows two envelopes. Faders and widgets show values between the named points (`display`). Tried on the
   kit: pad and filter attack moved, the report read back 2.7 kHz / 54 / 960 ms. A rescan now asks for the values

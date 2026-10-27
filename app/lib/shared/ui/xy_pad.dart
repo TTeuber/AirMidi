@@ -7,9 +7,9 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import '../synth/controls.dart';
-import '../synth/groups.dart';
-import 'strips_page.dart';
+import 'package:airmidi/shared/synth/controls.dart';
+import 'package:airmidi/shared/synth/groups.dart';
+import 'package:airmidi/shared/ui/theme.dart';
 
 class XyPadEditor extends StatefulWidget {
   final Device device;
@@ -59,8 +59,8 @@ class _XyPadEditorState extends State<XyPadEditor> {
           final w = box.maxWidth;
           return RawGestureDetector(
             gestures: {
-              EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
-                  () => EagerGestureRecognizer(), (_) {}),
+              EagerGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(() => EagerGestureRecognizer(), (_) {}),
             },
             child: Listener(
               onPointerDown: _down,
@@ -116,7 +116,11 @@ class _PadPainter extends CustomPainter {
       final py = ((21 - db) / 48 * h).clamp(-2.0, h + 2);
       px == 0 ? path.moveTo(px, py) : path.lineTo(px, py);
     }
-    canvas.drawPath(Path.from(path)..lineTo(w, h)..lineTo(0, h)..close(),
+    canvas.drawPath(
+        Path.from(path)
+          ..lineTo(w, h)
+          ..lineTo(0, h)
+          ..close(),
         Paint()..color = stripHues[1].base.withValues(alpha: 0.35));
     canvas.drawPath(
         path,

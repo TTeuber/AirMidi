@@ -1,5 +1,5 @@
 // The prototype's tests (modeling/proto/pedal_steel/test/strips.test.js), ported one for one.
-import 'package:airmidi/strips/strips.dart';
+import 'package:airmidi/shared/strips/strips.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const on = EventType.on, change = EventType.change, pitch = EventType.pitch, off = EventType.off;

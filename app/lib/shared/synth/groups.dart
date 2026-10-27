@@ -4,7 +4,7 @@
 // resonance an XY pad. A device that sends no paths gets the same from its titles ("Amp Attack", "Amp Decay", ...).
 import 'dart:math' as math;
 
-import 'controls.dart';
+import 'package:airmidi/shared/synth/controls.dart';
 
 class Envelope {
   final String title; // what tells it apart in its section: "amp" for /env/amp/attack, '' for /env/attack

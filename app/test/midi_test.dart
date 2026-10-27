@@ -1,6 +1,6 @@
-import 'package:airmidi/midi/mpe.dart';
-import 'package:airmidi/midi/packets.dart';
-import 'package:airmidi/strips/strips.dart';
+import 'package:airmidi/shared/midi/mpe.dart';
+import 'package:airmidi/shared/midi/packets.dart';
+import 'package:airmidi/shared/strips/strips.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const on = EventType.on, change = EventType.change, pitch = EventType.pitch, off = EventType.off;

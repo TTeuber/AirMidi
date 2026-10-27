@@ -13,7 +13,7 @@ The same Flutter app as `app/`, built for macOS first and for Windows and Linux 
 ## What carries over from the phone app
 
 Box setup and the config API (the same JSON over BLE; universal_ble has macOS, Windows and Linux backends, to be
-tried), the synth page with its widgets (`lib/synth`, `ui/envelope_editor`, `ui/xy_pad`), MIDI parsing and MPE
+tried), the synth page with its widgets (`lib/shared/synth`, `shared/ui/envelope_editor`, `shared/ui/xy_pad`), MIDI parsing and MPE
 (`lib/midi`), and the link model (`MidiLink`). Layouts sized for a phone get a wider arrangement where needed.
 
 ## MIDI on the desktop
@@ -86,7 +86,7 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   coalescing). Checked in the app: the strips' MPE setup reached a mido listener on "airmidi app" once (42
   messages), a port made by another process appeared and went away in the list. Not yet tried: the box as a CoreMIDI
   port (Bluetooth in Audio MIDI Setup, or Network MIDI) and input from Dart (the engine side is tested natively).
-- **D2 (2026-10-26):** the keys page (`ui/keys_page.dart`, logic in `play/keys.dart` with tests), what the desktop
+- **D2 (2026-10-26):** the keys page (`desktop/keys_page.dart`, logic in `shared/play/keys.dart` with tests), what the desktop
   opens instead of the strips (a button away): the computer keyboard as a piano (A W S E D ... ' from c, Z/X
   octave, C/V velocity, Tab sustain; physical keys, so any layout), a two-octave piano for the mouse (slides across),
   4 x 4 pads on the GM drum map with velocity by height (channel 10), bend (springs back) and mod wheel. Each note
@@ -94,16 +94,16 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   through a mido port: notes, octave, velocity, sustain, a held key, a chord, piano and pad clicks, bend and mod
   all arrived as expected. The drive hook gained `keys` (through the focus system's key handler, since macOS would
   not let osascript type).
-- **D3 (2026-10-26):** the tracks page (`ui/tracks_page.dart`, "tracks" on the desktop's first page): one
+- **D3 (2026-10-26):** the tracks page (`desktop/tracks_page.dart`, "tracks" on the desktop's first page): one
   transport (play/stop, bpm, bar.beat), step tracks (drums on the GM map, or an octave of notes for a synth), each
   sending to one MIDI output and channel with its own length (tracks of different lengths drift, polymeter), mute,
-  and MIDI clock (Song Position, Start, 24 ticks a beat, Stop) to the ports picked. `tracks/sequencer.dart` (pure,
+  and MIDI clock (Song Position, Start, 24 ticks a beat, Stop) to the ports picked. `desktop/tracks/sequencer.dart` (pure,
   tested: windows join without gaps or doubles, offs before ons at the same time) makes the events of a time window;
-  `tracks/player.dart` hands the next 120 ms to the engine every 20 ms; stop drops what is queued (`ame_clear`) and
+  `desktop/tracks/player.dart` hands the next 120 ms to the engine every 20 ms; stop drops what is queued (`ame_clear`) and
   ends the notes that may sound. Measured through a mido port at 120 bpm: steps 250.0 ms apart (+-0.5 ms, the
   listener's own resolution), clock 20.83 ms mean, notes on and off balanced after stop; ten bpm steps up during
   play glided from 250 to 230.8 ms (130 bpm) without a gap or a doubled step. Not saved yet.
-- **D4 (2026-10-26), first part:** clip tracks (`ClipTrack` in `tracks/sequencer.dart`): record from any of the
+- **D4 (2026-10-26), first part:** clip tracks (`ClipTrack` in `desktop/tracks/sequencer.dart`): record from any of the
   computer's MIDI inputs or from the app's own keys page ("keys" on the tracks page; `tracks/keys_bus.dart`), at
   the time the engine stamped each message; an armed track passes what is played through to its output; recording
   loops over the clip's length and adds each pass (overdub); playback loops, every message as recorded, so MPE
@@ -112,6 +112,35 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   notes with bends on channel 2 into a one-bar clip: through while recording, then every event back exactly one bar
   (2.000 s) later each loop; the same from the keys page. Not yet: saving, Standard MIDI File export, editing notes,
   latency compensation.
+
+## Direction after D4 (agreed 2026-10-26)
+
+The desktop app is for driving hardware synths and drum machines; Logic is one more destination, its channels set
+by hand there.
+
+- **Two apps, one Flutter project.** The desktop gets its own pages instead of the phone's (more screen: the keys
+  next to the synth's controls, a DAW-style window). One project, two entry points (`lib/main_mobile.dart`,
+  `lib/main_desktop.dart`) over shared code (`lib/shared`: MIDI, MIDI-CI, links, the box pages, widgets) and
+  `lib/mobile`, `lib/desktop`. Separate packages only if the two pubspecs ever need to differ.
+- **Router.** Inputs x outputs, routes run inside the engine (C++, on the thread the message arrives on; Dart only
+  edits the table). Channels are how things are kept apart: a route passes a set of channels and can move each to
+  another (one keyboard: channel 1 to the box's synth, channel 10 to the drum machine; or Logic sending channel 3 to
+  "airmidi app" and the router taking it on to a synth). Splits by note range, transpose, message type filters per
+  route. The box's own router (matrix, filters, remap) is the same idea, so one settings format for both. macOS
+  lets every app hear every input, so the router adds destinations; it cannot hide an input from Logic.
+- **MIDI 2.0 groups.** A UMP endpoint has 16 groups of 16 channels; a group is how one MIDI 2.0 connection carries
+  what MIDI 1.0 needs separate ports (cables) for. The router's address is therefore (port, group, channel), with
+  group 1 for every MIDI 1.0 port. It matters once a MIDI 2.0 endpoint is in play: the box over Network MIDI 2.0
+  could offer its outputs (TRS, BLE) as groups, so one session reaches each of them.
+- **Tracks become a MIDI-only DAW**, linear arrangement first (a clip launcher later): timeline with clips, a piano
+  roll with velocity, controller and per-note bend lanes, step clips, a track header per device, the device's own
+  controls and named automation lanes from its MIDI-CI list, undo, projects, MIDI files.
+- **Phone:** piano keys and drum pads next to the strips (the keys/pads logic is shared already).
+
+Done 2026-10-26: the split (`lib/shared`, `lib/mobile`, `lib/desktop`; the box page takes each app's play page).
+
+Order: phone keys and pads; the router; the desktop play view (keys and synth controls on one
+page); then the DAW (design doc, arrangement and piano roll first).
 
 ## Open
 

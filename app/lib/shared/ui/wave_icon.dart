@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../synth/groups.dart';
+import 'package:airmidi/shared/synth/groups.dart';
 
 class WaveIcon extends StatelessWidget {
   final WaveShape shape;

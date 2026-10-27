@@ -1,5 +1,5 @@
 // The control model against daisy_synth's real MIDI-CI resources (devices/daisy_synth/host writes them).
-import 'package:airmidi/synth/controls.dart';
+import 'package:airmidi/shared/synth/controls.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 Map<String, dynamic> api() => {

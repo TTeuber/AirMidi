@@ -9,18 +9,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
-import '../link/link.dart';
-import '../play/player.dart';
-import '../strips/strips.dart';
-import '../synth/state.dart';
-import 'synth_page.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/play/player.dart';
+import 'package:airmidi/shared/strips/strips.dart';
+import 'package:airmidi/shared/synth/state.dart';
+import 'package:airmidi/shared/ui/theme.dart';
+import 'package:airmidi/shared/ui/synth_page.dart';
 
-const cBg = Color(0xFF090C0F), cN = Color(0xFFA5B0B6), cGrey = Color(0xFF636363), cAc = Color(0xFFE9C944);
-const stripHues = [
-  (base: Color(0xFF5C8E67), drag: Color(0xFF86B990)), // fir
-  (base: Color(0xFF5187AB), drag: Color(0xFF7BB2D9)), // slate
-  (base: Color(0xFF96719E), drag: Color(0xFFC29BCB)), // heather
-];
+export 'theme.dart';
 
 class Settings {
   double row = 11, gap = 0; // mm; the Pixel 9a is ~65 mm wide in portrait
@@ -246,10 +242,12 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
               _barButton(widget.synth == null ? 'back' : 'box', () => Navigator.of(context).maybePop()),
               _barButton('synth', _openSynth, enabled: widget.synth != null && widget.link != null),
               _barButton(moving ? 'done' : 'move', _toggleMove, lit: moving),
-              _barButton(showSettings ? 'done' : 'layout', () => setState(() {
-                    _leaveMove();
-                    showSettings = !showSettings;
-                  })),
+              _barButton(
+                  showSettings ? 'done' : 'layout',
+                  () => setState(() {
+                        _leaveMove();
+                        showSettings = !showSettings;
+                      })),
             ]),
           ),
           if (showSettings) Positioned(left: 0, right: 0, bottom: _barH, child: _settings()),
@@ -281,7 +279,14 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                     color: lit ? cAc : null, border: Border.all(color: enabled ? cAc : cGrey, width: 1.5)),
-                child: Text(label, style: TextStyle(color: lit ? cBg : enabled ? cAc : cGrey, fontSize: 15)),
+                child: Text(label,
+                    style: TextStyle(
+                        color: lit
+                            ? cBg
+                            : enabled
+                                ? cAc
+                                : cGrey,
+                        fontSize: 15)),
               ),
             ),
           ),
@@ -292,7 +297,8 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
     return Row(children: [
       SizedBox(width: 56, child: Text(label, style: const TextStyle(color: cN, fontSize: 12))),
       Expanded(
-        child: Slider(value: v.clamp(min, max), min: min, max: max, activeColor: cAc, inactiveColor: cGrey, onChanged: f),
+        child:
+            Slider(value: v.clamp(min, max), min: min, max: max, activeColor: cAc, inactiveColor: cGrey, onChanged: f),
       ),
       SizedBox(width: 52, child: Text('${v.round()}$unit', style: const TextStyle(color: cN, fontSize: 12))),
     ]);
@@ -325,9 +331,11 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
       color: const Color(0xF20A1014),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _slider('row', s.row, kRowRange.$1, kRowRange.$2, (v) => _relayout(() => s.row = v.roundToDouble()), unit: ' mm'),
+        _slider('row', s.row, kRowRange.$1, kRowRange.$2, (v) => _relayout(() => s.row = v.roundToDouble()),
+            unit: ' mm'),
         _slider('width', s.width ?? (L?.fitWidth ?? 0) / kPxPerMm, kWidthRange.$1, kWidthRange.$2,
-            (v) => _relayout(() => s.width = v.roundToDouble()), unit: s.width == null ? ' fit' : ' mm'),
+            (v) => _relayout(() => s.width = v.roundToDouble()),
+            unit: s.width == null ? ' fit' : ' mm'),
         _slider('gap', s.gap, 0, 20, (v) => _relayout(() => s.gap = v.roundToDouble()), unit: ' mm'),
         _slider('strips', s.count.toDouble(), 1, 6, (v) {
           if (v.round() == s.count) return;
@@ -336,14 +344,25 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
             s.tuning = defaultTuning(s.count);
           });
         }),
-        _slider('assist', s.assist, 0, 100, (v) => setState(() {
-              s.assist = v;
-              _setAssist();
-            })),
-        _slider('pull', s.pull, 20, 1000, (v) => setState(() {
-              s.pull = v;
-              _setAssist();
-            }), unit: ' ms'),
+        _slider(
+            'assist',
+            s.assist,
+            0,
+            100,
+            (v) => setState(() {
+                  s.assist = v;
+                  _setAssist();
+                })),
+        _slider(
+            'pull',
+            s.pull,
+            20,
+            1000,
+            (v) => setState(() {
+                  s.pull = v;
+                  _setAssist();
+                }),
+            unit: ' ms'),
         const SizedBox(height: 6),
         const Text('scale', style: TextStyle(color: cN, fontSize: 12)),
         const SizedBox(height: 4),
@@ -358,10 +377,13 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
           opacity: keyed ? 1 : 0.45,
           child: Wrap(spacing: 6, runSpacing: 6, children: [
             for (var k = 0; k < 12; k++)
-              _cell(kNames[k], s.key == k, () => setState(() {
-                    s.key = k;
-                    if (s.scale == 'off') s.scale = 'maj'; // picking a key turns the guide on
-                  })),
+              _cell(
+                  kNames[k],
+                  s.key == k,
+                  () => setState(() {
+                        s.key = k;
+                        if (s.scale == 'off') s.scale = 'maj'; // picking a key turns the guide on
+                      })),
           ]),
         ),
         const SizedBox(height: 4),
@@ -369,10 +391,14 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
           _toggle('snap', s.snap, (v) => setState(() => s.snap = v)),
           _toggle('legato', s.legato, (v) => setState(() => s.legato = v)),
           _toggle('link stats', s.showStats, (v) => setState(() => s.showStats = v)),
-          _cell('fit', s.width == null, () => _relayout(() {
-                s.width = null;
-                s.scroll = 0;
-              }), width: 52),
+          _cell(
+              'fit',
+              s.width == null,
+              () => _relayout(() {
+                    s.width = null;
+                    s.scroll = 0;
+                  }),
+              width: 52),
           _cell('all off', false, () => player.allOff(), width: 80),
         ]),
       ]),
@@ -397,7 +423,11 @@ class _Painter extends CustomPainter {
     final L = p.L, s = p.s;
     if (L == null) return;
     const gapY = 2.0; // background between rows separates them; no lines
-    final labelSize = L.row >= 40 ? 15.0 : L.row >= 28 ? 12.0 : 0.0;
+    final labelSize = L.row >= 40
+        ? 15.0
+        : L.row >= 28
+            ? 12.0
+            : 0.0;
     final paint = Paint();
     // Rows below the open string: from the one cut by the top edge to the one cut by the bottom.
     final first = L.view.floor(), last = (L.view + (L.bottom - L.top) / L.row).ceil();
@@ -416,7 +446,12 @@ class _Painter extends CustomPainter {
         final strong = s.scale == 'off' ? r % 12 == 0 : isRoot(note, s.key);
         paint.color = !inKey(note, s.key, s.scale)
             ? cGrey.withValues(alpha: 0.1)
-            : hue.base.withValues(alpha: note == pressed ? 0.42 : strong ? 0.3 : 0.18);
+            : hue.base.withValues(
+                alpha: note == pressed
+                    ? 0.42
+                    : strong
+                        ? 0.3
+                        : 0.18);
         c.drawRect(Rect.fromLTWH(st.x, y0 + gapY / 2, st.w, L.row - gapY), paint);
       }
       if (state != null) {
@@ -424,7 +459,8 @@ class _Painter extends CustomPainter {
         // from in tune shows and the notes around stay visible.
         final centre = L.yAt(st, pressed!.toDouble()), finger = L.yAt(st, state.pitch);
         paint.color = hue.base.withValues(alpha: 0.9);
-        c.drawRect(Rect.fromLTRB(st.x, centre < finger ? centre : finger, st.x + st.w, centre < finger ? finger : centre),
+        c.drawRect(
+            Rect.fromLTRB(st.x, centre < finger ? centre : finger, st.x + st.w, centre < finger ? finger : centre),
             paint);
         paint.color = hue.drag;
         c.drawRect(Rect.fromCenter(center: Offset(st.x + st.w / 2, centre), width: st.w, height: 2), paint);
@@ -436,7 +472,11 @@ class _Painter extends CustomPainter {
         for (var r = first; r < last; r++) {
           final note = st.base + r, mid = rowTop(r) + L.row / 2;
           if (note < 0 || note > 127 || mid - labelSize / 2 < L.top || mid + labelSize / 2 > L.bottom) continue;
-          final a = note == pressed ? 1.0 : inKey(note, s.key, s.scale) ? 0.45 : 0.18;
+          final a = note == pressed
+              ? 1.0
+              : inKey(note, s.key, s.scale)
+                  ? 0.45
+                  : 0.18;
           _text(c, kNames[note % 12], Offset(st.x + st.w / 2, mid), labelSize, cN.withValues(alpha: a));
         }
       }
@@ -464,8 +504,8 @@ class _Painter extends CustomPainter {
       final hint = Rect.fromCenter(center: Offset((L.areaL + L.areaR) / 2, L.bottom - 40), width: 230, height: 44);
       c.drawRect(hint, Paint()..color = cBg.withValues(alpha: 0.85));
       _text(c, 'drag: up and down the neck', hint.center - const Offset(0, 9), 13, cAc);
-      _text(c, L.overflows ? 'pinch: rows / width, drag across' : 'pinch: rows / width', hint.center + const Offset(0, 9),
-          13, cAc);
+      _text(c, L.overflows ? 'pinch: rows / width, drag across' : 'pinch: rows / width',
+          hint.center + const Offset(0, 9), 13, cAc);
     }
   }
 

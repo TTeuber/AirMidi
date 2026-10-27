@@ -5,9 +5,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
-import '../synth/controls.dart';
-import '../synth/groups.dart';
-import 'strips_page.dart';
+import 'package:airmidi/shared/synth/controls.dart';
+import 'package:airmidi/shared/synth/groups.dart';
+import 'package:airmidi/shared/ui/theme.dart';
 
 class EnvelopeEditor extends StatefulWidget {
   final Device device;
@@ -29,8 +29,8 @@ class _EnvelopeEditorState extends State<EnvelopeEditor> {
 
   EnvShape _shape(double w) {
     final d = widget.device, e = widget.env;
-    return EnvShape(
-        w - 2 * _pad, _height - 2 * _pad, d.fraction(e.attack), d.fraction(e.decay), d.fraction(e.sustain), d.fraction(e.release));
+    return EnvShape(w - 2 * _pad, _height - 2 * _pad, d.fraction(e.attack), d.fraction(e.decay), d.fraction(e.sustain),
+        d.fraction(e.release));
   }
 
   List<Control> _of(Handle h) => switch (h) {
@@ -95,8 +95,8 @@ class _EnvelopeEditorState extends State<EnvelopeEditor> {
           // Claims the touch at once, so a vertical drag on sustain does not scroll the page.
           return RawGestureDetector(
             gestures: {
-              EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
-                  () => EagerGestureRecognizer(), (_) {}),
+              EagerGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(() => EagerGestureRecognizer(), (_) {}),
             },
             child: Listener(
               onPointerDown: (p) => _down(p, w),
@@ -132,8 +132,18 @@ class _EnvPainter extends CustomPainter {
     canvas.drawRect(Offset.zero & size, Paint()..color = stripHues[0].base.withValues(alpha: 0.10));
     canvas.translate(_pad, _pad);
     final p = [for (final (x, y) in s.points) Offset(x, y)];
-    canvas.drawLine(Offset(0, s.h), Offset(s.w, s.h), Paint()..color = cGrey..strokeWidth = 1);
-    canvas.drawLine(Offset(0, 0), Offset(s.w, 0), Paint()..color = cGrey.withValues(alpha: 0.4)..strokeWidth = 1);
+    canvas.drawLine(
+        Offset(0, s.h),
+        Offset(s.w, s.h),
+        Paint()
+          ..color = cGrey
+          ..strokeWidth = 1);
+    canvas.drawLine(
+        Offset(0, 0),
+        Offset(s.w, 0),
+        Paint()
+          ..color = cGrey.withValues(alpha: 0.4)
+          ..strokeWidth = 1);
 
     // Decay and release bend like the exponential segments they are.
     final path = Path()

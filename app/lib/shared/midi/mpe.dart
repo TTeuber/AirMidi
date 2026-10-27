@@ -8,7 +8,7 @@
 // per channel. take() hands out everything due since the last call, and the sender calls it again only once the
 // link has taken the previous batch. A link that drains slower than the finger moves then sends fewer, newer bends
 // instead of building a queue, which is what makes a slide lag behind the finger.
-import '../strips/strips.dart';
+import 'package:airmidi/shared/strips/strips.dart';
 
 const kBendRange = 48; // semitones each way, member channels
 const kVelocity = 100;

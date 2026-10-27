@@ -6,14 +6,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../link/link.dart';
-import '../synth/controls.dart';
-import '../synth/groups.dart';
-import '../synth/state.dart';
-import 'envelope_editor.dart';
-import 'strips_page.dart';
-import 'wave_icon.dart';
-import 'xy_pad.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/synth/controls.dart';
+import 'package:airmidi/shared/synth/groups.dart';
+import 'package:airmidi/shared/synth/state.dart';
+import 'package:airmidi/shared/ui/envelope_editor.dart';
+import 'package:airmidi/shared/ui/strips_page.dart';
+import 'package:airmidi/shared/ui/wave_icon.dart';
+import 'package:airmidi/shared/ui/xy_pad.dart';
 
 class SynthPage extends StatefulWidget {
   final SynthState synth;

@@ -3,8 +3,8 @@
 // its own output.
 import 'dart:async';
 
-import '../link/desktop_midi.dart';
-import '../link/link.dart';
+import 'package:airmidi/desktop/desktop_midi.dart';
+import 'package:airmidi/shared/link/link.dart';
 
 final keysBus = StreamController<(List<int>, int)>.broadcast();
 

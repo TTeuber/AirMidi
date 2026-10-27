@@ -1,4 +1,4 @@
-import 'package:airmidi/tracks/sequencer.dart';
+import 'package:airmidi/desktop/tracks/sequencer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const ms = 1000000;

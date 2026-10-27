@@ -1,9 +1,9 @@
 // Strip events -> MpeOut -> the link, one batch in flight at a time, with the numbers the A0 spike is after.
 import 'dart:async';
 
-import '../link/link.dart';
-import '../midi/mpe.dart';
-import '../strips/strips.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/midi/mpe.dart';
+import 'package:airmidi/shared/strips/strips.dart';
 
 class SendStats {
   int batches = 0, messages = 0;

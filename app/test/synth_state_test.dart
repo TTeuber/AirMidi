@@ -1,9 +1,9 @@
 // The synth page's values outlive the page (the bug: reopening it showed the defaults again).
 import 'dart:async';
 
-import 'package:airmidi/link/config.dart';
-import 'package:airmidi/link/link.dart';
-import 'package:airmidi/synth/state.dart';
+import 'package:airmidi/shared/link/config.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/synth/state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakeConfig implements ConfigClient {

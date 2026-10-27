@@ -1,16 +1,14 @@
 // One box: its state, its mode, Wi-Fi setup, the phones it trusts, and the strips. Works the same over BLE (config
 // service) and Wi-Fi (HTTP); the box's API is the same either way.
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../link/config.dart';
-import '../link/link.dart';
-import '../synth/state.dart';
-import 'keys_page.dart';
-import 'strips_page.dart';
+import 'package:airmidi/shared/link/config.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/synth/state.dart';
+import 'package:airmidi/shared/ui/theme.dart';
 
 /// Finds the box again on BLE or Wi-Fi after it left the link this page uses, and returns its page (null: not found).
 typedef Follow = Future<Widget?> Function(String id, {required bool toWifi, required DateTime since});
@@ -22,6 +20,10 @@ class BoxPage extends StatefulWidget {
   final Future<MidiLink> Function() midi;
   final Future<void> Function() close;
   final Follow? follow;
+
+  /// Each app's way to play the box (the phone: the strips; the desktop: the keys page), and the button's label.
+  final Widget Function(MidiLink link, SynthState synth) play;
+  final String playLabel;
   const BoxPage(
       {super.key,
       required this.title,
@@ -29,6 +31,8 @@ class BoxPage extends StatefulWidget {
       required this.config,
       required this.midi,
       required this.close,
+      required this.play,
+      required this.playLabel,
       this.follow});
 
   @override
@@ -175,14 +179,11 @@ class _BoxPageState extends State<BoxPage> {
           if (error != null) _banner(error!),
           if (s != null) ..._state(s),
           const SizedBox(height: 18),
-          _bigButton(Platform.isAndroid ? 'play the strips' : 'play', () async {
+          _bigButton(widget.playLabel, () async {
             try {
               final link = await widget.midi();
               if (!context.mounted) return;
-              // the desktop has no touch screen: the keys first, the strips a button away
-              final page =
-                  Platform.isAndroid ? StripsPage(link: link, synth: synth) : KeysPage(link: link, synth: synth);
-              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => widget.play(link, synth)));
             } catch (e) {
               setState(() => error = '$e');
             }

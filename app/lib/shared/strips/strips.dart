@@ -23,7 +23,8 @@ const kScales = {
   'min': [0, 2, 3, 5, 7, 8, 10],
   'pent': [0, 2, 4, 7, 9],
 };
-bool inKey(int note, int root, String scale) => !kScales.containsKey(scale) || kScales[scale]!.contains(_pc(note - root));
+bool inKey(int note, int root, String scale) =>
+    !kScales.containsKey(scale) || kScales[scale]!.contains(_pc(note - root));
 bool isRoot(int note, int root) => _pc(note - root) == 0;
 
 /// Pitch assist, fully applied: a soft quantizer. e = distance from the nearest note; the remaining error is
@@ -104,9 +105,7 @@ StripLayout layout(double fx, double fy, double fw, double fh, LayoutSettings s,
   final n = s.tuning.length;
   final fit = n == 0 ? 0.0 : (areaW - (n - 1) * gap) / n;
   final w = s.width == null ? fit : s.width! * pxPerMm, total = n * w + (n - 1) * gap;
-  final x0 = total <= areaW
-      ? areaL + (areaW - total) / 2
-      : areaL - (s.scroll * pxPerMm).clamp(0.0, total - areaW);
+  final x0 = total <= areaW ? areaL + (areaW - total) / 2 : areaL - (s.scroll * pxPerMm).clamp(0.0, total - areaW);
   final strips = [for (var i = 0; i < n; i++) Strip(i, s.tuning[i], x0 + i * (w + gap), w)];
   return StripLayout(strips, fy, fy + fh, s.row * pxPerMm, gap,
       areaL: areaL, areaR: areaR, fitWidth: fit, view: s.view, pxPerMm: pxPerMm);
@@ -219,7 +218,9 @@ class StripEvent {
 
   @override
   bool operator ==(Object other) =>
-      other is StripEvent && other.type == type && other.strip == strip &&
+      other is StripEvent &&
+      other.type == type &&
+      other.strip == strip &&
       (other.pitch == pitch || (other.pitch.isNaN && pitch.isNaN));
   @override
   int get hashCode => Object.hash(type, strip);

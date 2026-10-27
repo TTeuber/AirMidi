@@ -6,7 +6,7 @@ import 'dart:io';
 
 import 'package:midi_engine/midi_engine.dart';
 
-import 'link.dart';
+import 'package:airmidi/shared/link/link.dart';
 
 const kVirtualName = 'airmidi app';
 

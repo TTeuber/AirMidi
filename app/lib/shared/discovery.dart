@@ -7,7 +7,7 @@ import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart';
 import 'package:universal_ble/universal_ble.dart';
 
-import 'link/link.dart';
+import 'package:airmidi/shared/link/link.dart';
 
 /// The id in a box's scan response: manufacturer data, company FFFF (testing), payload "am" + 3 bytes.
 String? boxIdFromAdvert(BleDevice d) {

@@ -6,9 +6,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../link/config.dart';
-import '../link/link.dart';
-import 'controls.dart';
+import 'package:airmidi/shared/link/config.dart';
+import 'package:airmidi/shared/link/link.dart';
+import 'package:airmidi/shared/synth/controls.dart';
 
 class SynthState extends ChangeNotifier {
   final ConfigClient config;

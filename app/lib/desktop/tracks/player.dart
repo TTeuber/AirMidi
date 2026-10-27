@@ -7,8 +7,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:midi_engine/midi_engine.dart';
 
-import 'keys_bus.dart';
-import 'sequencer.dart';
+import 'package:airmidi/desktop/tracks/keys_bus.dart';
+import 'package:airmidi/desktop/tracks/sequencer.dart';
 
 const _lookahead = 120000000; // ns scheduled ahead: covers a late timer tick, costs this much delay on a change
 const _tick = Duration(milliseconds: 20);

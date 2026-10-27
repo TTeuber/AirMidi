@@ -2,7 +2,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:airmidi/link/config.dart';
+import 'package:airmidi/shared/link/config.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {

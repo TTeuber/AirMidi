@@ -7,12 +7,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
-import '../link/desktop_midi.dart';
-import '../tracks/keys_bus.dart';
-import '../tracks/player.dart';
-import '../tracks/sequencer.dart';
-import 'keys_page.dart';
-import 'strips_page.dart';
+import 'package:airmidi/desktop/desktop_midi.dart';
+import 'package:airmidi/desktop/tracks/keys_bus.dart';
+import 'package:airmidi/desktop/tracks/player.dart';
+import 'package:airmidi/desktop/tracks/sequencer.dart';
+import 'package:airmidi/desktop/keys_page.dart';
+import 'package:airmidi/shared/ui/strips_page.dart';
 
 final _song = Song(tracks: [drumTrack()]);
 SeqPlayer? _player;
@@ -281,13 +281,14 @@ class _ClipPainter extends CustomPainter {
         canvas.drawRect(r, Paint()..color = stripHues[ch % 3].drag);
       }
     }
-    if (pos >= 0)
+    if (pos >= 0) {
       canvas.drawLine(
           Offset(w * pos, 0),
           Offset(w * pos, h),
           Paint()
             ..color = cAc
             ..strokeWidth = 2);
+    }
   }
 
   @override
