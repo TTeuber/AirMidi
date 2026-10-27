@@ -86,6 +86,14 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   coalescing). Checked in the app: the strips' MPE setup reached a mido listener on "airmidi app" once (42
   messages), a port made by another process appeared and went away in the list. Not yet tried: the box as a CoreMIDI
   port (Bluetooth in Audio MIDI Setup, or Network MIDI) and input from Dart (the engine side is tested natively).
+- **D2 (2026-10-26):** the keys page (`ui/keys_page.dart`, logic in `play/keys.dart` with tests), what the desktop
+  opens instead of the strips (a button away): the computer keyboard as a piano (A W S E D ... ' from c, Z/X
+  octave, C/V velocity, Tab sustain; physical keys, so any layout), a two-octave piano for the mouse (slides across),
+  4 x 4 pads on the GM drum map with velocity by height (channel 10), bend (springs back) and mod wheel. Each note
+  ends on the channel and number it started with; everything goes off when the window loses the keyboard. Tried
+  through a mido port: notes, octave, velocity, sustain, a held key, a chord, piano and pad clicks, bend and mod
+  all arrived as expected. The drive hook gained `keys` (through the focus system's key handler, since macOS would
+  not let osascript type).
 
 ## Open
 

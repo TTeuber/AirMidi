@@ -1,6 +1,7 @@
 // One box: its state, its mode, Wi-Fi setup, the phones it trusts, and the strips. Works the same over BLE (config
 // service) and Wi-Fi (HTTP); the box's API is the same either way.
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -8,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../link/config.dart';
 import '../link/link.dart';
 import '../synth/state.dart';
+import 'keys_page.dart';
 import 'strips_page.dart';
 
 /// Finds the box again on BLE or Wi-Fi after it left the link this page uses, and returns its page (null: not found).
@@ -120,10 +122,12 @@ class _BoxPageState extends State<BoxPage> {
         Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => page));
         return;
       }
-      setState(() => (following = null,
-          error = toWifi
-              ? 'The box did not show up on this Wi-Fi within 40 s. Has it joined a network (wi-fi below)?'
-              : 'The box did not show up over Bluetooth within 40 s.'));
+      setState(() => (
+            following = null,
+            error = toWifi
+                ? 'The box did not show up on this Wi-Fi within 40 s. Has it joined a network (wi-fi below)?'
+                : 'The box did not show up over Bluetooth within 40 s.'
+          ));
     } catch (e) {
       if (mounted) setState(() => (following = null, error = '$e'));
     }
@@ -171,12 +175,14 @@ class _BoxPageState extends State<BoxPage> {
           if (error != null) _banner(error!),
           if (s != null) ..._state(s),
           const SizedBox(height: 18),
-          _bigButton('play the strips', () async {
+          _bigButton(Platform.isAndroid ? 'play the strips' : 'play', () async {
             try {
               final link = await widget.midi();
               if (!context.mounted) return;
-              await Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => StripsPage(link: link, synth: synth)));
+              // the desktop has no touch screen: the keys first, the strips a button away
+              final page =
+                  Platform.isAndroid ? StripsPage(link: link, synth: synth) : KeysPage(link: link, synth: synth);
+              await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
             } catch (e) {
               setState(() => error = '$e');
             }
@@ -184,7 +190,9 @@ class _BoxPageState extends State<BoxPage> {
           const SizedBox(height: 22),
           _heading('wi-fi'),
           for (final n in networks)
-            _row(n, trailing: _textButton('forget', () => _act(() => api.call('DELETE', '/api/wifi?ssid=${Uri.encodeQueryComponent(n)}')))),
+            _row(n,
+                trailing: _textButton(
+                    'forget', () => _act(() => api.call('DELETE', '/api/wifi?ssid=${Uri.encodeQueryComponent(n)}')))),
           if (networks.isEmpty) _row('no networks stored', dim: true),
           const SizedBox(height: 6),
           _bigButton('add a network', () async {
@@ -203,8 +211,8 @@ class _BoxPageState extends State<BoxPage> {
           const SizedBox(height: 22),
           _heading('settings'),
           _bigButton('settings', () async {
-            final restarts = await Navigator.of(context)
-                .push<bool>(MaterialPageRoute(builder: (_) => SettingsPage(api: api)));
+            final restarts =
+                await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => SettingsPage(api: api)));
             if (restarts == true) {
               await _afterChange(toWifi: !widget.overBle);
             } else {
@@ -233,7 +241,8 @@ class _BoxPageState extends State<BoxPage> {
       _row(bat['usb'] == true ? 'on usb power' : 'battery ${bat['pct']} % (${bat['mv']} mV)'),
       _row('wi-fi ${wifi['state']}${(wifi['ip'] ?? '') != '' ? ' · ${wifi['ip']}' : ''}'
           '${(wifi['ssid'] ?? '') != '' ? ' · ${wifi['ssid']}' : ''}'),
-      for (final b in ble) _row('ble ${b['state']} · ${(b['interval_ms'] as num).toStringAsFixed(2)} ms · mtu ${b['mtu']}'),
+      for (final b in ble)
+        _row('ble ${b['state']} · ${(b['interval_ms'] as num).toStringAsFixed(2)} ms · mtu ${b['mtu']}'),
       _web(s, wifi),
     ];
   }
@@ -360,8 +369,9 @@ class _WifiSetupPageState extends State<WifiSetupPage> {
           for (final n in found)
             InkWell(
               onTap: () => _try(n['ssid'], n['secure'] == true),
-              child: _row('${n['ssid']}', trailing: Text('${n['rssi']} dBm${n['secure'] == true ? '' : ' · open'}',
-                  style: const TextStyle(color: cGrey, fontSize: 12))),
+              child: _row('${n['ssid']}',
+                  trailing: Text('${n['rssi']} dBm${n['secure'] == true ? '' : ' · open'}',
+                      style: const TextStyle(color: cGrey, fontSize: 12))),
             ),
           const SizedBox(height: 10),
           _textButton('scan again', _scan),
@@ -453,10 +463,16 @@ class _SettingsPageState extends State<SettingsPage> {
           ? Center(child: message != null ? Text(message!) : const CircularProgressIndicator(color: cAc))
           : ListView(padding: const EdgeInsets.all(14), children: [
               if (message != null) _banner(message!),
-              _field('name', name, 'Letters, digits and "-". The Bluetooth name, the Wi-Fi host name and the Setup '
-                  'access point. Changing it restarts the box.'),
-              _field('bluetooth keyboard', device, 'A BLE MIDI keyboard or controller the box connects to by itself: '
-                  'its name or address, "*" for any, empty for none.'),
+              _field(
+                  'name',
+                  name,
+                  'Letters, digits and "-". The Bluetooth name, the Wi-Fi host name and the Setup '
+                      'access point. Changing it restarts the box.'),
+              _field(
+                  'bluetooth keyboard',
+                  device,
+                  'A BLE MIDI keyboard or controller the box connects to by itself: '
+                      'its name or address, "*" for any, empty for none.'),
               _switch('bluetooth in network mode', 'ble_in_network',
                   'Keep Bluetooth on in Network mode. Costs network MIDI ~16 ms of latency (measured).'),
               _switch('esp-now cable', 'espnow', 'A wireless MIDI cable to another airmidi box with the same group.'),
@@ -464,9 +480,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _field('sysex timeout (ms)', timeout, 'How long another source waits behind an unfinished SysEx.',
                   type: TextInputType.number),
               const SizedBox(height: 8),
-              saving
-                  ? const Center(child: CircularProgressIndicator(color: cAc))
-                  : _bigButton('save', _save),
+              saving ? const Center(child: CircularProgressIndicator(color: cAc)) : _bigButton('save', _save),
             ]),
     );
   }
@@ -502,7 +516,8 @@ Widget _cell(String label, bool selected, VoidCallback onTap, {double width = 44
         width: width,
         height: 44,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: selected ? cAc : Colors.transparent, border: Border.all(color: selected ? cAc : cGrey)),
+        decoration: BoxDecoration(
+            color: selected ? cAc : Colors.transparent, border: Border.all(color: selected ? cAc : cGrey)),
         child: Text(label, style: TextStyle(color: selected ? cBg : cN, fontSize: 14)),
       ),
     );

@@ -15,6 +15,7 @@ import 'link/config.dart';
 import 'link/desktop_midi.dart';
 import 'link/link.dart';
 import 'ui/box_page.dart';
+import 'ui/keys_page.dart';
 import 'ui/strips_page.dart';
 
 void main() {
@@ -161,7 +162,9 @@ class _ConnectPageState extends State<ConnectPage> {
       if (mounted) setState(() => busy = false);
     }
     if (link == null || !mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => StripsPage(link: link)));
+    // the desktop has no touch screen: the keys first, the strips a button away
+    final page = Platform.isAndroid ? StripsPage(link: link) : KeysPage(link: link);
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
     await link.close().catchError((_) {});
   }
 
@@ -193,7 +196,7 @@ class _ConnectPageState extends State<ConnectPage> {
       ListTile(
         contentPadding: EdgeInsets.zero,
         title: const Text(kVirtualName),
-        subtitle: const Text('this app\'s own port: Logic and other apps record what the strips play there',
+        subtitle: const Text('this app\'s own port: Logic and other apps record what you play there',
             style: TextStyle(color: cGrey)),
         trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
         onTap: () => _play(() async => DesktopMidi.openVirtual()),
@@ -202,8 +205,8 @@ class _ConnectPageState extends State<ConnectPage> {
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(p.name),
-          subtitle: Text([kind(p), 'play the strips on it'].where((s) => s.isNotEmpty).join(' · '),
-              style: const TextStyle(color: cGrey)),
+          subtitle:
+              Text([kind(p), 'play it'].where((s) => s.isNotEmpty).join(' · '), style: const TextStyle(color: cGrey)),
           trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
           onTap: () => _play(() async => DesktopMidi.open(p)),
         ),
