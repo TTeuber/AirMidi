@@ -94,6 +94,15 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   through a mido port: notes, octave, velocity, sustain, a held key, a chord, piano and pad clicks, bend and mod
   all arrived as expected. The drive hook gained `keys` (through the focus system's key handler, since macOS would
   not let osascript type).
+- **D3 (2026-10-26):** the tracks page (`ui/tracks_page.dart`, "tracks" on the desktop's first page): one
+  transport (play/stop, bpm, bar.beat), step tracks (drums on the GM map, or an octave of notes for a synth), each
+  sending to one MIDI output and channel with its own length (tracks of different lengths drift, polymeter), mute,
+  and MIDI clock (Song Position, Start, 24 ticks a beat, Stop) to the ports picked. `tracks/sequencer.dart` (pure,
+  tested: windows join without gaps or doubles, offs before ons at the same time) makes the events of a time window;
+  `tracks/player.dart` hands the next 120 ms to the engine every 20 ms; stop drops what is queued (`ame_clear`) and
+  ends the notes that may sound. Measured through a mido port at 120 bpm: steps 250.0 ms apart (+-0.5 ms, the
+  listener's own resolution), clock 20.83 ms mean, notes on and off balanced after stop; ten bpm steps up during
+  play glided from 250 to 230.8 ms (130 bpm) without a gap or a doubled step. Not saved yet.
 
 ## Open
 

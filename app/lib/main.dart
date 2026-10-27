@@ -17,6 +17,7 @@ import 'link/link.dart';
 import 'ui/box_page.dart';
 import 'ui/keys_page.dart';
 import 'ui/strips_page.dart';
+import 'ui/tracks_page.dart';
 
 void main() {
   registerDrive(); // debug builds: screenshots and taps from tool/drive.py
@@ -244,7 +245,13 @@ class _ConnectPageState extends State<ConnectPage> {
     final list = discovery.list.where((s) => s.id != null).toList();
     final others = discovery.list.where((s) => s.id == null).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('airmidi'), backgroundColor: cBg),
+      appBar: AppBar(title: const Text('airmidi'), backgroundColor: cBg, actions: [
+        if (DesktopMidi.available)
+          TextButton(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TracksPage())),
+            child: const Text('tracks'),
+          ),
+      ]),
       body: ListView(padding: const EdgeInsets.all(14), children: [
         const Text('boxes', style: TextStyle(color: cAc, fontSize: 13)),
         for (final s in list) _box(s),

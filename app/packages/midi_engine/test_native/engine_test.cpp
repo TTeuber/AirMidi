@@ -91,6 +91,16 @@ int main() {
                ame_late_sum_ns() / 1e6 / std::max<int64_t>(1, ame_sent()), (long long)ame_sent());
         CHECK(err[err.size() * 99 / 100] < 2'000'000);  // 99 % within 2 ms of due
     }
+    // clear: queued and dropped, nothing arrives
+    for (int k = 0; k < 10; k++) {
+        uint8_t m[3] = {0x80, 1, 0};
+        ame_send(out, m, 3, ame_now_ns() + 200'000'000);
+    }
+    CHECK(ame_clear(out) == 10);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    int late = 0;
+    { int h, n; int64_t t; uint8_t b[16]; for (int kind; (kind = ame_read(&h, b, sizeof b, &n, &t));) late += kind == 1; }
+    CHECK(late == 0);
     ame_close(in);
     ame_close(out);
     ame_stop();

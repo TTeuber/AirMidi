@@ -45,6 +45,7 @@ class MidiEngine {
     _openVirtual =
         _lib.lookupFunction<Int32 Function(Int32, Pointer<Utf8>), int Function(int, Pointer<Utf8>)>('ame_open_virtual');
     _close = _lib.lookupFunction<Void Function(Int32), void Function(int)>('ame_close');
+    _clear = _lib.lookupFunction<Int32 Function(Int32), int Function(int)>('ame_clear');
     _send = _lib.lookupFunction<Int32 Function(Int32, Pointer<Uint8>, Int32, Int64),
         int Function(int, Pointer<Uint8>, int, int)>('ame_send');
     _read = _lib.lookupFunction<
@@ -73,6 +74,7 @@ class MidiEngine {
   late final int Function(int, int) _type, _open;
   late final int Function(int, Pointer<Utf8>) _openVirtual;
   late final void Function(int) _close;
+  late final int Function(int) _clear;
   late final int Function(int, Pointer<Uint8>, int, int) _send;
   late final int Function(Pointer<Int32>, Pointer<Uint8>, int, Pointer<Int32>, Pointer<Int64>) _read;
   late final NativeCallable<_WakeC> _wake;
@@ -141,6 +143,9 @@ class MidiEngine {
   }
 
   void close(int handle) => _close(handle);
+
+  /// Drops what is still queued for [handle]; returns how many messages were dropped.
+  int clear(int handle) => _clear(handle);
 
   /// Sends whole messages, now or at [atNs] (on [nowNs]'s clock); same-time messages keep their order.
   void send(int handle, List<int> bytes, {int atNs = 0}) {

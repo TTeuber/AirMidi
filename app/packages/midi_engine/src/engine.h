@@ -43,6 +43,9 @@ AME_API void ame_close(int handle);
 // Messages due at the same time go out in the order they were queued. Returns 0, or -1 for a bad handle.
 AME_API int ame_send(int handle, const uint8_t *bytes, int n, int64_t at_ns);
 
+// Drops everything still queued for an output (a sequencer stopping); returns how many messages were dropped.
+AME_API int ame_clear(int handle);
+
 // Takes the oldest waiting event: kind 1 = MIDI (handle, bytes, *t_ns its arrival time), kind 2 = the port list
 // changed. Returns the kind (0 = nothing waiting); *n is the message length, cut to cap if longer.
 AME_API int ame_read(int *handle, uint8_t *bytes, int cap, int *n, int64_t *t_ns);

@@ -387,6 +387,23 @@ int ame_send(int handle, const uint8_t *bytes, int n, int64_t at_ns) {
     return 0;
 }
 
+int ame_clear(int handle) {
+    if (!E) return 0;
+    std::lock_guard<std::mutex> l(E->dueMu);
+    std::vector<Due> keep;
+    int dropped = 0;
+    while (!E->due.empty()) {
+        Due d = E->due.top();
+        E->due.pop();
+        if (d.handle == handle)
+            dropped++;
+        else
+            keep.push_back(std::move(d));
+    }
+    for (auto &d : keep) E->due.push(std::move(d));
+    return dropped;
+}
+
 int ame_read(int *handle, uint8_t *bytes, int cap, int *n, int64_t *t_ns) {
     if (!E) return 0;
     std::lock_guard<std::mutex> l(E->evMu);
