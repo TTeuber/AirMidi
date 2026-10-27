@@ -70,6 +70,15 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
 - **D4:** clip tracks: record from any input, MPE included, play back, export to SMF.
 - **D5:** follow mode (clock in from Logic); Windows and Linux builds.
 
+## Status
+
+- **D0 (2026-10-26):** `app/macos` builds (macOS 11+, sandboxed, Bluetooth and network entitlements). On the Mac
+  the app finds the box over BLE, opens its page over the config service (as a second central, 30 ms interval),
+  the strips and the synth page with the device's current values and widgets. The Android-only parts (Android MIDI,
+  "play a Mac") are skipped on the desktop. Debug builds can be driven from the terminal (`lib/debug_drive.dart`,
+  `tool/drive.py`: screenshot and tap through the Dart VM service), since the terminal may not capture the screen.
+  Not yet: MIDI from the Mac goes over the BLE plugin (30 ms interval); D1 moves it to the computer's MIDI system.
+
 ## Open
 
 - Where projects are saved (one file per project, JSON plus SMF clips?).

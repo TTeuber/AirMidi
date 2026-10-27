@@ -2,10 +2,12 @@
 // Without a box the strips play a computer or any other MIDI device directly, over BLE or a USB cable (Android's
 // MIDI service, link/android_midi.dart).
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'debug_drive.dart';
 import 'discovery.dart';
 import 'link/android_midi.dart';
 import 'link/config.dart';
@@ -13,7 +15,10 @@ import 'link/link.dart';
 import 'ui/box_page.dart';
 import 'ui/strips_page.dart';
 
-void main() => runApp(const App());
+void main() {
+  registerDrive(); // debug builds: screenshots and taps from tool/drive.py
+  runApp(const App());
+}
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -27,6 +32,7 @@ class App extends StatelessWidget {
           colorScheme: const ColorScheme.dark(primary: cAc, surface: cBg),
         ),
         home: const ConnectPage(),
+        builder: (context, child) => RepaintBoundary(key: driveRoot, child: child),
       );
 }
 
@@ -106,8 +112,10 @@ class _ConnectPageState extends State<ConnectPage> {
     discovery.addListener(_changed);
     discovery.start();
     SharedPreferences.getInstance().then((p) => host.text = p.getString('host') ?? '');
-    _usbChanges = AndroidMidi.changes.listen((_) => _listUsb());
-    _listUsb();
+    if (Platform.isAndroid) {
+      _usbChanges = AndroidMidi.changes.listen((_) => _listUsb());
+      _listUsb();
+    }
   }
 
   Future<void> _listUsb() async {
@@ -170,9 +178,11 @@ class _ConnectPageState extends State<ConnectPage> {
       return ListTile(
         contentPadding: EdgeInsets.zero,
         title: Text(s.name),
-        subtitle: Text('$ways · play the strips on it', style: const TextStyle(color: cGrey)),
-        trailing: busy ? null : const Icon(Icons.chevron_right, color: cGrey),
-        onTap: () => _play(() => AndroidMidi.openBluetooth(s.bleDevice!, s.name)),
+        subtitle:
+            Text(Platform.isAndroid ? '$ways · play the strips on it' : ways, style: const TextStyle(color: cGrey)),
+        trailing: busy || !Platform.isAndroid ? null : const Icon(Icons.chevron_right, color: cGrey),
+        // desktop: through the computer's own MIDI system (docs/desktop.md D1), not yet
+        onTap: Platform.isAndroid ? () => _play(() => AndroidMidi.openBluetooth(s.bleDevice!, s.name)) : null,
       );
     }
     return ListTile(
@@ -208,7 +218,8 @@ class _ConnectPageState extends State<ConnectPage> {
               child: Text(error!, style: const TextStyle(color: Color(0xFFAB6D6C)))),
         if (discovery.error != null)
           Padding(
-              padding: const EdgeInsets.only(top: 8), child: Text(discovery.error!, style: const TextStyle(color: cGrey))),
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(discovery.error!, style: const TextStyle(color: cGrey))),
         const SizedBox(height: 24),
         const Text('computers and other MIDI devices', style: TextStyle(color: cAc, fontSize: 13)),
         for (final s in others) _box(s),
@@ -226,23 +237,24 @@ class _ConnectPageState extends State<ConnectPage> {
             title: Text('none yet', style: TextStyle(color: cN)),
             subtitle: Text('BLE MIDI devices that advertise, and USB MIDI', style: TextStyle(color: cGrey)),
           ),
-        const ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: Text('play a Mac', style: TextStyle(color: cN, fontSize: 14)),
-          expandedCrossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                'Bluetooth: on the Mac, Audio MIDI Setup > Window > Show MIDI Studio, the Bluetooth button, '
-                'Advertise. The Mac shows up above; keep that window open until the phone has connected.\n\n'
-                'USB cable (lowest latency): plug the phone into the Mac and set its USB mode to MIDI (the USB '
-                'notification, or Settings > Connected devices > USB). The phone\'s port shows up above, and the '
-                'Mac sees the phone as a MIDI device.\n\n'
-                'The strips send MPE: in Logic, set the instrument\'s MIDI Mono Mode on (base channel 1) and its '
-                'pitch bend range to 48 semitones, or bends will be off.',
-                style: TextStyle(color: cGrey, fontSize: 13, height: 1.4)),
-            SizedBox(height: 12),
-          ],
-        ),
+        if (Platform.isAndroid)
+          const ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text('play a Mac', style: TextStyle(color: cN, fontSize: 14)),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                  'Bluetooth: on the Mac, Audio MIDI Setup > Window > Show MIDI Studio, the Bluetooth button, '
+                  'Advertise. The Mac shows up above; keep that window open until the phone has connected.\n\n'
+                  'USB cable (lowest latency): plug the phone into the Mac and set its USB mode to MIDI (the USB '
+                  'notification, or Settings > Connected devices > USB). The phone\'s port shows up above, and the '
+                  'Mac sees the phone as a MIDI device.\n\n'
+                  'The strips send MPE: in Logic, set the instrument\'s MIDI Mono Mode on (base channel 1) and its '
+                  'pitch bend range to 48 semitones, or bends will be off.',
+                  style: TextStyle(color: cGrey, fontSize: 13, height: 1.4)),
+              SizedBox(height: 12),
+            ],
+          ),
         ExpansionTile(
           tilePadding: EdgeInsets.zero,
           title: const Text('connect by address', style: TextStyle(color: cN, fontSize: 14)),
