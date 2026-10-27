@@ -1,13 +1,18 @@
 // The DAW's window (docs/daw.md "The window"): the transport, track headers down the left, the arrangement
 // (timeline.dart), and the bottom panel with the selected clip in its editor: the piano roll for a MIDI clip, the
-// sequencer for a pattern clip. The project, its undo history and the player live as long as the app (not saved
-// yet, A4), so leaving the page does not stop play.
+// sequencer for a pattern clip. The project, its undo history, the player and the store (store.dart: the file,
+// saved by itself every few seconds) live as long as the app, so leaving the page does not stop play. "file" opens,
+// saves under a name, and imports and exports Standard MIDI Files (smf.dart).
 //
 // Keys: space play/stop, R record, L loop, cmd-Z / shift-cmd-Z undo/redo, delete, cmd-D duplicate, cmd-C / cmd-V
-// copy and paste (at the start marker, on the selected clip's track), cmd-T split at the playhead. After a click in
+// copy and paste (at the start marker, on the selected clip's track), cmd-T split at the playhead, cmd-S save now,
+// cmd-O open. After a click in
 // the bottom panel the editor gets the keys first (the piano roll's delete removes notes, not the clip).
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
+
+import 'package:file_selector/file_selector.dart';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -21,17 +26,22 @@ import 'package:airmidi/desktop/daw/model.dart';
 import 'package:airmidi/desktop/daw/pattern_editor.dart';
 import 'package:airmidi/desktop/daw/piano_roll.dart';
 import 'package:airmidi/desktop/daw/player.dart';
+import 'package:airmidi/desktop/daw/project_file.dart';
+import 'package:airmidi/desktop/daw/smf.dart';
+import 'package:airmidi/desktop/daw/store.dart';
 import 'package:airmidi/desktop/daw/timeline.dart';
 import 'package:airmidi/desktop/desktop_midi.dart';
 import 'package:airmidi/desktop/keys_page.dart';
 import 'package:airmidi/shared/ui/theme.dart';
 
-final _project = Project(tracks: [
-  Track('drums', channel: 9, clips: [Clip('beat', 0, 4, Pattern(gmDrumRows()))]),
-  Track('synth'),
-]);
+Project _fresh() => Project(tracks: [
+      Track('drums', channel: 9, clips: [Clip('beat', 0, 4, Pattern(gmDrumRows()))]),
+      Track('synth'),
+    ]);
+final _project = _fresh();
 final _history = History(_project);
 DawPlayer? _player;
+ProjectStore? _store;
 Clip? _clipboard;
 
 const kHeaderW = 230.0;
@@ -45,6 +55,7 @@ class ArrangePage extends StatefulWidget {
 
 class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStateMixin {
   late final DawPlayer player = _player ??= DawPlayer(_project, _history, DesktopMidi.engine);
+  late final ProjectStore store = _store ??= ProjectStore(_project, _history)..start();
   late final Ticker ticker = createTicker((_) => setState(() {})); // the playhead
   final view = ArrangeView();
   final focus = FocusNode();
@@ -63,6 +74,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     super.initState();
     player.addListener(_changed);
     view.addListener(_changed);
+    store.addListener(_changed);
     _ports = DesktopMidi.changes.listen((_) => setState(() {}));
     if (player.playing) ticker.start();
   }
@@ -76,6 +88,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   @override
   void dispose() {
     player.removeListener(_changed);
+    store.removeListener(_changed);
     view.dispose();
     _ports?.cancel();
     ticker.dispose();
@@ -258,6 +271,101 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     focus.requestFocus();
   }
 
+  // ---- files
+
+  static const _projects = XTypeGroup(label: 'airmidi projects', extensions: [kProjectExt]);
+  static const _midiFiles = XTypeGroup(label: 'MIDI files', extensions: ['mid', 'midi']);
+
+  void _opened() {
+    selected = null;
+    player.syncInputs();
+    focus.requestFocus();
+  }
+
+  Future<void> _open([String? path]) async {
+    path ??= (await openFile(acceptedTypeGroups: [_projects], initialDirectory: ProjectStore.defaultDir))?.path;
+    if (path == null) return focus.requestFocus();
+    player.stop();
+    await store.open(path);
+    setState(_opened);
+  }
+
+  Future<void> _new() async {
+    player.stop();
+    await store.newProject(_fresh());
+    setState(_opened);
+  }
+
+  Future<void> _saveAs() async {
+    final at = await getSaveLocation(
+        acceptedTypeGroups: [_projects],
+        initialDirectory: ProjectStore.defaultDir,
+        suggestedName: store.name); // macOS adds the extension from the type
+    if (at != null) await store.saveAs(at.path);
+    focus.requestFocus();
+  }
+
+  Future<void> _export() async {
+    final at = await getSaveLocation(
+        acceptedTypeGroups: [_midiFiles],
+        initialDirectory: ProjectStore.defaultDir,
+        suggestedName: store.name);
+    if (at != null) {
+      try {
+        await File(at.path).writeAsBytes(exportSmf(p));
+      } catch (e) {
+        store.error = 'could not export: $e';
+      }
+    }
+    setState(() {});
+    focus.requestFocus();
+  }
+
+  Future<void> _import() async {
+    final f = await openFile(acceptedTypeGroups: [_midiFiles], initialDirectory: ProjectStore.defaultDir);
+    if (f != null) {
+      try {
+        final got = importSmf(await f.readAsBytes(), beatsPerBar: p.beatsPerBar);
+        _edit(() {
+          // an empty project takes the file's tempo too
+          if (got.bpm != null && p.tracks.every((t) => t.clips.isEmpty)) p.bpm = got.bpm!.roundToDouble();
+          p.tracks.addAll(got.tracks);
+        });
+      } catch (e) {
+        store.error = 'could not import ${f.name}: $e';
+      }
+    }
+    setState(() {});
+    focus.requestFocus();
+  }
+
+  Future<void> _fileMenu(Offset at) async {
+    final v = await _menu<String>(at, [
+      ('new', 'new'),
+      ('open ...', 'open'),
+      for (final r in store.recent.take(8))
+        if (r != store.path) ('   ${r.split('/').last}', 'recent:$r'),
+      ('save as ...', 'saveas'),
+      ('import a MIDI file ...', 'import'),
+      ('export a MIDI file ...', 'export'),
+    ]);
+    switch (v) {
+      case 'new':
+        await _new();
+      case 'open':
+        await _open();
+      case 'saveas':
+        await _saveAs();
+      case 'import':
+        await _import();
+      case 'export':
+        await _export();
+      case final String r when r.startsWith('recent:'):
+        await _open(r.substring(7));
+    }
+    focus.requestFocus();
+  }
+
   // ---- keys
 
   KeyEventResult _key(FocusNode node, KeyEvent e) {
@@ -286,6 +394,10 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       if (t != null) _paste(t, p.startBeat);
     } else if (c != null && cmd && k == LogicalKeyboardKey.keyT) {
       _split(c, player.beat);
+    } else if (cmd && k == LogicalKeyboardKey.keyS) {
+      shift ? _saveAs() : store.save(force: true);
+    } else if (cmd && k == LogicalKeyboardKey.keyO) {
+      _open();
     } else {
       return KeyEventResult.ignored;
     }
@@ -303,9 +415,23 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       onKeyEvent: _key,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('arrangement', style: TextStyle(fontSize: 16)),
+          title: Text('arrangement · ${store.name}', style: const TextStyle(fontSize: 16)),
           backgroundColor: cBg,
           actions: [
+            if (store.error != null)
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: Text(store.error!, style: const TextStyle(color: Color(0xFFAB6D6C), fontSize: 12)),
+              ),
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () {
+                  final box = context.findRenderObject() as RenderBox;
+                  _fileMenu(box.localToGlobal(Offset(0, box.size.height)));
+                },
+                child: const Text('file'),
+              ),
+            ),
             TextButton(onPressed: history.canUndo ? _undo : null, child: const Text('undo')),
             TextButton(onPressed: history.canRedo ? _redo : null, child: const Text('redo')),
           ],

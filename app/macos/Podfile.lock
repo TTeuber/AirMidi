@@ -2,6 +2,8 @@ PODS:
   - bonsoir_darwin (0.0.1):
     - Flutter
     - FlutterMacOS
+  - file_selector_macos (0.0.1):
+    - FlutterMacOS
   - FlutterMacOS (1.0.0)
   - midi_engine (0.1.0):
     - FlutterMacOS
@@ -16,6 +18,7 @@ PODS:
 
 DEPENDENCIES:
   - bonsoir_darwin (from `Flutter/ephemeral/.symlinks/plugins/bonsoir_darwin/darwin`)
+  - file_selector_macos (from `Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - midi_engine (from `Flutter/ephemeral/.symlinks/plugins/midi_engine/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
@@ -25,6 +28,8 @@ DEPENDENCIES:
 EXTERNAL SOURCES:
   bonsoir_darwin:
     :path: Flutter/ephemeral/.symlinks/plugins/bonsoir_darwin/darwin
+  file_selector_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/file_selector_macos/macos
   FlutterMacOS:
     :path: Flutter/ephemeral
   midi_engine:
@@ -38,6 +43,7 @@ EXTERNAL SOURCES:
 
 SPEC CHECKSUMS:
   bonsoir_darwin: 29c7ccf356646118844721f36e1de4b61f6cbd0e
+  file_selector_macos: 6280b52b459ae6c590af5d78fc35c7267a3c4b31
   FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
   midi_engine: db02e65ae80302d8817c598d88608d062094b4b5
   shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7

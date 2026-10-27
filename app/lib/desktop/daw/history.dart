@@ -19,6 +19,12 @@ class History {
     _redo.clear();
   }
 
+  /// Nothing to undo or redo (a project was opened).
+  void clear() {
+    _undo.clear();
+    _redo.clear();
+  }
+
   bool undo() {
     if (_undo.isEmpty) return false;
     _redo.add(project.snapshot());

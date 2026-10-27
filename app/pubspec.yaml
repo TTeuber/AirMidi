@@ -41,6 +41,7 @@ dependencies:
   midi_engine:
     path: packages/midi_engine
   url_launcher: ^6.3.2
+  file_selector: ^1.0.3
 
 dev_dependencies:
   flutter_test:

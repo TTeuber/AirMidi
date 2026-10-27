@@ -9,6 +9,11 @@
 int _lastId = 0;
 int newId() => ++_lastId;
 
+/// An id read from a file: new ones start above it.
+void seenId(int id) {
+  if (id > _lastId) _lastId = id;
+}
+
 // MIDI 1.0 <-> MIDI 2.0 values (the min-center-max scaling of M2-115: 0 stays 0, the centre stays the centre, the
 // top reaches the top; scaling down is a shift, so a 7-bit value comes back exactly).
 int _up(int v, int from, int to) {

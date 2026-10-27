@@ -265,6 +265,26 @@ notes, loops, swing, chase, undo), timing through a mido port, the pages driven 
   beat of kick, snare and painted hats with a velocity sweep (112 down to 10 out) and a 4x repeat (31.25 ms apart),
   then "to MIDI clip": the bar's 50 events identical before and after.
 
+- **A4 (2026-10-27):** files. `project_file.dart`: one JSON file per project (`.airmidi`, "format": "airmidi
+  project", version 1; values as kept, step settings only where they differ from the defaults; clip ids kept, so
+  probabilities roll the same after reopening; a newer or foreign file is refused). `store.dart`: the project is
+  written again every 3 s when it changed (atomically, through a temporary file), so there is no save to forget; an
+  untitled project goes to an autosave file in the app's folder; the last project opens again at start; up to 8
+  recent ones. `smf.dart`: export type 1 at 480 ticks a beat through the same compiler that plays, so a file holds
+  what play sends (patterns rendered, MPE on member channels after an MPE Configuration Message); import type 0/1
+  (running status, SysEx skipped, SMPTE refused), a track per channel, or one MPE track when the file sends an MPE
+  setup or plays notes on three channels or more (the setup is not kept: played again at a clip's start it would cut
+  the synth's notes); one clip per track in whole bars; an empty project takes the file's tempo. The arrangement's
+  "file" menu: new, open, recent, save as, import, export; cmd-S writes now, shift-cmd-S saves as, cmd-O opens.
+  macOS: file_selector (the Flutter team's, BSD) for the dialogs, the user-selected files and music folder
+  entitlements; ~/Music/airmidi is the default folder (the sandbox's Music is the user's own). Recent projects
+  outside ~/Music cannot be reopened without the dialog (no security-scoped bookmarks yet). Tests
+  (`test/files_test.dart`): a song with one of everything reads back to the same file and the same MIDI, refusals,
+  the export's header, tempo and MPE setup, export then import plays the same ticks, a hand-made type 0 file with
+  running status, the store (autosave, save as, reopen at start, recent). Tried in the app: a beat autosaved to the
+  container, the app restarted with the beat back, ~/Music/airmidi made, the save dialog opening there. Not tried in
+  the app: picking a file in the open or save dialogs (the terminal cannot click in them).
+
 ## Decided (2026-10-26, the user)
 
 1. Every clip is its own (no shared patterns); clips copy to other tracks.

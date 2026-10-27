@@ -57,7 +57,7 @@ class Take {
 
   /// The clip's content again: what it had before the take plus the take, notes held so far running to [now].
   void flush(double now) {
-    final mpe = track.mpe || _channels() >= 3;
+    final mpe = track.mpe || noteChannels(raw) >= 3;
     if (mpe) track.mpe = true;
     if (grow) {
       final need = math.max(math.max(now, _last) - clip.start, 1e-6);
@@ -67,87 +67,96 @@ class Take {
     }
     final out = _before.copy();
     final loopLen = out.length;
-    double x(double beat) {
+    addPlayed(out, raw, mpe: mpe, now: now, x: (beat) {
       final v = beat - clip.start + clip.offset;
       return grow ? v : v % loopLen;
-    }
-
-    final open = <(int, int), (Note, double)>{}; // (channel, pitch) -> the note and its song beat
-    final current = <int, (Note, double)>{}; // MPE: a channel's sounding note
-    final pending = <int, Map<String, int>>{}; // MPE: what a channel sent before its next note
-    void lane(String name, double beat, int v) => out.lanes.putIfAbsent(name, () => []).add(Point(x(beat), v));
-    for (final (beat, b) in raw) {
-      final type = b[0] & 0xF0, ch = b[0] & 0x0F;
-      final isOn = type == 0x90 && b.length > 2 && b[2] > 0;
-      final isOff = type == 0x80 || (type == 0x90 && b.length > 2 && b[2] == 0);
-      if (isOn) {
-        final n = Note(x(beat), 0, b[1], velocity: up7to16(b[2]));
-        if (mpe && ch != 0) {
-          for (final e in (pending.remove(ch) ?? const {}).entries) {
-            n.expression[e.key] = [Point(0, e.value)];
-          }
-          current[ch] = (n, beat);
-        }
-        open[(ch, b[1])] = (n, beat);
-        out.notes.add(n);
-        continue;
-      }
-      if (isOff) {
-        final o = open.remove((ch, b[1]));
-        if (o != null) {
-          o.$1
-            ..length = math.max(beat - o.$2, 1e-3)
-            ..release = up7to16(b.length > 2 ? b[2] : 0);
-          if (identical(current[ch]?.$1, o.$1)) current.remove(ch);
-        }
-        continue;
-      }
-      final String? name;
-      final int v;
-      if (type == 0xE0) {
-        name = 'bend';
-        v = up14to32(b[1] | b[2] << 7);
-      } else if (type == 0xD0) {
-        name = 'pressure';
-        v = up7to32(b[1]);
-      } else if (type == 0xB0) {
-        name = mpe && ch != 0 && b[1] == 74 ? 'timbre' : 'cc${b[1]}';
-        v = up7to32(b[2]);
-      } else if (type == 0xC0) {
-        name = 'program';
-        v = up7to32(b[1]);
-      } else {
-        name = null;
-        v = 0;
-      }
-      if (name == null) {
-        out.other.add(RawEvent(x(beat), b));
-      } else if (mpe && ch != 0 && (name == 'bend' || name == 'pressure' || name == 'timbre')) {
-        final cur = current[ch];
-        if (cur != null) {
-          cur.$1.expression.putIfAbsent(name, () => []).add(Point(beat - cur.$2, v));
-        } else {
-          (pending[ch] ??= {})[name] = v;
-        }
-      } else {
-        lane(name, beat, v);
-      }
-    }
-    for (final (n, beat) in open.values) {
-      n.length = math.max(now - beat, 1e-3);
-    }
-    out.notes.sort((a, b) => a.start.compareTo(b.start));
-    for (final l in out.lanes.values) {
-      _stableSort(l);
-    }
+    });
     clip.content = out;
     dirty = false;
   }
+}
 
-  int _channels() => {
-        for (final (_, b) in raw)
-          if ((b[0] & 0xF0) == 0x90 && b.length > 2 && b[2] > 0) b[0] & 0x0F
-      }.length;
+/// How many channels [raw] plays notes on (three or more: MPE).
+int noteChannels(List<(double, List<int>)> raw) => {
+      for (final (_, b) in raw)
+        if ((b[0] & 0xF0) == 0x90 && b.length > 2 && b[2] > 0) b[0] & 0x0F
+    }.length;
+
+/// Adds what was played ([raw]: beats as they came, channel messages) to [out] as notes and lanes: [x] maps a
+/// played beat to the content's time (a loop wraps it), lengths and expression times stay as played. Notes still
+/// held run to [now]. With [mpe], a member channel's bend, pressure and timbre go to its sounding note (what came
+/// just before the note on as its start); the manager channel (1) and everything else go to lanes.
+void addPlayed(MidiContent out, List<(double, List<int>)> raw,
+    {required bool mpe, required double now, required double Function(double) x}) {
+  final open = <(int, int), (Note, double)>{}; // (channel, pitch) -> the note and its played beat
+  final current = <int, (Note, double)>{}; // MPE: a channel's sounding note
+  final pending = <int, Map<String, int>>{}; // MPE: what a channel sent before its next note
+  void lane(String name, double beat, int v) => out.lanes.putIfAbsent(name, () => []).add(Point(x(beat), v));
+  for (final (beat, b) in raw) {
+    if (b.isEmpty || b[0] >= 0xF0) continue;
+    final type = b[0] & 0xF0, ch = b[0] & 0x0F;
+    final isOn = type == 0x90 && b.length > 2 && b[2] > 0;
+    final isOff = type == 0x80 || (type == 0x90 && b.length > 2 && b[2] == 0);
+    if (isOn) {
+      final n = Note(x(beat), 0, b[1], velocity: up7to16(b[2]));
+      if (mpe && ch != 0) {
+        for (final e in (pending.remove(ch) ?? const {}).entries) {
+          n.expression[e.key] = [Point(0, e.value)];
+        }
+        current[ch] = (n, beat);
+      }
+      open[(ch, b[1])] = (n, beat);
+      out.notes.add(n);
+      continue;
+    }
+    if (isOff) {
+      final o = open.remove((ch, b[1]));
+      if (o != null) {
+        o.$1
+          ..length = math.max(beat - o.$2, 1e-3)
+          ..release = up7to16(b.length > 2 ? b[2] : 0);
+        if (identical(current[ch]?.$1, o.$1)) current.remove(ch);
+      }
+      continue;
+    }
+    final String? name;
+    final int v;
+    if (type == 0xE0 && b.length > 2) {
+      name = 'bend';
+      v = up14to32(b[1] | b[2] << 7);
+    } else if (type == 0xD0) {
+      name = 'pressure';
+      v = up7to32(b[1]);
+    } else if (type == 0xB0 && b.length > 2) {
+      name = mpe && ch != 0 && b[1] == 74 ? 'timbre' : 'cc${b[1]}';
+      v = up7to32(b[2]);
+    } else if (type == 0xC0) {
+      name = 'program';
+      v = up7to32(b[1]);
+    } else {
+      name = null;
+      v = 0;
+    }
+    if (name == null) {
+      out.other.add(RawEvent(x(beat), b));
+    } else if (mpe && ch != 0 && (name == 'bend' || name == 'pressure' || name == 'timbre')) {
+      final cur = current[ch];
+      if (cur != null) {
+        cur.$1.expression.putIfAbsent(name, () => []).add(Point(beat - cur.$2, v));
+      } else {
+        (pending[ch] ??= {})[name] = v;
+      }
+    } else {
+      lane(name, beat, v);
+    }
+  }
+  for (final (n, beat) in open.values) {
+    n.length = math.max(now - beat, 1e-3);
+  }
+  out.notes.sort((a, b) => a.start.compareTo(b.start));
+  for (final l in out.lanes.values) {
+    _stableSort(l);
+  }
 }
 
 void _stableSort(List<Point> l) {
