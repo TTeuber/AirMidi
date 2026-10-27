@@ -1,7 +1,8 @@
 // Debug builds only: drive the app from outside through the Dart VM service (tool/drive.py), for checking the
 // desktop app where no screen capture or input injection is available. Two service extensions:
 //   ext.airmidi.shot  renders the app to a PNG in the app's temp dir and returns its path
-//   ext.airmidi.tap   a tap at x, y (logical pixels)
+//   ext.airmidi.tap   a tap at x, y (logical pixels); buttons=2 for a right click
+//   ext.airmidi.drag  a press at x0, y0 moved in steps to x1, y1 and let go
 //   ext.airmidi.key   a key down or up: physical (USB HID usage) and logical key ids, as the keyboard sends them
 import 'dart:convert';
 import 'dart:developer' as developer;
@@ -30,9 +31,27 @@ void registerDrive() {
   developer.registerExtension('ext.airmidi.tap', (method, params) async {
     final at = Offset(double.parse(params['x']!), double.parse(params['y']!));
     final g = GestureBinding.instance;
-    g.handlePointerEvent(PointerDownEvent(position: at, pointer: 900));
+    final buttons = int.parse(params['buttons'] ?? '$kPrimaryButton');
+    g.handlePointerEvent(PointerDownEvent(position: at, pointer: 900, buttons: buttons));
     await Future.delayed(const Duration(milliseconds: 60));
     g.handlePointerEvent(PointerUpEvent(position: at, pointer: 900));
+    return developer.ServiceExtensionResponse.result('{}');
+  });
+  developer.registerExtension('ext.airmidi.drag', (method, params) async {
+    double v(String k) => double.parse(params[k]!);
+    final a = Offset(v('x0'), v('y0')), b = Offset(v('x1'), v('y1'));
+    const steps = 12;
+    final g = GestureBinding.instance;
+    g.handlePointerEvent(PointerDownEvent(position: a, pointer: 901));
+    var last = a;
+    for (var i = 1; i <= steps; i++) {
+      await Future.delayed(const Duration(milliseconds: 16));
+      final at = Offset.lerp(a, b, i / steps)!;
+      g.handlePointerEvent(PointerMoveEvent(position: at, delta: at - last, pointer: 901));
+      last = at;
+    }
+    await Future.delayed(const Duration(milliseconds: 16));
+    g.handlePointerEvent(PointerUpEvent(position: b, pointer: 901));
     return developer.ServiceExtensionResponse.result('{}');
   });
   // The way a decoded platform key event goes: HardwareKeyboard (the pressed-keys state), then the key message

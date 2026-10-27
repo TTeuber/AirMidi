@@ -207,6 +207,29 @@ steps with swing, nudge and probability), plus clock.
 Tests as now: the model and the compiler in Dart unit tests (windows join without gaps or doubles, clip ends cut
 notes, loops, swing, chase, undo), timing through a mido port, the pages driven with `tool/drive.py`.
 
+## Status
+
+- **A1 (2026-10-26):** `app/lib/desktop/daw/`. `model.dart` (the model above; MIDI 2.0 values with M2-115
+  scaling), `compile.dart` (clips to timed events: passes through looping content, notes cut at the clip's end and
+  at each pass, the loop's end; patterns with swing, nudge, repeats and probability rolled from the step's identity;
+  MPE notes on member channels handed out afresh, each starting from its own bend), `record.dart` (takes: raw input
+  rebuilt into notes and lanes every tick, overdub in the loop range or a clip that grows by bars; MPE kept per note,
+  detected at three note channels), `history.dart` (undo by snapshot), `player.dart` (the scheduler of D3 over a
+  continuous beat count mapped into the loop; clock follows the continuous count; Song Position and Start or
+  Continue), `arrange_page.dart` + `timeline.dart` (transport, headers with port, channel, MPE, input, M/S/R;
+  ruler: click = start marker, drag = loop range; clips: move across tracks, resize both edges, alt-drag copy,
+  right-click menu with rename, duplicate, split, copy, delete; empty space: new MIDI or pattern clip, paste;
+  zoom and scroll by trackpad or cmd-scroll; keys: space, R, L, cmd-Z, delete, cmd-D/C/V/T), the bottom panel
+  (`pattern_editor.dart`: toggle steps, length, step size, swing, row sets; `piano_roll.dart`: shows the notes and
+  each note's bend). Tracks can send to "airmidi app" (to Logic) and record from it. Tests (`test/daw_test.dart`):
+  value scaling, clip passes and offsets, windows joining for 20 random splits, swing, repeats, probability,
+  MPE channels and bends, solo, the loop cut, takes in a loop, growing takes, an MPE take, undo. Tried in the app
+  through mido ports at 120 bpm: a beat and its duplicate with snares added only to the copy (every note on time to
+  0.2 ms, the original unchanged), a one-bar loop repeating without a gap, a two-note take recorded from "airmidi
+  app" (passed through while recording, then played back exactly 2000 ms later each pass), undo and redo of the
+  take, moving it a bar and onto another track, clock (20.83 ms ticks, Start, Stop), split at the start marker.
+  The old step and clip tracks (`desktop/tracks*`) are gone. Not tried: alt-drag (the drive hook cannot hold alt).
+
 ## Decided (2026-10-26, the user)
 
 1. Every clip is its own (no shared patterns); clips copy to other tracks.

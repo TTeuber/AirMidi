@@ -1,5 +1,5 @@
 // The desktop's first page (docs/desktop.md): boxes (found over BLE and on Wi-Fi, set up as on the phone), the
-// computer's MIDI ports to play, and the tracks.
+// computer's MIDI ports to play, and the arrangement (the DAW).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -10,7 +10,7 @@ import 'package:airmidi/desktop/desktop_midi.dart';
 import 'package:airmidi/desktop/keys_page.dart';
 import 'package:airmidi/desktop/router.dart';
 import 'package:airmidi/desktop/router_page.dart';
-import 'package:airmidi/desktop/tracks_page.dart';
+import 'package:airmidi/desktop/daw/arrange_page.dart';
 import 'package:airmidi/shared/boxes.dart';
 import 'package:airmidi/shared/discovery.dart';
 import 'package:airmidi/shared/link/link.dart';
@@ -150,8 +150,8 @@ class _DesktopHomeState extends State<DesktopHome> {
           child: const Text('router'),
         ),
         TextButton(
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TracksPage())),
-          child: const Text('tracks'),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ArrangePage())),
+          child: const Text('arrangement'),
         ),
       ]),
       body: ListView(padding: const EdgeInsets.all(14), children: [

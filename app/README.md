@@ -6,7 +6,8 @@ One Flutter project, two apps (`lib/main.dart` picks by platform):
   it up (mode, Wi-Fi from the box's own scan, trusted phones), play the pedal steel strips (from
   `modeling/proto/pedal_steel`) as MPE over BLE MIDI, the box's WebSocket, or Android's MIDI service to a computer.
 - **Desktop** (`lib/desktop`, macOS now, Windows and Linux later; plan `../docs/desktop.md`): the same box pages, the
-  computer's MIDI ports through `packages/midi_engine` (libremidi over ffi), the keys page, the tracks page.
+  computer's MIDI ports through `packages/midi_engine` (libremidi over ffi), the play page (keys and the synth's
+  controls), the router, and the arrangement (a MIDI-only DAW, `lib/desktop/daw`, design in `../docs/daw.md`).
 
 Shared (`lib/shared`):
 
