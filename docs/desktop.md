@@ -159,7 +159,7 @@ from the report (cutoff 660 Hz, resonance 24, the envelopes), filter / filter en
 in a 1200 x 780 window (it scrolls a little at that size); a click on a fader sent nothing, then four keys = 8
 messages and a pad = 2 out of the box's TRS.
 
-Order: the DAW (design doc, arrangement and piano roll first).
+Order: the DAW, designed in docs/daw.md (phases A1-A6: arrangement, piano roll, sequencer, files, controllers, hardware).
 
 ## Open
 
