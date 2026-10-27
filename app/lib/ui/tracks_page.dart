@@ -1,5 +1,6 @@
-// The tracks page (docs/desktop.md D3): one transport, step tracks, MIDI clock out. A track sends to one of the
-// computer's MIDI outputs on one channel; a click on a cell toggles a step. The song and its player live as long as
+// The tracks page (docs/desktop.md D3, D4): one transport, step tracks, clip tracks, MIDI clock out. A track sends
+// to one of the computer's MIDI outputs; a click on a cell toggles a step; an armed clip track records its input
+// while playing ("keys" opens the computer keyboard as an input). The song and its player live as long as
 // the app (not saved yet), so leaving the page does not stop play.
 import 'dart:async';
 
@@ -7,8 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../link/desktop_midi.dart';
+import '../tracks/keys_bus.dart';
 import '../tracks/player.dart';
 import '../tracks/sequencer.dart';
+import 'keys_page.dart';
 import 'strips_page.dart';
 
 final _song = Song(tracks: [drumTrack()]);
@@ -51,6 +54,65 @@ class _TracksPageState extends State<TracksPage> with SingleTickerProviderStateM
 
   List<String> get portNames => [for (final p in DesktopMidi.outputs()) p.name];
 
+  // What a clip track can record: the computer's inputs (not the app's own output) and the keys page.
+  List<String> get inputNames => [
+        kKeysInput,
+        for (final p in DesktopMidi.engine.inputs)
+          if (p.name != kVirtualName) p.name,
+      ];
+
+  Widget _dropdown(String hint, String? value, List<String> names, ValueChanged<String?> set) =>
+      DropdownButton<String?>(
+        value: names.contains(value) ? value : null,
+        hint: Text(hint, style: const TextStyle(color: cGrey, fontSize: 13)),
+        dropdownColor: cBg,
+        style: const TextStyle(color: cN, fontSize: 13),
+        items: [for (final n in names) DropdownMenuItem(value: n, child: Text(n))],
+        onChanged: set,
+      );
+
+  Widget _clip(ClipTrack t, double beat) {
+    final pos = player.playing && beat >= 0 ? (beat % t.lengthBeats) / t.lengthBeats : -1.0;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 18),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Text(t.name, style: const TextStyle(color: cAc, fontSize: 14)),
+          _dropdown('record from', t.input, inputNames, (v) {
+            setState(() => t.input = v);
+            player.syncInputs();
+          }),
+          _dropdown('send to', t.port, portNames, (v) => setState(() => t.port = v)),
+          _stepper(
+              'bars',
+              '${t.lengthBeats ~/ 4}',
+              () => setState(() => t.lengthBeats = (t.lengthBeats - 4).clamp(4, 64)),
+              () => setState(() => t.lengthBeats = (t.lengthBeats + 4).clamp(4, 64))),
+          _chip('rec', t.armed, () {
+            setState(() => t.armed = !t.armed);
+            player.syncInputs();
+          }),
+          _chip('clear', false, () => setState(() => t.events.clear())),
+          _chip('mute', t.mute, () => setState(() => t.mute = !t.mute)),
+          _chip(
+              'remove',
+              false,
+              () => setState(() {
+                    t.armed = false;
+                    song.tracks.remove(t);
+                    player.syncInputs();
+                  })),
+          Text('${t.events.length} events', style: const TextStyle(color: cGrey, fontSize: 12)),
+        ]),
+        const SizedBox(height: 6),
+        SizedBox(
+          height: 110,
+          child: CustomPaint(size: Size.infinite, painter: _ClipPainter(t, pos, t.armed && player.playing)),
+        ),
+      ]),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final beat = player.beat;
@@ -60,11 +122,14 @@ class _TracksPageState extends State<TracksPage> with SingleTickerProviderStateM
         _transport(beat),
         if (player.error != null) Text(player.error!, style: const TextStyle(color: Color(0xFFAB6D6C))),
         const SizedBox(height: 14),
-        for (final t in song.tracks) _track(t, beat),
+        for (final t in song.tracks)
+          if (t is StepTrack) _track(t, beat) else if (t is ClipTrack) _clip(t, beat),
         Row(children: [
           _button('+ drums', () => setState(() => song.tracks.add(drumTrack()))),
           const SizedBox(width: 8),
           _button('+ notes', () => setState(() => song.tracks.add(noteTrack()))),
+          const SizedBox(width: 8),
+          _button('+ clip', () => setState(() => song.tracks.add(ClipTrack()))),
         ]),
       ]),
     );
@@ -84,6 +149,8 @@ class _TracksPageState extends State<TracksPage> with SingleTickerProviderStateM
         IconButton(onPressed: () => player.setBpm(song.bpm + 1), icon: const Icon(Icons.add, size: 16), color: cAc),
       ]),
       SizedBox(width: 48, child: Text(bar, style: const TextStyle(color: cN, fontSize: 16))),
+      _button(
+          'keys', () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => KeysPage(link: KeysBusLink())))),
       const Text('clock to', style: TextStyle(color: cGrey, fontSize: 13)),
       for (final p in portNames)
         _chip(p, song.clockPorts.contains(p), () {
@@ -179,4 +246,50 @@ class _TracksPageState extends State<TracksPage> with SingleTickerProviderStateM
           child: Text(label, style: TextStyle(color: lit ? cBg : cAc, fontSize: 14)),
         ),
       );
+}
+
+/// A clip as a piano roll: each note a bar at its pitch (the recorded range fills the height), coloured by channel
+/// (MPE: a strip each), the beats as lines, the playhead.
+class _ClipPainter extends CustomPainter {
+  final ClipTrack t;
+  final double pos; // 0..1, or < 0 when stopped
+  final bool recording;
+  _ClipPainter(this.t, this.pos, this.recording);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    canvas.drawRect(Offset.zero & size,
+        Paint()..color = (recording ? const Color(0xFFAB6D6C) : stripHues[0].base).withValues(alpha: 0.12));
+    final beats = t.lengthBeats.round();
+    for (var b = 0; b <= beats; b++) {
+      canvas.drawLine(Offset(w * b / beats, 0), Offset(w * b / beats, h),
+          Paint()..color = cGrey.withValues(alpha: b % 4 == 0 ? 0.45 : 0.15));
+    }
+    final notes = t.notes();
+    if (notes.isNotEmpty) {
+      var lo = 127, hi = 0;
+      for (final n in notes) {
+        lo = n.$2 < lo ? n.$2 : lo;
+        hi = n.$2 > hi ? n.$2 : hi;
+      }
+      final rows = (hi - lo + 1).clamp(6, 48), rowH = h / rows;
+      for (final (ch, note, s, e) in notes) {
+        final y = h - (note - lo + 1) * rowH;
+        final r = Rect.fromLTRB(
+            w * s / t.lengthBeats, y, (w * e / t.lengthBeats).clamp(w * s / t.lengthBeats + 2, w), y + rowH - 1);
+        canvas.drawRect(r, Paint()..color = stripHues[ch % 3].drag);
+      }
+    }
+    if (pos >= 0)
+      canvas.drawLine(
+          Offset(w * pos, 0),
+          Offset(w * pos, h),
+          Paint()
+            ..color = cAc
+            ..strokeWidth = 2);
+  }
+
+  @override
+  bool shouldRepaint(_ClipPainter old) => true;
 }

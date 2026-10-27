@@ -1,10 +1,13 @@
 // Plays a [Song] through the desktop MIDI engine: every 20 ms the events of the next ~120 ms go to the engine with
 // their times (sequencer.dart eventsBetween), and the engine's real-time thread sends each one when it is due.
+// Armed clip tracks record from their input while playing (at the time the engine stamped each message) and pass
+// what is played through to their output.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:midi_engine/midi_engine.dart';
 
+import 'keys_bus.dart';
 import 'sequencer.dart';
 
 const _lookahead = 120000000; // ns scheduled ahead: covers a late timer tick, costs this much delay on a change
@@ -16,6 +19,59 @@ class SeqPlayer extends ChangeNotifier {
   final MidiEngine engine;
   SeqPlayer(this.song, this.engine) {
     _ports = engine.portsChanged.listen((_) => _reopen());
+    _in = engine.events.listen((e) {
+      final name = _inNames[e.handle];
+      if (name != null) _input(name, e.bytes, e.tNs);
+    });
+    _keys = keysBus.stream.listen((e) => _input(kKeysInput, e.$1, e.$2));
+  }
+
+  final _inHandles = <String, int>{}, _inNames = <int, String>{};
+  late final StreamSubscription<MidiInEvent> _in;
+  late final StreamSubscription<(List<int>, int)> _keys;
+  final _held = <ClipTrack, Set<(int, int)>>{}; // notes held while recording, ended at stop
+
+  /// Opens the inputs the armed clip tracks listen to (call after arming or changing an input).
+  void syncInputs() {
+    final want = {
+      for (final t in song.tracks.whereType<ClipTrack>())
+        if (t.armed && t.input != null && t.input != kKeysInput) t.input!
+    };
+    for (final name in want) {
+      if (_inHandles.containsKey(name)) continue;
+      final p = engine.inputs.where((p) => p.name == name);
+      if (p.isEmpty) continue;
+      try {
+        final h = engine.open(p.first);
+        _inHandles[name] = h;
+        _inNames[h] = name;
+      } catch (e) {
+        error = '$e';
+      }
+    }
+    for (final name in _inHandles.keys.where((n) => !want.contains(n)).toList()) {
+      final h = _inHandles.remove(name)!;
+      _inNames.remove(h);
+      engine.close(h);
+    }
+  }
+
+  void _input(String input, List<int> bytes, int tNs) {
+    if (bytes.isEmpty || bytes[0] >= 0xF0) return; // channel messages only: no clock, no SysEx
+    final tl = _tl;
+    for (final t in song.tracks.whereType<ClipTrack>()) {
+      if (!t.armed || t.input != input) continue;
+      if (t.port != null) _send(t.port!, bytes, 0); // hear what you play
+      if (tl == null) continue;
+      final beat = tl.beatAt(tNs);
+      if (beat < 0) continue; // the count before the first beat
+      t.record(beat, bytes);
+      final type = bytes[0] & 0xF0, key = (bytes[0] & 0x0F, bytes.length > 1 ? bytes[1] : 0);
+      final held = _held.putIfAbsent(t, () => {});
+      if (type == 0x90 && bytes.length > 2 && bytes[2] > 0) held.add(key);
+      if (type == 0x80 || (type == 0x90 && bytes.length > 2 && bytes[2] == 0)) held.remove(key);
+      notifyListeners();
+    }
   }
 
   Timeline? _tl;
@@ -104,6 +160,21 @@ class SeqPlayer extends ChangeNotifier {
       if (n.offNs >= now) _send(n.port, [0x80 | n.channel, n.note, 0], 0);
     }
     _notes.clear();
+    // a recorded note still held: it ends where play stopped; clip playback: everything off, bends back to centre
+    final stopBeat = _tl!.beatAt(now);
+    for (final e in _held.entries) {
+      for (final (ch, n) in e.value) {
+        e.key.record(stopBeat, [0x80 | ch, n, 0]);
+      }
+    }
+    _held.clear();
+    for (final t in song.tracks.whereType<ClipTrack>()) {
+      if (t.port == null) continue;
+      for (final ch in t.channels) {
+        _send(t.port!, [0xB0 | ch, 123, 0], 0);
+        _send(t.port!, [0xE0 | ch, 0, 64], 0);
+      }
+    }
     for (final p in song.clockPorts) {
       _send(p, const [0xFC], 0);
     }
@@ -130,6 +201,8 @@ class SeqPlayer extends ChangeNotifier {
   void dispose() {
     stop();
     _ports.cancel();
+    _in.cancel();
+    _keys.cancel();
     for (final h in _handles.values) {
       engine.close(h);
     }

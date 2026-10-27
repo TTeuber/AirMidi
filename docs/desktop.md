@@ -103,6 +103,15 @@ Later, if wanted: Ableton Link, a tempo shared over the network that Ableton and
   ends the notes that may sound. Measured through a mido port at 120 bpm: steps 250.0 ms apart (+-0.5 ms, the
   listener's own resolution), clock 20.83 ms mean, notes on and off balanced after stop; ten bpm steps up during
   play glided from 250 to 230.8 ms (130 bpm) without a gap or a doubled step. Not saved yet.
+- **D4 (2026-10-26), first part:** clip tracks (`ClipTrack` in `tracks/sequencer.dart`): record from any of the
+  computer's MIDI inputs or from the app's own keys page ("keys" on the tracks page; `tracks/keys_bus.dart`), at
+  the time the engine stamped each message; an armed track passes what is played through to its output; recording
+  loops over the clip's length and adds each pass (overdub); playback loops, every message as recorded, so MPE
+  stays one channel per note with its own bends. Drawn as a piano roll. Stop ends a note still held while
+  recording, and sends all notes off and centred bends on the clip's channels. Tried with a mido source playing 4
+  notes with bends on channel 2 into a one-bar clip: through while recording, then every event back exactly one bar
+  (2.000 s) later each loop; the same from the keys page. Not yet: saving, Standard MIDI File export, editing notes,
+  latency compensation.
 
 ## Open
 

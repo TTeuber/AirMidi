@@ -88,4 +88,36 @@ void main() {
     final t = drumTrack()..steps = 12;
     expect([stepAt(t, 4, 0), stepAt(t, 4, 0.99), stepAt(t, 4, 3), stepAt(t, 4, -0.1)], [0, 3, 0, -1]);
   });
+
+  test('clip: recording wraps into the clip and keeps order; notes pair up', () {
+    final c = ClipTrack(port: 'synth', lengthBeats: 4);
+    c.record(1, [0x91, 60, 100]); // MPE: strip 1's channel
+    c.record(0.5, [0x92, 64, 90]);
+    c.record(5.5, [0xE1, 0, 70]); // second pass: bend at 1.5
+    c.record(6, [0x81, 60, 0]);
+    expect(c.events.map((e) => e.beat).toList(), [0.5, 1, 1.5, 2]);
+    expect(c.notes(), [(1, 60, 1.0, 2.0), (2, 64, 0.5, 4.0)]); // 64 never ended: to the clip's end
+    expect(c.channels, {1, 2});
+  });
+
+  test('clip playback loops, MPE on its own channels, alongside the steps', () {
+    final c = ClipTrack(port: 'synth', lengthBeats: 2);
+    c.record(0.5, [0x91, 60, 100]);
+    c.record(1.0, [0xE1, 0, 72]);
+    c.record(1.5, [0x81, 60, 0]);
+    final song = Song(tracks: [c]);
+    final ev = eventsBetween(song, Timeline(0, 120), 0, 4);
+    expect(ev.map((e) => '${e.tNs ~/ ms} ${e.bytes}').toList(), [
+      '250 [145, 60, 100]',
+      '500 [225, 0, 72]',
+      '750 [129, 60, 0]',
+      '1250 [145, 60, 100]',
+      '1500 [225, 0, 72]',
+      '1750 [129, 60, 0]',
+    ]);
+    // a window inside the second loop only
+    expect(eventsBetween(song, Timeline(0, 120), 2.6, 3.2).length, 1);
+    c.mute = true;
+    expect(eventsBetween(song, Timeline(0, 120), 0, 4), isEmpty);
+  });
 }
