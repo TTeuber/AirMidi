@@ -20,7 +20,13 @@ class SynthState extends ChangeNotifier {
   SynthState(this.config);
 
   /// The page draws envelopes, XY pads and wave icons (true) or every control as a plain fader or picker.
-  bool widgets = true;
+  bool get widgets => _widgets;
+  set widgets(bool v) {
+    _widgets = v;
+    notifyListeners();
+  }
+
+  bool _widgets = true;
 
   /// The control list, read once; [force] reads it again (after a rescan) and keeps the values of the controls that
   /// are still there.
@@ -64,6 +70,32 @@ class SynthState extends ChangeNotifier {
       report = 'not available';
     }
     notifyListeners();
+  }
+
+  /// Ask the box to read the device again (Discovery + Property Exchange over TRS, under a second), then the list
+  /// and the current values. [scanMessage] says what is going on (or what went wrong) while [scanning].
+  bool scanning = false;
+  String? scanMessage;
+  Future<void> rescan() async {
+    scanning = true;
+    scanMessage = 'asking the device on TRS';
+    notifyListeners();
+    try {
+      await config.call('POST', '/api/ci/scan', {'force': true});
+      for (var i = 0; i < 40; i++) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        final s = await config.call('GET', '/api/ci');
+        if (s['scanning'] != true) break;
+      }
+      scanMessage = null;
+      await load(force: true);
+      await askCurrent(); // a rescan cuts off a report that was under way
+    } catch (e) {
+      scanMessage = '$e';
+    } finally {
+      scanning = false;
+      notifyListeners();
+    }
   }
 
   /// Follow what arrives on [link] (the strips page's link; a new one replaces the old).

@@ -1,7 +1,10 @@
-// The desktop's way to play (docs/desktop.md D2): the computer keyboard and the mouse on a piano, pads, bend and mod
-// wheel. The logic is in play/keys.dart; this page draws it and forwards keys and clicks. The strips are a button
+// The desktop's play page (docs/desktop.md D2, "play view"): the computer keyboard and the mouse on a piano, pads,
+// bend and mod wheel along the bottom, and above them the synth's controls (a box's MIDI-CI device, sections side by
+// side), so a sound can be changed while it plays. Without a synth (a MIDI port) the piano and pads take the page.
+// The logic is in shared/play/keys.dart; this page draws it and forwards keys and clicks. The strips are a button
 // away (one mouse pointer plays one strip at a time).
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -97,8 +100,11 @@ class _KeysPageState extends State<KeysPage> {
     });
   }
 
+  static const _deckH = 190.0; // the piano, wheels and pads under the synth's controls
+
   @override
   Widget build(BuildContext context) {
+    final synth = widget.synth;
     return Focus(
       focusNode: focus,
       autofocus: true,
@@ -108,15 +114,10 @@ class _KeysPageState extends State<KeysPage> {
           title: Text(widget.link.label, style: const TextStyle(fontSize: 16)),
           backgroundColor: cBg,
           actions: [
-            if (widget.synth != null)
-              TextButton(
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => SynthPage(synth: widget.synth!, link: widget.link))),
-                child: const Text('synth'),
-              ),
+            if (synth != null) ...synthActions(synth),
             TextButton(
               onPressed: () => Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => StripsPage(link: widget.link, synth: widget.synth))),
+                  .push(MaterialPageRoute(builder: (_) => StripsPage(link: widget.link, synth: synth))),
               child: const Text('strips'),
             ),
           ],
@@ -124,32 +125,50 @@ class _KeysPageState extends State<KeysPage> {
         body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () => focus.requestFocus(), // a click anywhere gives the keyboard back to the piano
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _controls(),
-              const SizedBox(height: 6),
-              const Text('A W S E D ... \' play  ·  Z X octave  ·  C V velocity  ·  Tab sustain',
-                  style: TextStyle(color: cGrey, fontSize: 12)),
-              if (error != null) Text(error!, style: const TextStyle(color: Color(0xFFAB6D6C), fontSize: 12)),
-              const SizedBox(height: 12),
-              SizedBox(height: 170, child: _piano()),
-              const SizedBox(height: 16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            if (synth != null) ...[
               Expanded(
-                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  _wheelStrip('bend', bend, -1, 1, (v) => _wheel(b: v), springs: true),
-                  const SizedBox(width: 10),
-                  _wheelStrip('mod', mod, 0, 1, (v) => _wheel(m: v)),
-                  const SizedBox(width: 20),
-                  Expanded(child: _pads()),
-                ]),
+                child: SynthControls(
+                    synth: synth, link: widget.link, column: 340, padding: const EdgeInsets.fromLTRB(14, 10, 14, 14)),
               ),
-            ]),
-          ),
+              Container(height: 1, color: cGrey.withValues(alpha: 0.4)),
+            ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _controls(),
+                if (error != null) Text(error!, style: const TextStyle(color: Color(0xFFAB6D6C), fontSize: 12)),
+                const SizedBox(height: 6),
+                if (synth != null) SizedBox(height: _deckH, child: _deck()),
+              ]),
+            ),
+            if (synth == null)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                  child: LayoutBuilder(
+                      builder: (context, box) => Align(
+                          alignment: Alignment.topLeft,
+                          child: SizedBox(height: math.min(box.maxHeight, 300), child: _deck()))),
+                ),
+              ),
+          ]),
         ),
       ),
     );
   }
+
+  // bend and mod, the piano, the pads (square, as tall as the deck)
+  Widget _deck() => LayoutBuilder(
+      builder: (context, box) => Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _wheelStrip('bend', bend, -1, 1, (v) => _wheel(b: v), springs: true),
+            const SizedBox(width: 10),
+            _wheelStrip('mod', mod, 0, 1, (v) => _wheel(m: v)),
+            const SizedBox(width: 14),
+            Expanded(child: _piano()),
+            const SizedBox(width: 20),
+            SizedBox(width: (box.maxHeight * 1.5).clamp(0.0, box.maxWidth * 0.35), child: _pads()),
+          ]));
 
   Widget _controls() {
     Widget step(String label, String value, VoidCallback down, VoidCallback up) => Padding(
@@ -174,7 +193,9 @@ class _KeysPageState extends State<KeysPage> {
           () => change(() => keys.channel = (keys.channel + 1) % 16)),
       step('pads ch', '${pads.channel + 1}', () => change(() => pads.channel = (pads.channel - 1) % 16),
           () => change(() => pads.channel = (pads.channel + 1) % 16)),
-      Text(keys.sustain ? 'sustain' : '', style: const TextStyle(color: cAc, fontSize: 13)),
+      SizedBox(width: 70, child: Text(keys.sustain ? 'sustain' : '', style: const TextStyle(color: cAc, fontSize: 13))),
+      const Text('A W S E D ... \' play  ·  Z X octave  ·  C V velocity  ·  Tab sustain',
+          style: TextStyle(color: cGrey, fontSize: 12)),
     ]);
   }
 
@@ -226,46 +247,47 @@ class _KeysPageState extends State<KeysPage> {
       );
 
   Widget _pads() => LayoutBuilder(builder: (context, box) {
-        const gap = 8.0;
-        final side = ((box.maxHeight - 3 * gap) / 4).clamp(20.0, (box.maxWidth - 3 * gap) / 4);
+        const gap = 6.0;
+        final ph = (box.maxHeight - 3 * gap) / 4;
+        final pw = ((box.maxWidth - 3 * gap) / 4).clamp(20.0, ph * 1.6);
         return Align(
           alignment: Alignment.topLeft,
-          child: SizedBox(
-            width: side * 4 + gap * 3,
-            child: Column(children: [
-              for (var r = 0; r < 4; r++)
-                Padding(
-                  padding: EdgeInsets.only(bottom: r < 3 ? gap : 0),
-                  child: Row(children: [
-                    for (var c = 0; c < 4; c++)
-                      Padding(padding: EdgeInsets.only(right: c < 3 ? gap : 0), child: _pad(r, c, side)),
-                  ]),
-                ),
-            ]),
-          ),
+          child: Column(children: [
+            for (var r = 0; r < 4; r++)
+              Padding(
+                padding: EdgeInsets.only(bottom: r < 3 ? gap : 0),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  for (var c = 0; c < 4; c++)
+                    Padding(padding: EdgeInsets.only(right: c < 3 ? gap : 0), child: _pad(r, c, pw, ph)),
+                ]),
+              ),
+          ]),
         );
       });
 
-  Widget _pad(int r, int c, double side) {
+  Widget _pad(int r, int c, double w, double h) {
     final note = pads.note(r, c), on = padDown == (r, c);
     final hue = stripHues[(r + c) % 3];
+    final style = TextStyle(color: on ? cBg : cN, fontSize: 11);
     return Listener(
       onPointerDown: (e) => setState(() {
         padDown = (r, c);
-        _send(keys.noteOn(('pad', r, c), note, vel: Pads.velocityAt(e.localPosition.dy / side), ch: pads.channel));
+        _send(keys.noteOn(('pad', r, c), note, vel: Pads.velocityAt(e.localPosition.dy / h), ch: pads.channel));
       }),
       onPointerUp: (_) => setState(() {
         padDown = null;
         _send(keys.noteOff(('pad', r, c)));
       }),
       child: Container(
-        width: side,
-        height: side,
+        width: w,
+        height: h,
         color: on ? hue.drag : hue.base.withValues(alpha: 0.35),
         alignment: Alignment.bottomLeft,
-        padding: const EdgeInsets.all(6),
-        child: Text([Pads.drum(note), noteName(note)].where((s) => s.isNotEmpty).join('\n'),
-            style: TextStyle(color: on ? cBg : cN, fontSize: 12)),
+        padding: const EdgeInsets.all(5),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(Pads.drum(note), style: style, maxLines: 1, overflow: TextOverflow.clip, softWrap: false),
+          Text(noteName(note), style: style.copyWith(color: style.color!.withValues(alpha: 0.6))),
+        ]),
       ),
     );
   }

@@ -148,8 +148,18 @@ routed hop adds 0.039 ms median, 0.084 ms max; filter, remap and transpose as as
 channel 2 to one port as channel 1 and its channel 10 to another, nothing crossing over; again after a restart
 without opening the page. Not yet: the box's own router edited from this page; groups (MIDI 2.0 ports).
 
-Order: the desktop play view (keys and synth controls on one
-page); then the DAW (design doc, arrangement and piano roll first).
+Done 2026-10-26: the play view. A box's play page (`desktop/keys_page.dart`) is the synth's controls on top and the
+deck along the bottom (bend, mod, the piano, 4 x 4 pads), so a sound changes while it plays; the computer keys keep
+playing after a click on a control. The controls are `SynthControls` (`shared/ui/synth_page.dart`, the phone's synth
+page is the same widget in one column): on the desktop columns at least 340 px wide, filled in order up to the visible
+height like a newspaper (`fillColumns`; a section that goes on in the next column has its heading again), shared out
+when it does not all fit. graphics/rescan sit in the app bar (`synthActions`; rescan moved into SynthState). Without
+a synth (a MIDI port) the deck alone, at most 300 px tall. Tried with the box (Wi-Fi) and daisy_synth: its values
+from the report (cutoff 660 Hz, resonance 24, the envelopes), filter / filter env + amp / fx + osc in three columns
+in a 1200 x 780 window (it scrolls a little at that size); a click on a fader sent nothing, then four keys = 8
+messages and a pad = 2 out of the box's TRS.
+
+Order: the DAW (design doc, arrangement and piano roll first).
 
 ## Open
 
