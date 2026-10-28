@@ -23,7 +23,10 @@ Shared (`lib/shared`):
   the values kept per box (`state.dart`); `ui/synth_page.dart` with `envelope_editor`, `xy_pad`, `wave_icon`.
 - `play/player.dart`: the strips' sender, one batch in flight at a time. `play/keys.dart`: keyboard and pads logic.
 - `ui/strips_page.dart`: raw pointers (`Listener`) and a `CustomPainter`; `ui/theme.dart`: the colours.
-- `debug_drive.dart` + `tool/drive.py`: screenshots, taps and keys through the Dart VM service (debug builds).
+- `debug_drive.dart` + `tool/drive.py`: screenshots, taps and keys through the Dart VM service (debug builds), or
+  over localhost in the screenshot build (`tool/shots_main.dart`, a release build: no debug banner, its own settings
+  and project folder). `tool/shots.py` builds it and takes the README's desktop screenshots (`--window WxH` sets the
+  window's size); the phone's are `adb exec-out screencap -p` from a release APK.
 
 Phone: `flutter run` with the phone on USB debugging, `flutter build apk --release`. Desktop: `flutter build macos
 --debug`. Tests: `flutter test`. The project pins Gradle 8.11 / AGP 8.7 / Kotlin 2.1 so it builds with Java 21 on

@@ -1,0 +1,424 @@
+{
+ "info": {
+  "manufacturerId": [
+   125,
+   0,
+   0
+  ],
+  "manufacturer": "Daisy",
+  "familyId": [
+   0,
+   0
+  ],
+  "family": "airmidi demo",
+  "modelId": [
+   3,
+   0
+  ],
+  "model": "Poly Synth",
+  "versionId": [
+   0,
+   2,
+   0,
+   0
+  ],
+  "version": "0.2"
+ },
+ "controls": [
+  {
+   "title": "Cutoff",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    74
+   ],
+   "priority": 1,
+   "default": 2164392960,
+   "paramPath": "/filter/cutoff",
+   "ctrlMapId": "cutoff"
+  },
+  {
+   "title": "Resonance",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    71
+   ],
+   "priority": 1,
+   "default": 1014559232,
+   "paramPath": "/filter/resonance"
+  },
+  {
+   "title": "Env Amt",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    79
+   ],
+   "priority": 1,
+   "default": 2164392960,
+   "paramPath": "/filter/envAmount"
+  },
+  {
+   "title": "Amp Attack",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    73
+   ],
+   "priority": 1,
+   "default": 0,
+   "paramPath": "/amp/env/attack",
+   "ctrlMapId": "attack"
+  },
+  {
+   "title": "Amp Decay",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    75
+   ],
+   "priority": 1,
+   "default": 2367304704,
+   "paramPath": "/amp/env/decay",
+   "ctrlMapId": "time"
+  },
+  {
+   "title": "Amp Sustain",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    85
+   ],
+   "priority": 1,
+   "default": 3043677696,
+   "paramPath": "/amp/env/sustain"
+  },
+  {
+   "title": "Amp Release",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    72
+   ],
+   "priority": 1,
+   "default": 2164392960,
+   "paramPath": "/amp/env/release",
+   "ctrlMapId": "time"
+  },
+  {
+   "title": "Space",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    91
+   ],
+   "priority": 1,
+   "default": 1352745600,
+   "paramPath": "/fx/space"
+  },
+  {
+   "title": "Detune",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    94
+   ],
+   "priority": 2,
+   "default": 1352745600,
+   "paramPath": "/osc/detune"
+  },
+  {
+   "title": "Vibrato",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    1
+   ],
+   "priority": 2,
+   "default": 0,
+   "paramPath": "/osc/vibrato"
+  },
+  {
+   "title": "Glide Time",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    5
+   ],
+   "priority": 2,
+   "default": 1352745600,
+   "paramPath": "/osc/glideTime"
+  },
+  {
+   "title": "Echo",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    93
+   ],
+   "priority": 2,
+   "default": 0,
+   "paramPath": "/fx/echo"
+  },
+  {
+   "title": "Filter Attack",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    86
+   ],
+   "priority": 2,
+   "default": 0,
+   "paramPath": "/filter/env/attack",
+   "ctrlMapId": "attack"
+  },
+  {
+   "title": "Filter Decay",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    87
+   ],
+   "priority": 2,
+   "default": 2367304704,
+   "paramPath": "/filter/env/decay",
+   "ctrlMapId": "time"
+  },
+  {
+   "title": "Filter Sustain",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    89
+   ],
+   "priority": 2,
+   "default": 3043677696,
+   "paramPath": "/filter/env/sustain"
+  },
+  {
+   "title": "Filter Release",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    90
+   ],
+   "priority": 2,
+   "default": 2164392960,
+   "paramPath": "/filter/env/release",
+   "ctrlMapId": "time"
+  },
+  {
+   "title": "Wave",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    70
+   ],
+   "priority": 1,
+   "default": 0,
+   "paramPath": "/osc/wave",
+   "typeHint": "valueSelect",
+   "ctrlMapId": "wave"
+  },
+  {
+   "title": "Glide",
+   "channel": 1,
+   "ctrlType": "cc",
+   "ctrlIndex": [
+    65
+   ],
+   "priority": 1,
+   "default": 0,
+   "paramPath": "/osc/glide",
+   "typeHint": "toggle"
+  },
+  {
+   "title": "Bend",
+   "channel": 1,
+   "ctrlType": "pBend",
+   "priority": 2,
+   "default": 2147483648,
+   "paramPath": "/osc/bend"
+  }
+ ],
+ "maps": {
+  "cutoff": [
+   {
+    "value": 0,
+    "title": "20Hz"
+   },
+   {
+    "value": 251235296,
+    "title": "30Hz"
+   },
+   {
+    "value": 567743616,
+    "title": "50Hz"
+   },
+   {
+    "value": 858993408,
+    "title": "80Hz"
+   },
+   {
+    "value": 1110228736,
+    "title": "120Hz"
+   },
+   {
+    "value": 1426737152,
+    "title": "200Hz"
+   },
+   {
+    "value": 1677940480,
+    "title": "300Hz"
+   },
+   {
+    "value": 1994497792,
+    "title": "500Hz"
+   },
+   {
+    "value": 2285730304,
+    "title": "800Hz"
+   },
+   {
+    "value": 2536933888,
+    "title": "1.2k"
+   },
+   {
+    "value": 2853491200,
+    "title": "2k"
+   },
+   {
+    "value": 3104692736,
+    "title": "3k"
+   },
+   {
+    "value": 3421262848,
+    "title": "5k"
+   },
+   {
+    "value": 3712484864,
+    "title": "8k"
+   },
+   {
+    "value": 3963685888,
+    "title": "12k"
+   },
+   {
+    "value": 4294967295,
+    "title": "20k"
+   }
+  ],
+  "attack": [
+   {
+    "value": 0,
+    "title": "1ms"
+   },
+   {
+    "value": 371858624,
+    "title": "2ms"
+   },
+   {
+    "value": 863411584,
+    "title": "5ms"
+   },
+   {
+    "value": 1235270144,
+    "title": "10ms"
+   },
+   {
+    "value": 1607128832,
+    "title": "20ms"
+   },
+   {
+    "value": 2098696448,
+    "title": "50ms"
+   },
+   {
+    "value": 2470555136,
+    "title": "100ms"
+   },
+   {
+    "value": 2842413568,
+    "title": "200ms"
+   },
+   {
+    "value": 3333990912,
+    "title": "500ms"
+   },
+   {
+    "value": 3705849344,
+    "title": "1s"
+   },
+   {
+    "value": 4077708288,
+    "title": "2s"
+   },
+   {
+    "value": 4294967295,
+    "title": "3s"
+   }
+  ],
+  "time": [
+   {
+    "value": 0,
+    "title": "5ms"
+   },
+   {
+    "value": 419840448,
+    "title": "10ms"
+   },
+   {
+    "value": 839680896,
+    "title": "20ms"
+   },
+   {
+    "value": 1394660096,
+    "title": "50ms"
+   },
+   {
+    "value": 1814500352,
+    "title": "100ms"
+   },
+   {
+    "value": 2234340864,
+    "title": "200ms"
+   },
+   {
+    "value": 2789336576,
+    "title": "500ms"
+   },
+   {
+    "value": 3209177088,
+    "title": "1s"
+   },
+   {
+    "value": 3629017600,
+    "title": "2s"
+   },
+   {
+    "value": 4048858112,
+    "title": "4s"
+   },
+   {
+    "value": 4294967295,
+    "title": "6s"
+   }
+  ],
+  "wave": [
+   {
+    "value": 0,
+    "title": "Saw"
+   },
+   {
+    "value": 1431655765,
+    "title": "Square"
+   },
+   {
+    "value": 2863311530,
+    "title": "Triangle"
+   }
+  ]
+ },
+ "profile": null
+}

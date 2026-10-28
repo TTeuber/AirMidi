@@ -4,8 +4,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A battery-powered wireless MIDI interface: it gives any TRS MIDI device (or DIN, with an adapter) Bluetooth and Wi-Fi,
-is set up from a browser, and updates itself over the air. This repo is its firmware, for an ESP32-C6 or ESP32-S3
-on a custom PCB in a 3D-printed box.
+is set up from a browser or a phone, and updates itself over the air. This repo is its firmware, for an ESP32-C6 or
+ESP32-S3 on a custom PCB in a 3D-printed box, and the apps that play it: one for Android phones and one for the Mac,
+which sequences hardware synths through the box.
 
 ![The box: TRS MIDI in and out on the front, power switch on the side, status LED and button on top](docs/images/enclosure.jpg)
 
@@ -24,6 +25,9 @@ on a custom PCB in a 3D-printed box.
   those tests.
 - **Safe updates**: signed images (RSA-3072), a self-test after each update and automatic rollback, core dumps
   from crashes; releases are built and signed in GitHub Actions.
+- **Apps for phone and desktop** from one Flutter project: an Android app that sets the box up over Bluetooth and
+  plays it as an MPE instrument, and a macOS app with a MIDI-only DAW for hardware synths, whose tracks know each
+  synth's controls from what it sent over MIDI-CI.
 
 ## Hardware
 
@@ -69,9 +73,50 @@ board's revision history: the photo shows rev A, and rev B fixes what its bring-
 
 ![The play page, drawn from the control list the synth on the TRS jacks sent over MIDI-CI](docs/images/webui-play.png)
 
+## Apps
+
+One Flutter project ([app/](app)) builds two apps over shared code: the box pages, the BLE and Wi-Fi links, and the
+synth page drawn from the synth's MIDI-CI control list.
+
+**Phone** (Android; [plan and decisions](docs/app.md)):
+
+- Finds the box over Bluetooth or Wi-Fi and sets it up: mode, Wi-Fi networks from the box's own scan, trusted
+  phones. Setup goes over a BLE GATT service that carries the same JSON API as the web UI's HTTP.
+- Plays the synth on the box's TRS jacks: pedal-steel strips (each finger bends its own note, one MPE channel per
+  strip), keys, or drum pads; over BLE MIDI, the box's WebSocket, or Android's MIDI service straight to a computer.
+- The synth page: envelopes, a cutoff and resonance pad, wave pickers and faders, built from the controls daisy_synth
+  ([devices/daisy_synth](devices/daisy_synth)) describes over MIDI-CI.
+
+<p>
+  <img src="docs/images/phone-strips.png" width="32%" alt="The strips: six strings tuned like a guitar, one finger sliding between g and g#">
+  <img src="docs/images/phone-synth.png" width="32%" alt="The synth page, drawn from the control list the synth sent over MIDI-CI">
+  <img src="docs/images/phone-pads.png" width="32%" alt="Drum pads on channel 10">
+</p>
+
+**Desktop** (macOS now, Windows and Linux later; [plan](docs/desktop.md), [DAW design](docs/daw.md)):
+
+- The computer's MIDI ports through libremidi over FFI (`app/packages/midi_engine`), a router between them, and the
+  box's play view: the synth's controls over the keys.
+- A MIDI-only DAW for hardware: MIDI clips in a piano roll with controller lanes and ramps, MPE takes with each
+  note's own bend, pressure and timbre, and step-sequencer patterns with velocity, gate, probability, nudge, repeats
+  and parameter locks. Records from any input, MPE included.
+- Each track keeps its synth's MIDI-CI control list, so lanes and locks have the synth's own names and units. It also
+  keeps the synth's program, bank and settings, which can be read back through the box. All of it is sent before
+  play, so the song sounds the same on the next day.
+- Click and count-in, latency offsets per port, projects saved as JSON every few seconds, Standard MIDI File import
+  and export.
+
+![The synth's controls over the keys, drawn from what the synth on the box's jacks sent over MIDI-CI](docs/images/desktop-play.png)
+
+![The arrangement, with an MPE take open in the piano roll: one note's own pressure in the lane below](docs/images/desktop-arrangement.png)
+
+![A step-sequencer pattern whose lowest row locks the synth's cutoff to a different value on every step](docs/images/desktop-sequencer.png)
+
 ## How it is tested
 
 - **Host tests** (`test/`): the portable core under ASan + UBSan, with randomized round trips and property tests.
+- **App tests** (`app/test`, `flutter test`): the strips, MPE and BLE MIDI packing, the router, and the DAW (editing,
+  timing, files, recording, the player against a fake MIDI engine).
 - **CI** (`.github/workflows/ci.yml`): host tests, the clang-format check, and the firmware for all three boards on
   every push. `tools/check.sh` runs the same steps locally. Tagging `vX.Y.Z` builds, signs and publishes a release.
 - **Hardware in the loop** (`tools/hil/`): Python and Swift tools on the Mac drive the box and an Arturia AudioFuse
@@ -114,8 +159,9 @@ lib/        portable C11 core, no ESP-IDF headers         docs/design/  one note
 test/       host unit tests for lib/ (Unity)              tools/hil/    hardware-in-the-loop tools for the Mac
 firmware/   ESP-IDF project (C6 and S3)                   spikes/       early experiments, results in the plan
 web/        the web UI (HTML/CSS/JS, gzipped into the firmware)
-devices/    MIDI-CI device side: the Mac stand-in (CoreMIDI)
+devices/    MIDI-CI device side: the Mac stand-in (CoreMIDI) and daisy_synth, the demo synth
 hardware/   the receiver PCB and enclosure: schematic, KiCad project, Gerbers, BOM, STL
+app/        Flutter: the Android app, the macOS app with the DAW, and the code they share
 ```
 
 ## Build
@@ -123,6 +169,8 @@ hardware/   the receiver PCB and enclosure: schematic, KiCad project, Gerbers, B
 ```sh
 tools/check.sh                    # what CI runs: host tests, clang-format check, firmware for every board
 firmware/build.sh c6 flash        # build and flash the C6 board (s3 for the XIAO S3, s3kit for an S3 dev kit)
+cd app && flutter test            # the apps' tests
+flutter build apk --release       # the Android app (flutter build macos --release for the Mac)
 ```
 
 Needs ESP-IDF v5.5.5 or later in the v5.5 series (`IDF_PATH`, default `~/Developer/esp-idf`), CMake, and `uv` (for
