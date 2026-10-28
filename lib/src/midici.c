@@ -183,8 +183,8 @@ size_t midici_pi_caps_reply(uint8_t *out, uint32_t src, uint32_t dst, uint8_t fe
     return n;
 }
 
-size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t data_control,
-                     uint8_t system, uint8_t channel, uint8_t note) {
+size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t data_control, uint8_t system,
+                     uint8_t channel, uint8_t note) {
     size_t n = header_to(out, device_id, MIDICI_REPORT, src, dst);
     out[n++] = data_control & 0x7F;
     out[n++] = system & 0x7F;
@@ -194,8 +194,8 @@ size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst
     return n;
 }
 
-size_t midici_report_reply(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t system,
-                           uint8_t channel, uint8_t note) {
+size_t midici_report_reply(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t system, uint8_t channel,
+                           uint8_t note) {
     size_t n = header_to(out, device_id, MIDICI_REPORT_REPLY, src, dst);
     out[n++] = system & 0x7F;
     out[n++] = 0;

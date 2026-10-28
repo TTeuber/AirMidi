@@ -15,8 +15,8 @@
 
 static const char *TAG = "blecfg";
 
-#define RX_CAP 8192        // a request with its body; the buffer exists only while a phone uses the service
-#define NOTIFY_TRIES 200   // x 5 ms: how long a reply piece waits for NimBLE to have a buffer free
+#define RX_CAP 8192       // a request with its body; the buffer exists only while a phone uses the service
+#define NOTIFY_TRIES 200  // x 5 ms: how long a reply piece waits for NimBLE to have a buffer free
 
 // 9A5C0010-3F2B-4D8E-A4B1-6C2E8F1D0A00 and ...0A11, ...0A12 (NimBLE takes them little-endian), next to
 // ble_update's 9A5C0000 family.
@@ -91,7 +91,7 @@ static bool allow(const ble_addr_t *id) {
 
 void ble_config_set_window(uint32_t seconds) {
     taskENTER_CRITICAL(&lock);
-    window_until = !seconds                                ? 0
+    window_until = !seconds                               ? 0
                    : seconds == BLE_CONFIG_WINDOW_FOREVER ? INT64_MAX
                                                           : esp_timer_get_time() + (int64_t)seconds * 1000000;
     taskEXIT_CRITICAL(&lock);
@@ -175,7 +175,9 @@ const struct ble_gatt_svc_def ble_config_services[] = {
      .characteristics =
          (struct ble_gatt_chr_def[]){
              {.uuid = &req_uuid.u, .access_cb = req_access, .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC},
-             {.uuid = &resp_uuid.u, .access_cb = resp_access, .val_handle = &resp_handle,
+             {.uuid = &resp_uuid.u,
+              .access_cb = resp_access,
+              .val_handle = &resp_handle,
               .flags = BLE_GATT_CHR_F_NOTIFY},
              {0}}},
     {0}};
@@ -232,12 +234,12 @@ static void worker(void *arg) {
         size_t body_len;
         if (r->status) {
             send_reply(r->conn, r->id, r->status, "{\"error\":\"request too long\"}");
-        } else if (!blecfg_parse_request(r->data, r->len, method, sizeof method, path, sizeof path, &body,
-                                         &body_len)) {
+        } else if (!blecfg_parse_request(r->data, r->len, method, sizeof method, path, sizeof path, &body, &body_len)) {
             send_reply(r->conn, r->id, 400, "{\"error\":\"expected METHOD PATH, a newline, then the body\"}");
         } else {
             ble_config_reply_t rep = handler(method, path, (const char *)body, body_len);
-            send_reply(r->conn, r->id, rep.json ? rep.status : 500, rep.json ? rep.json : "{\"error\":\"out of memory\"}");
+            send_reply(r->conn, r->id, rep.json ? rep.status : 500,
+                       rep.json ? rep.json : "{\"error\":\"out of memory\"}");
             free(rep.json);
             if (rep.then) {
                 vTaskDelay(pdMS_TO_TICKS(150));  // the last notification on its way before BLE may stop

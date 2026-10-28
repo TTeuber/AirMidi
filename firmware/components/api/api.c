@@ -635,15 +635,25 @@ api_reply_t api_call(const char *method, const char *path, const char *body, siz
 
 const char *api_status_line(int status) {
     switch (status) {
-        case 200: return "200 OK";
-        case 202: return "202 Accepted";
-        case 400: return "400 Bad Request";
-        case 403: return "403 Forbidden";
-        case 404: return "404 Not Found";
-        case 405: return "405 Method Not Allowed";
-        case 409: return "409 Conflict";
-        case 413: return "413 Payload Too Large";
-        case 502: return "502 Bad Gateway";
-        default: return "500 Internal Server Error";
+        case 200:
+            return "200 OK";
+        case 202:
+            return "202 Accepted";
+        case 400:
+            return "400 Bad Request";
+        case 403:
+            return "403 Forbidden";
+        case 404:
+            return "404 Not Found";
+        case 405:
+            return "405 Method Not Allowed";
+        case 409:
+            return "409 Conflict";
+        case 413:
+            return "413 Payload Too Large";
+        case 502:
+            return "502 Bad Gateway";
+        default:
+            return "500 Internal Server Error";
     }
 }

@@ -534,7 +534,8 @@ static void test_report_messages_round_trip(void) {
     uint8_t b[32];
     midici_msg_t m;
     midici_report_t r;
-    size_t n = midici_report(b, 0x03, BOX_MUID, DEV_MUID, MIDICI_REPORT_FULL, 0, MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, 0);
+    size_t n = midici_report(b, 0x03, BOX_MUID, DEV_MUID, MIDICI_REPORT_FULL, 0,
+                             MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND, 0);
     TEST_ASSERT_EQUAL(18, n);
     TEST_ASSERT_TRUE(midici_parse(b, n, &m));
     TEST_ASSERT_EQUAL_HEX8(MIDICI_REPORT, m.sub2);
@@ -577,7 +578,8 @@ static void test_report_after_a_scan(void) {
     TEST_ASSERT_EQUAL(MIDICI_DONE_OK, got.done);
     TEST_ASSERT_TRUE(midici_initiator_can_report(&in));  // the device said Process Inquiry in its Discovery Reply
     nevents = 0;
-    TEST_ASSERT_TRUE(midici_initiator_report(&in, MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_PROGRAM, now));
+    TEST_ASSERT_TRUE(
+        midici_initiator_report(&in, MIDICI_REPORT_CC | MIDICI_REPORT_PITCHBEND | MIDICI_REPORT_PROGRAM, now));
     TEST_ASSERT_FALSE(midici_initiator_report(&in, MIDICI_REPORT_CC, now));  // one at a time
     run_report(5000);
     TEST_ASSERT_EQUAL(MIDICI_REPORT_OK, got.report);

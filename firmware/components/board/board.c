@@ -2,9 +2,8 @@
 
 #include <stdio.h>
 
-#include "esp_mac.h"
-
 #include "driver/gpio.h"
+#include "esp_mac.h"
 #include "sdkconfig.h"
 
 #if CONFIG_AIRMIDI_BOARD_XIAO_C6

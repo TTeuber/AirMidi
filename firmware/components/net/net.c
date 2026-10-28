@@ -153,8 +153,9 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
         if (mode == AIRMIDI_MODE_NETWORK) join_next();  // in Play mode the radio may be on for ESP-NOW alone
     } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *d = data;
-        if (mode != AIRMIDI_MODE_NETWORK || !wifi_running) return;  // a phone's try leaving again (Setup: the AP's
-                                                                    // address stays in ip_text)
+        if (mode != AIRMIDI_MODE_NETWORK || !wifi_running)
+            return;  // a phone's try leaving again (Setup: the AP's
+                     // address stays in ip_text)
         ESP_LOGW(TAG, "not joined (reason %d)", d->reason);
         ip_text[0] = 0;
         state = NET_JOINING;

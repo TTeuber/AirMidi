@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: clang-format 18.1.8 (the version .clang-format names)
         run: |
-          files=$(git ls-files '*.c' '*.h' | grep -v -e '^test/unity/' -e '^spikes/')
+          files=$(git ls-files '*.c' '*.h' | grep -v -e '^test/unity/' -e '^spikes/' -e '/third_party/')
           pipx run --spec clang-format==18.1.8 clang-format --dry-run --Werror $files
 
   firmware:

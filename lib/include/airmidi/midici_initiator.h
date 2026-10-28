@@ -44,9 +44,9 @@ enum {
 };
 
 typedef enum {
-    MIDICI_REPORT_OK,           // the device sent its values (Reply, values, End)
-    MIDICI_REPORT_REFUSED,      // it answered with a NAK
-    MIDICI_REPORT_TIMEOUT,      // no Reply, or no End, within MIDICI_REPLY_WAIT_MS
+    MIDICI_REPORT_OK,       // the device sent its values (Reply, values, End)
+    MIDICI_REPORT_REFUSED,  // it answered with a NAK
+    MIDICI_REPORT_TIMEOUT,  // no Reply, or no End, within MIDICI_REPLY_WAIT_MS
 } midici_report_done_t;
 
 typedef struct {

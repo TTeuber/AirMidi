@@ -108,13 +108,13 @@ typedef struct {
 } midici_pe_t;
 
 // Process Inquiry. Device id: a channel 0x00-0x0F, or MIDICI_DEVICE_FUNCTION_BLOCK.
-size_t midici_pi_caps(uint8_t *out, uint32_t src, uint32_t dst);                                    // 13 bytes
-size_t midici_pi_caps_reply(uint8_t *out, uint32_t src, uint32_t dst, uint8_t features);            // 14 bytes
-size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t data_control,
-                     uint8_t system, uint8_t channel, uint8_t note);                                 // 18 bytes
-size_t midici_report_reply(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t system,
-                           uint8_t channel, uint8_t note);                                           // 17 bytes
-size_t midici_report_end(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst);               // 13 bytes
+size_t midici_pi_caps(uint8_t *out, uint32_t src, uint32_t dst);                          // 13 bytes
+size_t midici_pi_caps_reply(uint8_t *out, uint32_t src, uint32_t dst, uint8_t features);  // 14 bytes
+size_t midici_report(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t data_control, uint8_t system,
+                     uint8_t channel, uint8_t note);  // 18 bytes
+size_t midici_report_reply(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst, uint8_t system, uint8_t channel,
+                           uint8_t note);                                               // 17 bytes
+size_t midici_report_end(uint8_t *out, uint8_t device_id, uint32_t src, uint32_t dst);  // 13 bytes
 
 // An Inquiry: MIDI Message Report (data_control set) or its Reply (data_control 0xFF: the reply has none).
 typedef struct {

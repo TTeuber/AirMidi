@@ -56,10 +56,10 @@ uint8_t valueToCc(int p, float v);
 int waveIndex(float v);  // kWave's value -> 0..kWaves-1
 
 // Parameter curves (0..1 in), shared by the synth and the value names on the page.
-float cutoffHz(float x);    // 20 Hz .. 20 kHz
-float attackSec(float x);   // 1 ms .. 3 s
-float timeSec(float x);     // decay and release: 5 ms .. 6 s
-float glideSec(float x);    // 5 ms .. 1 s
+float cutoffHz(float x);   // 20 Hz .. 20 kHz
+float attackSec(float x);  // 1 ms .. 3 s
+float timeSec(float x);    // decay and release: 5 ms .. 6 s
+float glideSec(float x);   // 5 ms .. 1 s
 
 // MIDI-CI resources (M2-117 JSON). Each build* writes a terminated string and returns its length, 0 if cap is too
 // small.

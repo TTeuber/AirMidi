@@ -43,7 +43,8 @@ inline float tauCoef(float sec, float sr) { return sec <= 0.f ? 0.f : expf2(-1.f
 inline float tanf2(float x) {
     float x2 = x * x;
     float s = x * (1.f + x2 * (-0.16666667f + x2 * (0.0083333333f + x2 * (-0.00019841270f + x2 * 2.7557319e-6f))));
-    float c = 1.f + x2 * (-0.5f + x2 * (0.041666667f + x2 * (-0.0013888889f + x2 * (2.4801587e-5f - x2 * 2.7557319e-7f))));
+    float c =
+        1.f + x2 * (-0.5f + x2 * (0.041666667f + x2 * (-0.0013888889f + x2 * (2.4801587e-5f - x2 * 2.7557319e-7f))));
     return s / c;
 }
 

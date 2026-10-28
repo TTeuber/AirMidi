@@ -82,16 +82,16 @@ static void test_parse_request(void) {
     const uint8_t *body;
     size_t blen;
     const char *m = "POST /api/mode\n{\"mode\":\"network\"}";
-    TEST_ASSERT_TRUE(blecfg_parse_request((const uint8_t *)m, strlen(m), method, sizeof method, path, sizeof path,
-                                          &body, &blen));
+    TEST_ASSERT_TRUE(
+        blecfg_parse_request((const uint8_t *)m, strlen(m), method, sizeof method, path, sizeof path, &body, &blen));
     TEST_ASSERT_EQUAL_STRING("POST", method);
     TEST_ASSERT_EQUAL_STRING("/api/mode", path);
     TEST_ASSERT_EQUAL(strlen("{\"mode\":\"network\"}"), blen);
     TEST_ASSERT_EQUAL_MEMORY("{\"mode\":\"network\"}", body, blen);
 
     const char *g = "GET /api/wifi?ssid=a%20b\n";
-    TEST_ASSERT_TRUE(blecfg_parse_request((const uint8_t *)g, strlen(g), method, sizeof method, path, sizeof path,
-                                          &body, &blen));
+    TEST_ASSERT_TRUE(
+        blecfg_parse_request((const uint8_t *)g, strlen(g), method, sizeof method, path, sizeof path, &body, &blen));
     TEST_ASSERT_EQUAL_STRING("/api/wifi?ssid=a%20b", path);
     TEST_ASSERT_EQUAL(0, blen);
 

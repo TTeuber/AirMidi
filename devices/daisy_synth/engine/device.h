@@ -22,7 +22,7 @@
 namespace syn {
 
 class Device {
-  public:
+   public:
     using Out = void (*)(void *ctx, const uint8_t *bytes, size_t n);
 
     // muid: a fresh random one at every power-up (M2-101). False if a resource did not fit its buffer.
@@ -42,10 +42,10 @@ class Device {
     }
 
     uint32_t muid() const { return responder_.muid; }
-    int mpeMembers() const { return mpeMembers_; }  // 0 = MPE off
+    int mpeMembers() const { return mpeMembers_; }     // 0 = MPE off
     uint32_t ciReplies() const { return ciReplies_; }  // MIDI-CI messages sent (for the log)
 
-  private:
+   private:
     static void sendSysex(void *ctx, const uint8_t *sx, size_t n);
     static void report(void *ctx, int channel, uint8_t types, bool changedOnly);
     void dispatch();

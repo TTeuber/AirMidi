@@ -20,7 +20,7 @@
 namespace syn {
 
 class Synth {
-  public:
+   public:
     static constexpr int kVoices = 8;
     static constexpr size_t kEchoFloats = Echo::kMemFloats;
     static constexpr size_t kRoomFloats = Room::kMemFloats;
@@ -51,7 +51,7 @@ class Synth {
     int voiceChannel(int i) const { return v_[i].ch; }
     bool voiceGate(int i) const { return v_[i].gate; }
 
-  private:
+   private:
     struct Voice {
         int note = -1;
         uint8_t ch = 0;

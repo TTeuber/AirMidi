@@ -41,13 +41,19 @@ typedef struct {
     int8_t rssi;
     bool secure;
 } net_found_t;
-typedef enum { NET_PROBE_IDLE, NET_PROBE_SCANNING, NET_PROBE_SCANNED, NET_PROBE_JOINING, NET_PROBE_JOINED,
-               NET_PROBE_FAILED } net_probe_state_t;
+typedef enum {
+    NET_PROBE_IDLE,
+    NET_PROBE_SCANNING,
+    NET_PROBE_SCANNED,
+    NET_PROBE_JOINING,
+    NET_PROBE_JOINED,
+    NET_PROBE_FAILED
+} net_probe_state_t;
 typedef struct {
     net_probe_state_t state;
-    char ssid[33];     // the network being tried
-    char ip[16];       // joined: the address it got
-    char reason[64];   // failed: why, in words
+    char ssid[33];    // the network being tried
+    char ip[16];      // joined: the address it got
+    char reason[64];  // failed: why, in words
 } net_probe_t;
 
 esp_err_t net_scan_start(void);

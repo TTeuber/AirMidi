@@ -12,9 +12,9 @@
 #include "airmidi/settings.h"
 
 typedef struct {
-    int status;              // HTTP status code
-    char *json;              // reply body, JSON text (malloc'd: free() it), NULL only when out of memory
-    void (*then)(int arg);   // run once the reply has gone out (a mode switch takes the network away), or NULL
+    int status;             // HTTP status code
+    char *json;             // reply body, JSON text (malloc'd: free() it), NULL only when out of memory
+    void (*then)(int arg);  // run once the reply has gone out (a mode switch takes the network away), or NULL
     int then_arg;
 } api_reply_t;
 

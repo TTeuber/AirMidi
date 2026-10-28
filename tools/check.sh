@@ -9,7 +9,7 @@ cmake --build test/build -j >/dev/null
 ctest --test-dir test/build --output-on-failure | tail -3
 
 echo "== format (clang-format 18.1.8)"
-files=$(git ls-files -co --exclude-standard '*.c' '*.h' | grep -v -e '^test/unity/' -e '^spikes/')
+files=$(git ls-files -co --exclude-standard '*.c' '*.h' | grep -v -e '^test/unity/' -e '^spikes/' -e '/third_party/')
 cf=(uv tool run --quiet --from clang-format==18.1.8 clang-format)
 if [ "$1" = --fix ]; then "${cf[@]}" -i $files; fi
 "${cf[@]}" --dry-run --Werror $files && echo "clean"

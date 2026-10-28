@@ -233,12 +233,12 @@ static void test_bends_coalesce_per_channel(void) {
 
 static void test_no_coalescing_across_a_note_on_the_same_channel(void) {
     merge_init(&m, 500);
-    push(0, ump_m1_cv(0, 0xE1, 0, 70), 0);     // bend for the note
+    push(0, ump_m1_cv(0, 0xE1, 0, 70), 0);    // bend for the note
     push(0, ump_m1_cv(0, 0x91, 50, 100), 0);  // note on
-    push(0, ump_m1_cv(0, 0xE1, 0, 72), 0);     // must stay after the note on
+    push(0, ump_m1_cv(0, 0xE1, 0, 72), 0);    // must stay after the note on
     push(0, ump_m1_cv(0, 0x81, 50, 0), 0);
-    push(0, ump_m1_cv(0, 0xE1, 0, 64), 0);     // bend for the next note
-    push(0, ump_m1_cv(0, 0xE1, 0, 66), 0);     // coalesces with the one just before
+    push(0, ump_m1_cv(0, 0xE1, 0, 64), 0);  // bend for the next note
+    push(0, ump_m1_cv(0, 0xE1, 0, 66), 0);  // coalesces with the one just before
     expect(ump_m1_cv(0, 0xE1, 0, 70), 0);
     expect(ump_m1_cv(0, 0x91, 50, 100), 0);
     expect(ump_m1_cv(0, 0xE1, 0, 72), 0);
@@ -261,7 +261,7 @@ static void test_other_channels_in_between_do_not_block(void) {
 static void test_sources_and_sequenced_controllers_are_kept(void) {
     merge_init(&m, 500);
     push(0, ump_m1_cv(0, 0xE0, 0, 70), 0);
-    push(1, ump_m1_cv(0, 0xE0, 0, 71), 0);  // another source: not merged into source 0's value
+    push(1, ump_m1_cv(0, 0xE0, 0, 71), 0);   // another source: not merged into source 0's value
     push(0, ump_m1_cv(0, 0xB0, 101, 0), 0);  // RPN select + data entry: every one counts
     push(0, ump_m1_cv(0, 0xB0, 100, 0), 0);
     push(0, ump_m1_cv(0, 0xB0, 6, 48), 0);
