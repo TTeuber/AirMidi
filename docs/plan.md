@@ -136,6 +136,9 @@ BLE MIDI 2.0 is still an unpublished draft: BLE stays MIDI 1.0 until it is final
 - **Button:** short press = MIDI-CI rescan; long press (2 s) = next mode; very long (8 s) = Setup mode.
   Double press = all notes off (panic) on every output.
 - **LED patterns:** advertising, connected, MIDI activity flicker, Wi-Fi joining, Setup mode, low battery, OTA in progress.
+- **Rev B panel** (2026-10-30, `build.sh s3b`): a button per mode with an LED over each, from the design
+  workspace's panel simulator ("four leds, four buttons"); the table is in the README. lib/ui has the panel's LED
+  logic (`panel_leds`) and the fast double tap (`button_t.fast_double`), host-tested.
 - **Battery:** gauge from A0 (ADC calibration, averaged, Li-ion discharge curve), shown in the web UI and as the BLE
   Battery Service; warning at 3.5 V, all notes off + deep sleep at 3.3 V.
 - **Power:** BLE with light sleep in Play mode (target 10-20 mA), Wi-Fi power save in Network mode; every mode

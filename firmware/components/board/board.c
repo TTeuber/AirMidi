@@ -31,6 +31,20 @@ static const board_t the_board = {
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = ADC_CHANNEL_0,  // GPIO1
 };
+#elif CONFIG_AIRMIDI_BOARD_XIAO_S3_B
+// pcb/midi_receiver/circuit.py PANEL in the design workspace: LEDs A1 A3 SDA SCL, buttons SCK MISO MOSI A2.
+static const board_t the_board = {
+    .name = "receiver rev B + XIAO ESP32-S3",
+    .midi_tx = GPIO_NUM_43,
+    .midi_rx = GPIO_NUM_44,  // H11L1 output, 270R pull-up
+    .led = GPIO_NUM_NC,
+    .button = GPIO_NUM_NC,
+    .panel = true,
+    .panel_led = {GPIO_NUM_2, GPIO_NUM_4, GPIO_NUM_5, GPIO_NUM_6},  // blue (220R), green, yellow, red (1k)
+    .panel_button = {GPIO_NUM_7, GPIO_NUM_8, GPIO_NUM_9, GPIO_NUM_3},
+    .batt_adc_unit = ADC_UNIT_1,
+    .batt_adc_channel = ADC_CHANNEL_0,  // GPIO1
+};
 #elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
 static const board_t the_board = {
     .name = "ESP32-S3-DevKitC-1",
@@ -63,9 +77,11 @@ void board_init(void) {
         gpio_config(&led);
         gpio_set_level(the_board.led, 0);
     }
-    gpio_config_t btn = {
-        .pin_bit_mask = 1ULL << the_board.button, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
-    gpio_config(&btn);
+    if (the_board.button != GPIO_NUM_NC) {
+        gpio_config_t btn = {
+            .pin_bit_mask = 1ULL << the_board.button, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
+        gpio_config(&btn);
+    }
 }
 
 // The Wi-Fi station MAC's last three bytes. (Not the default MAC: on the C6 that reads as the 8-byte EUI-64 of its

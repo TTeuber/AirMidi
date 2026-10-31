@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "hal/gpio_types.h"
+
 void power_start(void);
 
 uint32_t power_cell_mv(void);  // filtered, 0 before the first sample
@@ -24,3 +26,10 @@ int power_mode(void);
 
 // Sleep until the power switch is cycled: no wake source, a few µA. Call after silencing the outputs.
 void power_shutdown(void) __attribute__((noreturn));
+
+// Panel boards (rev B): the PWR button is the power switch's soft twin. power_off() sleeps until it is pressed;
+// power_confirm_wake(), early at boot, sends a box that button woke back to sleep unless the button is still down
+// POWER_ON_HOLD_MS after the press (a knock in a bag does not start it). Call after silencing the outputs.
+#define POWER_ON_HOLD_MS 1000
+void power_off(gpio_num_t button) __attribute__((noreturn));
+void power_confirm_wake(gpio_num_t button);

@@ -1,9 +1,10 @@
 // airmidi firmware entry point: bring the board up, start the bus, the transports (TRS, BLE MIDI, Network MIDI 2.0,
 // RTP-MIDI), MIDI-CI,
-// the web UI, the button and LED, and the battery watch; then keep the LED state current and answer console
-// commands.
+// the web UI, the button and LED (rev A) or the panel (rev B), and the battery watch; then keep the LEDs current and
+// answer console commands.
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "airmidi/settings.h"
 #include "api.h"
@@ -13,11 +14,13 @@
 #include "bus.h"
 #include "ci.h"
 #include "esp_app_desc.h"
+#include "esp_attr.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "espnow_midi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/task.h"
 #include "net.h"
 #include "net_midi.h"
@@ -54,7 +57,7 @@ static void inject_task(void *arg) {
     vTaskDelete(NULL);
 }
 
-static volatile button_event_t pending_event;
+static QueueHandle_t button_events;  // (key << 8 | event) from the ui timer to the main loop
 static bool settings_ok;
 static bool ble_running;  // the BLE stack was started at boot
 
@@ -71,7 +74,27 @@ static void crash(void *arg) { abort(); }  // test image (ota_test.py): must rol
 #endif
 
 // esp_timer task: hand the event to the main loop.
-static void on_button(button_event_t ev) { pending_event = ev; }
+static void on_button(int key, button_event_t ev) {
+    uint16_t e = key << 8 | ev;
+    xQueueSend(button_events, &e, 0);
+}
+
+// Survives the restart a mode change can cause (not a power-on): the mode Setup returns to, and a panel hold that
+// needed the other mode first (BLE hold from Network: pair once BLE is up; NET hold from Play: check for an update
+// once Wi-Fi has joined).
+typedef enum { AFTER_NOTHING, AFTER_PAIR, AFTER_UPDATE } after_restart_t;
+#define KEPT_MAGIC 0xA1D1B0B0u
+static RTC_NOINIT_ATTR struct {
+    uint32_t magic;
+    uint8_t before_setup;  // airmidi_mode_t
+    uint8_t after;         // after_restart_t
+} kept;
+
+static void kept_check(void) {
+    if (kept.magic != KEPT_MAGIC || kept.before_setup >= AIRMIDI_MODE_COUNT || kept.before_setup == AIRMIDI_MODE_SETUP)
+        kept.before_setup = AIRMIDI_MODE_PLAY, kept.after = AFTER_NOTHING;
+    kept.magic = KEPT_MAGIC;
+}
 
 // BLE shares the radio with Wi-Fi and costs network MIDI ~16 ms of latency (measured), so Network mode runs
 // without it unless the setting asks for it.
@@ -92,6 +115,7 @@ static void set_mode(airmidi_mode_t mode) {
     settings_t s;
     nvs_settings_get(&s);
     if (s.mode != mode) {
+        if (mode == AIRMIDI_MODE_SETUP) kept.before_setup = s.mode;  // the panel's STP tap goes back to it
         s.mode = mode;
         nvs_settings_set(&s);
     }
@@ -136,6 +160,183 @@ static airmidi_mode_t current_mode(void) {
     nvs_settings_get(&s);
     return s.mode;
 }
+
+// ---- panel (rev B) --------------------------------------------------------------------------------------------
+
+#define UPDATE_JOIN_WAIT_MS 30000  // an update check waits this long for Wi-Fi to join
+
+static struct {
+    bool update_waiting;  // for Wi-Fi to join; since update_asked
+    uint32_t update_asked;
+    volatile bool update_checking;
+    volatile panel_result_t update_result;
+    volatile uint32_t update_at;
+    bool was_scanning;
+    panel_result_t scan_result;
+    uint32_t scan_at;
+} pnl;
+
+static uint32_t ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+
+// Ask GitHub for the latest release (blocking HTTPS, so a task of its own); install it when it is newer. The
+// install restarts the box when the image verifies; the NET LED blinks fast meanwhile.
+static void update_task(void *arg) {
+    ota_manifest_t m;
+    char err[64] = "";
+    esp_err_t e = ota_check(NULL, &m, err, sizeof err);
+    if (e != ESP_OK) {
+        ESP_LOGW(TAG, "update check failed: %s", err);
+    } else if (!m.newer) {
+        ESP_LOGI(TAG, "up to date (%s)", m.version);
+    } else {
+        ESP_LOGI(TAG, "update %s found: installing", m.version);
+        e = ota_install_start(NULL);
+        if (e != ESP_OK) ESP_LOGW(TAG, "update install: %s", esp_err_to_name(e));
+    }
+    pnl.update_result = e == ESP_OK ? PANEL_RESULT_OK : PANEL_RESULT_FAILED;
+    pnl.update_at = ms();
+    pnl.update_checking = false;
+    vTaskDelete(NULL);
+}
+
+static void update_check(void) {
+    if (pnl.update_checking) return;
+    if (net_state() != NET_CONNECTED) {  // the main loop starts it once joined
+        pnl.update_waiting = true;
+        pnl.update_asked = ms();
+        return;
+    }
+    pnl.update_waiting = false;
+    pnl.update_checking = true;
+    if (xTaskCreate(update_task, "update", 8192, NULL, 4, NULL) != pdPASS) {
+        pnl.update_checking = false;
+        pnl.update_result = PANEL_RESULT_FAILED;
+        pnl.update_at = ms();
+    }
+}
+
+static void update_poll(void) {
+    if (!pnl.update_waiting) return;
+    if (net_state() == NET_CONNECTED) {
+        update_check();
+    } else if (ms() - pnl.update_asked > UPDATE_JOIN_WAIT_MS) {
+        ESP_LOGW(TAG, "update check: Wi-Fi did not join");
+        pnl.update_waiting = false;
+        pnl.update_result = PANEL_RESULT_FAILED;
+        pnl.update_at = ms();
+    }
+}
+
+// The pairing window for a new phone (ble_config.h), as the web page's "add a phone" opens it.
+static void pair(void) {
+    if (ble_config_window_left() == BLE_CONFIG_WINDOW_FOREVER) return;  // Setup mode: open already
+    ESP_LOGI(TAG, "pairing window open for 2 min");
+    ble_config_set_window(120);
+}
+
+static void power_off_now(void) {
+    panic();
+    ui_dark();
+    vTaskDelay(pdMS_TO_TICKS(200));  // let the notes-off reach the outputs
+    power_off(board()->panel_button[PANEL_PWR]);
+}
+
+static void handle_panel(int key, button_event_t ev) {
+    static const char *names[PANEL_KEYS] = {"BLE", "NET", "STP", "PWR"};
+    airmidi_mode_t mode = current_mode();
+    if (ev == BUTTON_DOUBLE) {
+        ESP_LOGI(TAG, "%s: double tap, all notes off", names[key]);
+        panic();
+        return;
+    }
+    if (ev != BUTTON_SHORT && ev != BUTTON_LONG) return;
+    bool hold = ev == BUTTON_LONG;
+    ESP_LOGI(TAG, "%s: %s", names[key], hold ? "hold" : "tap");
+    switch (key) {
+        case PANEL_BLE:  // tap: BLE mode (Play); hold: pairing window, in BLE mode
+            if (!hold) {
+                set_mode(AIRMIDI_MODE_PLAY);
+            } else if (ble_running) {
+                if (mode == AIRMIDI_MODE_NETWORK) set_mode(AIRMIDI_MODE_PLAY);
+                pair();
+            } else {
+                kept.after = AFTER_PAIR;
+                set_mode(AIRMIDI_MODE_PLAY);  // restarts: BLE comes on
+            }
+            break;
+        case PANEL_NET:  // tap: Network mode; hold: check for an update, in Network mode
+            if (hold) {
+                if (mode != AIRMIDI_MODE_NETWORK) kept.after = AFTER_UPDATE;  // in case the switch restarts
+                set_mode(AIRMIDI_MODE_NETWORK);
+                kept.after = AFTER_NOTHING;  // no restart: do it here
+                update_check();
+            } else {
+                set_mode(AIRMIDI_MODE_NETWORK);
+            }
+            break;
+        case PANEL_STP:  // tap: Setup mode, again: back to the mode before; hold: MIDI-CI scan
+            if (hold) {
+                ci_scan(false);
+            } else {
+                set_mode(mode == AIRMIDI_MODE_SETUP ? (airmidi_mode_t)kept.before_setup : AIRMIDI_MODE_SETUP);
+            }
+            break;
+        case PANEL_PWR:  // tap: battery bar; hold: off
+            if (hold)
+                power_off_now();
+            else
+                ui_show_battery();
+            break;
+    }
+}
+
+// After a restart a panel hold asked for.
+static void kept_after_boot(void) {
+    after_restart_t a = kept.after;
+    kept.after = AFTER_NOTHING;
+    if (a == AFTER_PAIR && ble_running) pair();
+    if (a == AFTER_UPDATE) update_check();
+}
+
+static void panel_update(void) {
+    ci_status_t ci;
+    ci_get_status(&ci);
+    if (pnl.was_scanning && !ci.scanning) {
+        bool found = !strcmp(ci.result, "ok") || !strcmp(ci.result, "cached");
+        pnl.scan_result = found ? PANEL_RESULT_OK : PANEL_RESULT_FAILED;
+        pnl.scan_at = ms();
+    }
+    pnl.was_scanning = ci.scanning;
+    update_poll();
+
+    net_state_t ns = net_state();
+    uint32_t window = ble_running ? ble_config_window_left() : 0;
+    ota_fetch_status_t fs;
+    ota_fetch_status(&fs);
+    panel_state_t p = {
+        .ble_on = ble_running,
+        .ble_connected = ble_running && ble_midi_connected(),
+        .ble_pairing = window && window != BLE_CONFIG_WINDOW_FOREVER,
+        .net = ns == NET_JOINING     ? PANEL_NET_JOINING
+               : ns == NET_CONNECTED ? PANEL_NET_JOINED
+               : ns == NET_AP        ? PANEL_NET_AP
+                                     : PANEL_NET_OFF,
+        .net_session = bus_is_up(PORT_NET_0) || bus_is_up(PORT_NET_1) || bus_is_up(PORT_RTP_0) || bus_is_up(PORT_RTP_1),
+        .update_checking = pnl.update_checking || pnl.update_waiting,
+        .update_installing = !strcmp(fs.state, "downloading"),
+        .update_result = pnl.update_result,
+        .update_at = pnl.update_at,
+        .scanning = ci.scanning,
+        .scan_result = pnl.scan_result,
+        .scan_at = pnl.scan_at,
+        .battery_absent = power_on_usb(),
+        .battery_low = power_low(),
+        .battery_percent = power_percent(),
+    };
+    ui_set_panel(&p);
+}
+
+// ---- rev A: one button --------------------------------------------------------------------------------------
 
 static void handle_button(button_event_t ev) {
     switch (ev) {
@@ -216,6 +417,9 @@ void app_main(void) {
 
     ota_boot_report();
     board_init();
+    kept_check();
+    // Woken from deep sleep by PWR: only a hold starts the box, a knock sends it back to sleep (before the radios).
+    if (b->panel) power_confirm_wake(b->panel_button[PANEL_PWR]);
     settings_ok = nvs_settings_init() == ESP_OK;
     settings_t s;
     nvs_settings_get(&s);
@@ -242,7 +446,9 @@ void app_main(void) {
     else if (why == ESP_RST_POWERON || why == ESP_RST_EXT)
         ble_config_set_window(120);
     power_start();
+    button_events = xQueueCreate(8, sizeof(uint16_t));
     ui_start(on_button);
+    if (b->panel) kept_after_boot();
     // A freshly updated image proves itself before it is kept: radio stack up, settings readable, still running
     // after 10 s. A crash or a failed check before then boots the previous image again.
     ota_confirm_after(10000, healthy);
@@ -253,21 +459,30 @@ void app_main(void) {
 #endif
 
     for (;;) {
-        button_event_t ev = pending_event;
-        if (ev) pending_event = BUTTON_NONE, handle_button(ev);
+        uint16_t e;
+        while (xQueueReceive(button_events, &e, 0)) {
+            if (b->panel)
+                handle_panel(e >> 8, (button_event_t)(e & 0xff));
+            else
+                handle_button((button_event_t)(e & 0xff));
+        }
 
         if (power_empty()) {
             panic();
-            ui_set_led(LED_OFF);
+            ui_dark();
             vTaskDelay(pdMS_TO_TICKS(200));  // let the notes-off reach the outputs
             power_shutdown();
         }
-        net_state_t ns = net_state();
-        ui_set_led(power_low()            ? LED_LOW_BATTERY
-                   : ns == NET_AP         ? LED_SETUP
-                   : ns == NET_JOINING    ? LED_WIFI_JOINING
-                   : ble_midi_connected() ? LED_CONNECTED
-                                          : LED_ADVERTISING);
+        if (b->panel) {
+            panel_update();
+        } else {
+            net_state_t ns = net_state();
+            ui_set_led(power_low()            ? LED_LOW_BATTERY
+                       : ns == NET_AP         ? LED_SETUP
+                       : ns == NET_JOINING    ? LED_WIFI_JOINING
+                       : ble_midi_connected() ? LED_CONNECTED
+                                              : LED_ADVERTISING);
+        }
 
         int c = getchar();              // console: 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
                                         // '0'-'2' power mode, 'B' bootloader (S3)

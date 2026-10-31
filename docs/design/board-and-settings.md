@@ -31,6 +31,13 @@ second box for USB MIDI and the ESP-NOW cable before a second receiver PCB exist
 LED on the kit), no battery (`batt_adc_channel = -1`: always "on USB"), BOOT (GPIO0) as the button, MIDI UART on
 GPIO17/18 if jacks are wired (43/44 go to the kit's USB-UART bridge, which carries the boot log and panic reports).
 
+**Rev B with the XIAO S3** (`build.sh s3b`, `CONFIG_AIRMIDI_BOARD_XIAO_S3_B`): rev A's MIDI and battery pins, an
+H11L1 instead of the 6N138 (same polarity on RX), and a panel instead of the button and LED. `board_t.panel` with
+`panel_led[]` (D1 D3 D4 D5 = GPIO2 4 5 6, driven by LEDC so a state can be dim) and `panel_button[]` (D8 D9 D10 D2
+= GPIO7 8 9 3) in BLE, NET, STP, PWR order. PWR is on GPIO3, an RTC GPIO: `power_off()` deep-sleeps with ext0 on it
+and the RTC pull-up, and `power_confirm_wake()` at boot sends the box back to sleep unless the button is still down
+1 s after the press. The release manifest has its own image (`s3b`).
+
 **Wi-Fi transmit power** is a board property too (`wifi_max_tx`, in 0.25 dBm, 0 = the chip's 20 dBm), applied
 whenever Wi-Fi starts. The dev kit is held to 15 dBm. At 20 dBm none of its Wi-Fi frames arrived anywhere, while its
 BLE worked: most likely its 3.3 V sags at the transmit peaks on a USB port ([transports.md](transports.md), ESP-NOW).

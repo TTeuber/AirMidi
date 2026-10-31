@@ -2,14 +2,18 @@
 
 #include "airmidi/ui.h"
 #include "board.h"
+#include "driver/gpio.h"
+#include "driver/rtc_io.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_log.h"
 #include "esp_pm.h"
 #include "esp_sleep.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "soc/soc_caps.h"
 
 static const char *TAG = "power";
 
@@ -93,4 +97,46 @@ void power_shutdown(void) {
     ESP_LOGW(TAG, "battery empty (%lu mV): sleeping until the switch is cycled", (unsigned long)battery.mv);
     vTaskDelay(pdMS_TO_TICKS(100));  // let the log out
     esp_deep_sleep_start();
+}
+
+// Deep sleep with the button (active low, RTC GPIO) as the wake source. A press still under way would wake the
+// chip at once, so wait for the release first. The RTC pull-up holds the pin high while asleep (ext0 keeps the RTC
+// peripherals powered; chips without ext0, the C6, use ext1 and keep them on by hand).
+static void __attribute__((noreturn)) sleep_until_pressed(gpio_num_t button) {
+    while (gpio_get_level(button) == 0) vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(50));  // release bounce
+#if SOC_PM_SUPPORT_EXT0_WAKEUP
+    ESP_ERROR_CHECK(esp_sleep_enable_ext0_wakeup(button, 0));
+#else
+    ESP_ERROR_CHECK(esp_sleep_enable_ext1_wakeup_io(1ULL << button, ESP_EXT1_WAKEUP_ANY_LOW));
+#if SOC_PM_SUPPORT_RTC_PERIPH_PD
+    esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+#endif
+#endif
+    rtc_gpio_pullup_en(button);
+    rtc_gpio_pulldown_dis(button);
+    esp_deep_sleep_start();
+}
+
+void power_off(gpio_num_t button) {
+    ESP_LOGI(TAG, "power off: hold PWR %d ms to start again", POWER_ON_HOLD_MS);
+    vTaskDelay(pdMS_TO_TICKS(100));  // let the log out
+    sleep_until_pressed(button);
+}
+
+void power_confirm_wake(gpio_num_t button) {
+    esp_sleep_wakeup_cause_t why = esp_sleep_get_wakeup_cause();
+    if (why != ESP_SLEEP_WAKEUP_EXT0 && why != ESP_SLEEP_WAKEUP_EXT1) return;
+    rtc_gpio_deinit(button);  // back to a digital pin
+    gpio_config_t in = {.pin_bit_mask = 1ULL << button, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
+    gpio_config(&in);
+    // Uptime counts from shortly after the press that woke the chip (boot takes a few hundred ms of it).
+    while (esp_timer_get_time() < POWER_ON_HOLD_MS * 1000LL) {
+        if (gpio_get_level(button) != 0) {
+            ESP_LOGI(TAG, "PWR let go before %d ms: back to sleep", POWER_ON_HOLD_MS);
+            sleep_until_pressed(button);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    ESP_LOGI(TAG, "woken by PWR");
 }

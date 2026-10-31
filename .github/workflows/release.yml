@@ -13,11 +13,13 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        board: [c6, s3, s3kit]
+        board: [c6, s3, s3b, s3kit]
         include:
           - board: c6
             target: esp32c6
           - board: s3
+            target: esp32s3
+          - board: s3b  # receiver rev B: the four-button panel
             target: esp32s3
           - board: s3kit  # the ESP32-S3-DevKitC-1 on its own
             target: esp32s3
@@ -68,7 +70,7 @@ jobs:
       - name: manifest.json
         run: |
           cat > out/manifest.json <<JSON
-          {"version": "${{ github.ref_name }}", "images": {"c6": "airmidi-c6.bin", "s3": "airmidi-s3.bin", "s3kit": "airmidi-s3kit.bin"}}
+          {"version": "${{ github.ref_name }}", "images": {"c6": "airmidi-c6.bin", "s3": "airmidi-s3.bin", "s3b": "airmidi-s3b.bin", "s3kit": "airmidi-s3kit.bin"}}
           JSON
       - uses: softprops/action-gh-release@v3
         with:

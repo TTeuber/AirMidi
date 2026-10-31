@@ -1,0 +1,2 @@
+# Receiver rev B with the XIAO ESP32-S3 (build.sh s3b): rev A's S3 setup plus the four-button panel.
+CONFIG_AIRMIDI_BOARD_XIAO_S3_B=y

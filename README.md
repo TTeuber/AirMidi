@@ -41,12 +41,30 @@ board layer ([board-and-settings.md](docs/design/board-and-settings.md)) is the 
 **[hardware/](hardware)** has the schematic, the KiCad project, Gerbers, BOM and the printable enclosure, with the
 board's revision history: the photo shows rev A, and rev B fixes what its bring-up found.
 
+### The rev B panel
+
+| button | tap | hold 2 s (its LED lights when you can let go) |
+|---|---|---|
+| BLE (blue) | Play mode: BLE + TRS | open the pairing window for a new phone (2 min) |
+| NET (green) | Network mode | check GitHub for a newer release, install it |
+| STP (yellow) | Setup mode; again: back to the mode before | MIDI-CI scan of the device on the jacks |
+| PWR (red) | the four LEDs show the battery for 3 s | off (deep sleep); hold 1 s to start again |
+
+Two quick taps on any button: all notes off, at the second tap. A hold that needs the other mode switches first
+(with the restart a BLE change takes), then does its job. The LEDs: BLE flashes once a second while advertising, is
+on when connected (dark flicker on MIDI), blinks fast while the pairing window is open; NET blinks while joining,
+is dim when joined and on with a session, blinks fast while checking or installing, then shows the result (on: up
+to date, three flashes: failed); STP double-flashes in Setup, blinks dim during a scan, then on (found) or three
+flashes (nothing); PWR is on, triple-flashes on a low cell. The battery bar is a quarter per LED; with the switch
+off on USB (no cell reading) all four blink.
+
 ## Features
 
 - **TRS <-> BLE MIDI**, up to two BLE centrals at once. One way through the box: BLE -> TRS 8.4 ms median,
   TRS -> BLE 9.5 ms, nothing lost in the hardware tests.
 - **Wi-Fi modes**: Play (Wi-Fi off), Network (joins stored networks, reachable as `<name>.local`), Setup (its own
-  access point). A long press switches mode, an 8 s press opens Setup, a double press sends all notes off.
+  access point). A long press switches mode, an 8 s press opens Setup, a double press sends all notes off. Rev B
+  has a panel instead: a button per mode (BLE, NET, STP) and PWR, each with an LED over it (below).
 - **Web UI** at `http://<name>.local`: live traffic per port, battery, signal, settings, Wi-Fi networks, firmware
   updates. Plain JS, no framework, 18 KB, built into the firmware.
 - **Network MIDI 2.0** host (UDP, `_midi2._udp`): macOS connects to it natively. FEC, retransmit and in-order
@@ -168,7 +186,7 @@ app/        Flutter: the Android app, the macOS app with the DAW, and the code t
 
 ```sh
 tools/check.sh                    # what CI runs: host tests, clang-format check, firmware for every board
-firmware/build.sh c6 flash        # build and flash the C6 board (s3 for the XIAO S3, s3kit for an S3 dev kit)
+firmware/build.sh c6 flash        # build and flash the C6 board (s3: XIAO S3 on rev A, s3b: on rev B, s3kit: S3 dev kit)
 cd app && flutter test            # the apps' tests
 flutter build apk --release       # the Android app (flutter build macos --release for the Mac)
 ```

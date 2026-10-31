@@ -15,9 +15,16 @@ button_event_t button_update(button_t *b, bool pressed, uint32_t now) {
         if (b->stable) {  // press
             b->pressed_at = now;
             b->very_long_fired = false;
+            if (b->fast_double && b->short_pending) {
+                b->short_pending = false;
+                b->was_double = true;
+                ev = BUTTON_DOUBLE;
+            }
         } else {  // release
             uint32_t held = now - b->pressed_at;
-            if (b->very_long_fired) {
+            if (b->was_double) {
+                b->was_double = false;  // reported at the press
+            } else if (b->very_long_fired) {
                 // already reported at 8 s
             } else if (held >= BUTTON_LONG_MS) {
                 ev = BUTTON_LONG;
@@ -81,6 +88,79 @@ bool led_level(led_state_t s, uint32_t now, uint32_t last_activity) {
         default:
             return false;
     }
+}
+
+// ---- panel ---------------------------------------------------------------------------------------------------
+
+#define ON 255
+
+static uint8_t blink(uint32_t now, uint32_t period, uint8_t level) { return now % period < period / 2 ? level : 0; }
+
+// The battery bar: a quarter per LED, left to right, at least one lit. Without a cell reading (the switch is off and
+// USB powers the box) all four blink together instead.
+static uint8_t bar_level(const panel_state_t *s, int key, uint32_t now) {
+    if (s->battery_absent) return blink(now, 1000, ON);
+    int n = (s->battery_percent + 24) / 25;
+    if (n < 1) n = 1;
+    return key < n ? ON : 0;
+}
+
+static uint8_t ble_level(const panel_state_t *s, uint32_t now) {
+    if (!s->ble_on) return 0;
+    if (s->ble_pairing) return blink(now, 200, ON);
+    if (s->ble_connected) return s->last_activity_ms && now - s->last_activity_ms < LED_ACTIVITY_MS ? 0 : ON;
+    return flashes(now, 1000, 1, 100, 0) ? ON : 0;  // advertising
+}
+
+static uint8_t result_level(panel_result_t r, uint32_t since) {
+    if (r == PANEL_RESULT_OK) return ON;
+    return flashes(since, PANEL_RESULT_MS, 3, 60, 120) ? ON : 0;  // three quick flashes: nothing / failed
+}
+
+static uint8_t net_level(const panel_state_t *s, uint32_t now) {
+    if (s->update_installing) return blink(now, 100, ON);
+    if (s->update_checking) return blink(now, 200, ON);
+    if (s->update_result && now - s->update_at < PANEL_RESULT_MS)
+        return result_level(s->update_result, now - s->update_at);
+    switch (s->net) {
+        case PANEL_NET_JOINING:
+            return blink(now, 500, ON);
+        case PANEL_NET_JOINED:
+            if (!s->net_session) return PANEL_DIM;
+            return s->last_activity_ms && now - s->last_activity_ms < LED_ACTIVITY_MS ? 0 : ON;
+        default:
+            return 0;  // the access point is STP's
+    }
+}
+
+static uint8_t stp_level(const panel_state_t *s, uint32_t now) {
+    if (s->scanning) return blink(now, 250, PANEL_DIM);
+    if (s->scan_result && now - s->scan_at < PANEL_RESULT_MS) return result_level(s->scan_result, now - s->scan_at);
+    if (s->net == PANEL_NET_AP) return flashes(now, 1500, 2, 100, 150) ? ON : 0;
+    return 0;
+}
+
+static uint8_t pwr_level(const panel_state_t *s, uint32_t now) {
+    if (s->battery_low) return flashes(now, 2000, 3, 60, 120) ? ON : 0;
+    return ON;
+}
+
+void panel_leds(const panel_state_t *s, uint32_t now, uint8_t level[PANEL_KEYS]) {
+    uint32_t since = now - s->sweep_from;
+    if (since < 2 * PANEL_KEYS * PANEL_SWEEP_MS) {  // boot sweep, left to right twice
+        for (int k = 0; k < PANEL_KEYS; k++) level[k] = (int)(since / PANEL_SWEEP_MS % PANEL_KEYS) == k ? ON : 0;
+        return;
+    }
+    if (s->bar_until && (int32_t)(s->bar_until - now) > 0) {
+        for (int k = 0; k < PANEL_KEYS; k++) level[k] = bar_level(s, k, now);
+        return;
+    }
+    level[PANEL_BLE] = ble_level(s, now);
+    level[PANEL_NET] = net_level(s, now);
+    level[PANEL_STP] = stp_level(s, now);
+    level[PANEL_PWR] = pwr_level(s, now);
+    for (int k = 0; k < PANEL_KEYS; k++)  // held long enough for its hold action: steady, so you know to let go
+        if (s->held_ms[k] >= BUTTON_LONG_MS) level[k] = ON;
 }
 
 // ---- battery -------------------------------------------------------------------------------------------------

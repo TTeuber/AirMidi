@@ -1,5 +1,6 @@
-// The box's whole user interface: one button and one LED. Pure logic on (input, time), so the gestures and the
-// blink patterns are host-tested; the firmware samples the pin and drives the LED.
+// The box's user interface: one button and one LED (rev A), or a panel of four buttons with an LED over each (rev B).
+// Pure logic on (input, time), so the gestures and the blink patterns are host-tested; the firmware samples the pins
+// and drives the LEDs.
 #pragma once
 
 #include <stdbool.h>
@@ -31,6 +32,8 @@ typedef struct {
     uint32_t released_at;  // when the last short press ended
     bool short_pending;    // a short press waiting to see if a second one follows
     bool very_long_fired;
+    bool fast_double;  // DOUBLE fires at the second press instead of its release (the panel's panic)
+    bool was_double;   // the press under way was the second of a double: its release reports nothing
 } button_t;
 
 void button_init(button_t *b);
@@ -57,6 +60,45 @@ typedef enum {  // highest priority last: the firmware shows the most important 
 
 // LED level for a state at a time. last_activity_ms: when the last MIDI message passed (0 = never).
 bool led_level(led_state_t s, uint32_t now_ms, uint32_t last_activity_ms);
+
+// ---- panel (rev B) -------------------------------------------------------------------------------------------
+// A button per mode with its LED over it (proto/airmidi_panel, "four leds, four buttons"): each LED shows its mode
+// and how it is doing; a tap on PWR turns the row into a battery bar for 3 s.
+
+typedef enum { PANEL_BLE, PANEL_NET, PANEL_STP, PANEL_PWR, PANEL_KEYS } panel_key_t;
+
+typedef enum { PANEL_RESULT_NONE, PANEL_RESULT_OK, PANEL_RESULT_FAILED } panel_result_t;
+
+typedef enum { PANEL_NET_OFF, PANEL_NET_JOINING, PANEL_NET_JOINED, PANEL_NET_AP } panel_net_t;
+
+#define PANEL_SWEEP_MS 120   // boot: each LED in turn this long, two passes
+#define PANEL_RESULT_MS 800  // a result (scan reply, update check) stays on its LED this long
+#define PANEL_BAR_MS 3000    // the battery bar after a tap on PWR
+#define PANEL_DIM 70         // "up but idle" (joined, no session; MIDI-CI scan blink), of 255
+
+typedef struct {
+    // BLE: stack running, a connection up, the pairing window for a new phone open (Setup's own window not counted)
+    bool ble_on, ble_connected, ble_pairing;
+    panel_net_t net;
+    bool net_session;      // a Network MIDI 2.0 or RTP-MIDI session is up
+    bool update_checking;  // asking GitHub for the latest release
+    bool update_installing;
+    panel_result_t update_result;  // of the last check, shown from update_at
+    uint32_t update_at;
+    bool scanning;               // MIDI-CI over TRS
+    panel_result_t scan_result;  // OK = a device answered, shown from scan_at
+    uint32_t scan_at;
+    bool battery_absent;  // no cell reading (switch off, on USB)
+    bool battery_low;
+    int battery_percent;
+    uint32_t bar_until;            // battery bar showing while now < bar_until (0: not showing)
+    uint32_t sweep_from;           // boot sweep start
+    uint32_t held_ms[PANEL_KEYS];  // how long each button has been held: past BUTTON_LONG_MS its LED says "release now"
+    uint32_t last_activity_ms;     // last MIDI message routed (0 = never)
+} panel_state_t;
+
+// Brightness 0-255 of each LED.
+void panel_leds(const panel_state_t *s, uint32_t now_ms, uint8_t level[PANEL_KEYS]);
 
 // ---- battery -------------------------------------------------------------------------------------------------
 
