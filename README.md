@@ -35,8 +35,13 @@ which sequences hardware synths through the box.
 
 The receiver PCB: a Seeed XIAO ESP32-C6 (or ESP32-S3) on headers, MIDI out through a TRS Type A jack, MIDI in
 through a 6N138 optocoupler, a Li-ion cell with a TP4057 USB-C charger and a TPS63020 buck-boost to 3.3 V, a power
-switch, a button and an LED. An ESP32-S3-DevKitC-1 serves as the second box for USB MIDI and the ESP-NOW link. The
-board layer ([board-and-settings.md](docs/design/board-and-settings.md)) is the only code that names a GPIO.
+switch, a button and an LED. An ESP32-S3-DevKitC-1 serves as the second box for USB MIDI and the ESP-NOW link.
+
+A third board reads the receiver's TRS jacks straight from an ESP32-S3 on a bare board
+(`CONFIG_AIRMIDI_BOARD_DIRECT_S3`, `build.sh s3direct`): power and flashing ride the S3's native USB port (USB Serial
+JTAG; there is no USB-UART bridge on the board), and the console moves to TinyUSB's serial port on the same port
+once the app starts. TRS TIP (J2) carries the data out on the S3's GPIO14, TRS IN (J3) is in on the S3's GPIO21
+through the 6N138, and the port's type switch (the RING) is on the S3's GPIO15.
 
 **[hardware/](hardware)** has the schematic, the KiCad project, Gerbers, BOM and the printable enclosure, with the
 board's revision history: the photo shows rev A, and rev B fixes what its bring-up found.
@@ -168,7 +173,7 @@ app/        Flutter: the Android app, the macOS app with the DAW, and the code t
 
 ```sh
 tools/check.sh                    # what CI runs: host tests, clang-format check, firmware for every board
-firmware/build.sh c6 flash        # build and flash the C6 board (s3 for the XIAO S3, s3kit for an S3 dev kit)
+firmware/build.sh c6 flash        # build and flash the C6 board (s3 for the XIAO S3, s3kit for an S3 dev kit, s3direct for the receiver's jacks driven straight from the S3)
 cd app && flutter test            # the apps' tests
 flutter build apk --release       # the Android app (flutter build macos --release for the Mac)
 ```

@@ -31,9 +31,17 @@ second box for USB MIDI and the ESP-NOW cable before a second receiver PCB exist
 LED on the kit), no battery (`batt_adc_channel = -1`: always "on USB"), BOOT (GPIO0) as the button, MIDI UART on
 GPIO17/18 if jacks are wired (43/44 go to the kit's USB-UART bridge, which carries the boot log and panic reports).
 
+**A board wired straight to the receiver's rev A jacks** (`build.sh s3direct`, `CONFIG_AIRMIDI_BOARD_DIRECT_S3`).
+One board without an USB-UART bridge: power and flashing ride the S3's native USB port (USB Serial JTAG), and the
+console moves to TinyUSB's serial port once the app starts (`CONFIG_ESP_CONSOLE_NONE`, as for the other S3 boards).
+The receiver's TRS jacks are on the S3's own pins: TRS TIP (J2, the data out on the S3's GPIO14), TRS IN (J3, the
+board's 6N138 on the S3's GPIO21), and TRS RING (the port's type switch, on the S3's GPIO15). The port's type
+defaults to A, and the RING is held high in `board_init()` until both types are verified (Type B is pending).
+
 **Wi-Fi transmit power** is a board property too (`wifi_max_tx`, in 0.25 dBm, 0 = the chip's 20 dBm), applied
-whenever Wi-Fi starts. The dev kit is held to 15 dBm. At 20 dBm none of its Wi-Fi frames arrived anywhere, while its
-BLE worked: most likely its 3.3 V sags at the transmit peaks on a USB port ([transports.md](transports.md), ESP-NOW).
+whenever Wi-Fi starts. The dev kit and the bare S3 are held to 15 dBm. At 20 dBm none of the dev kit's Wi-Fi
+frames arrived anywhere, while its BLE worked: most likely its 3.3 V sags at the transmit peaks on a USB port
+([transports.md](transports.md), ESP-NOW).
 
 **The S3 and RAM.** Without PSRAM the S3 had 7 KB of heap left in Play mode. PSRAM is used where the board has it
 (8 MB octal on the XIAO S3 and on this kit; a board without it still boots), with Wi-Fi, lwIP and NimBLE buffers
