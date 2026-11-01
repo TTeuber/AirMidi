@@ -21,6 +21,16 @@ menu "airmidi board"
             help
                 A bare dev kit on its native USB port: USB MIDI, the radios and the web UI, no TRS jacks wired
                 (UART MIDI on GPIO17/18 if you add them), no battery, the BOOT button as the box's button.
+
+        config AIRMIDI_BOARD_DIRECT_S3
+            bool "The receiver's rev A jacks, driven straight from the S3"
+            depends on IDF_TARGET_ESP32S3
+            help
+                A bare ESP32-S3 board with the receiver's rev A TRS jacks on its own pins, driven straight from the
+                chip: TRS TIP (MIDI OUT data, the board's J2) on the S3's GPIO14, TRS RING (the port's type switch)
+                on the S3's GPIO15, and TRS IN (MIDI IN, the board's J3) on the S3's GPIO21 via the 6N138. The port
+                defaults to Type A: the RING is held high, so the TIP is the data out. Type B (the other direction)
+                is pending.
     endchoice
 
 endmenu

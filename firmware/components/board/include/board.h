@@ -1,6 +1,7 @@
 // The one place that knows which pin is what. The receiver rev A PCB takes either XIAO module on the same
 // headers, so both boards share the signals and differ only in GPIO numbers (and the C6's internal RF switch). A bare
-// ESP32-S3-DevKitC-1 is a third board, for USB MIDI and ESP-NOW without a second receiver PCB.
+// ESP32-S3-DevKitC-1 is a third board, for USB MIDI and ESP-NOW without a second receiver PCB; a fourth drives the
+// receiver's rev A TRS jacks straight from a bare ESP32-S3.
 #pragma once
 
 #include "esp_adc/adc_oneshot.h"
@@ -16,6 +17,10 @@ typedef struct {
     int batt_adc_channel;      // -1: no battery (a dev kit on USB)
     int batt_offset_mv;        // added to the cell reading, from comparing it with a multimeter on this board
     int8_t wifi_max_tx;        // Wi-Fi transmit power limit in 0.25 dBm, 0 = the chip's own (20 dBm)
+    // The 3.5mm TRS port's type switch (or GPIO_NUM_NC: none): the port's two types are selected on the RING, high
+    // is Type A (the data out is on the TIP) and low is Type B, pending. board_init() holds it high, so the board
+    // starts with the data out on the TIP.
+    gpio_num_t trs_ring;
 } board_t;
 
 // The board this firmware was built for (Kconfig AIRMIDI_BOARD).

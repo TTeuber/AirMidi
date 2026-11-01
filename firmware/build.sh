@@ -1,7 +1,8 @@
 #!/bin/bash
 # Build (and optionally flash) the firmware for one board, each in its own build directory:
-#   ./build.sh [c6|s3|s3kit] [flash] [monitor]       default c6; PORT=/dev/cu.usbmodemXXXX to pick the port
-#   (s3kit: a bare ESP32-S3-DevKitC-1 instead of the receiver PCB)
+#   ./build.sh [c6|s3|s3kit|s3direct] [flash] [monitor]   default c6; PORT=/dev/cu.usbmodemXXXX to pick the port
+#   (s3kit: a bare ESP32-S3-DevKitC-1 instead of the receiver PCB; s3direct: the receiver's jacks driven straight
+#    from the S3: TRS TIP on J2, TRS IN on J3, the port's type switch on J2's RING)
 set -e
 cd "$(dirname "$0")"
 board=${1:-c6}
@@ -9,7 +10,8 @@ case $board in
     c6) target=esp32c6 ;;
     s3) target=esp32s3 ;;
     s3kit) target=esp32s3 board_defaults=sdkconfig.devkitc_s3 ;;
-    *) echo "usage: $0 [c6|s3|s3kit] [flash] [monitor]"; exit 1 ;;
+    s3direct) target=esp32s3 board_defaults=sdkconfig.s3direct ;;
+    *) echo "usage: $0 [c6|s3|s3kit|s3direct] [flash] [monitor]"; exit 1 ;;
 esac
 shift || true
 export IDF_PATH=${IDF_PATH:-$HOME/Developer/esp-idf}

@@ -194,6 +194,8 @@ void ota_abort(void) {
 #define BOARD_KEY "s3"
 #elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
 #define BOARD_KEY "s3kit"
+#elif CONFIG_AIRMIDI_BOARD_DIRECT_S3
+#define BOARD_KEY "s3direct"  // the receiver's jacks driven straight from the S3
 #endif
 
 static char fetch_base[160];
