@@ -194,6 +194,8 @@ void ota_abort(void) {
 #define BOARD_KEY "s3"
 #elif CONFIG_AIRMIDI_BOARD_XIAO_S3_B
 #define BOARD_KEY "s3b"
+#elif CONFIG_AIRMIDI_BOARD_REV_C
+#define BOARD_KEY "s3c"
 #elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
 #define BOARD_KEY "s3kit"
 #endif

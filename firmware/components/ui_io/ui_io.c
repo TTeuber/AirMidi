@@ -57,8 +57,9 @@ static void panel_show(uint32_t now) {
         s.last_activity_ms = bus_last_activity_ms();
         panel_leds(&s, now, level);
     }
+    const board_t *b = board();
     for (int k = 0; k < PANEL_KEYS; k++) {
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)k, level[k]);
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)k, level[k] * b->panel_led_max[k] / 255);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)k);
     }
 }

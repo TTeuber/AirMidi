@@ -24,7 +24,7 @@ bool power_empty(void);
 void power_set_mode(int mode);
 int power_mode(void);
 
-// Sleep until the power switch is cycled: no wake source, a few µA. Call after silencing the outputs.
+// Sleep until the power switch is cycled or, on a panel board, PWR is pressed. A few µA. Call after silencing the outputs.
 void power_shutdown(void) __attribute__((noreturn));
 
 // Panel boards (rev B): the PWR button is the power switch's soft twin. power_off() sleeps until it is pressed;

@@ -22,6 +22,12 @@ menu "airmidi board"
                 Rev A's MIDI and battery pins, plus the panel: four buttons (BLE, NET, STP, PWR) with an LED over
                 each, PWR waking the box from deep sleep.
 
+        config AIRMIDI_BOARD_REV_C
+            bool "receiver rev C (ESP32-S3-MINI-1 on the board)"
+            depends on IDF_TARGET_ESP32S3
+            help
+                Rev B's panel on a bare S3 module: one USB-C, the charger on the board, no power switch.
+
         config AIRMIDI_BOARD_DEVKITC_S3
             bool "ESP32-S3-DevKitC-1 on its own"
             depends on IDF_TARGET_ESP32S3

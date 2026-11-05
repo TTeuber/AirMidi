@@ -5,6 +5,7 @@
 
 #include "airmidi/midi1.h"
 #include "airmidi/usbmidi.h"
+#include "board.h"
 #include "bus.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -155,6 +156,10 @@ void usb_midi_start(const char *name) {
     cfg.descriptor.string = strings;
     cfg.descriptor.string_count = sizeof strings / sizeof strings[0];
     cfg.descriptor.full_speed_config = config_desc;
+    if (board()->vbus_sense) {  // self-powered: no pull-up on D+ unless a host is there
+        cfg.phy.self_powered = true;
+        cfg.phy.vbus_monitor_io = board()->vbus_sense;
+    }
     ESP_ERROR_CHECK(tinyusb_driver_install(&cfg));
     tinyusb_config_cdcacm_t acm = {.cdc_port = TINYUSB_CDC_ACM_0, .callback_line_state_changed = line_state};
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm));

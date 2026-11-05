@@ -93,12 +93,6 @@ bool power_low(void) { return battery.low; }
 bool power_on_usb(void) { return battery.absent; }
 bool power_empty(void) { return battery.empty; }
 
-void power_shutdown(void) {
-    ESP_LOGW(TAG, "battery empty (%lu mV): sleeping until the switch is cycled", (unsigned long)battery.mv);
-    vTaskDelay(pdMS_TO_TICKS(100));  // let the log out
-    esp_deep_sleep_start();
-}
-
 // Deep sleep with the button (active low, RTC GPIO) as the wake source. A press still under way would wake the
 // chip at once, so wait for the release first. The RTC pull-up holds the pin high while asleep (ext0 keeps the RTC
 // peripherals powered; chips without ext0, the C6, use ext1 and keep them on by hand).
@@ -115,6 +109,13 @@ static void __attribute__((noreturn)) sleep_until_pressed(gpio_num_t button) {
 #endif
     rtc_gpio_pullup_en(button);
     rtc_gpio_pulldown_dis(button);
+    esp_deep_sleep_start();
+}
+
+void power_shutdown(void) {
+    ESP_LOGW(TAG, "battery empty (%lu mV): sleeping until PWR or the switch", (unsigned long)battery.mv);
+    vTaskDelay(pdMS_TO_TICKS(100));  // let the log out
+    if (board()->panel) sleep_until_pressed(board()->panel_button[PANEL_PWR]);  // rev C has no switch to cycle
     esp_deep_sleep_start();
 }
 

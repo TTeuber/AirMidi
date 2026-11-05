@@ -40,10 +40,29 @@ static const board_t the_board = {
     .led = GPIO_NUM_NC,
     .button = GPIO_NUM_NC,
     .panel = true,
-    .panel_led = {GPIO_NUM_2, GPIO_NUM_4, GPIO_NUM_5, GPIO_NUM_6},  // blue (220R), green, yellow, red (1k)
+    .panel_led = {GPIO_NUM_2, GPIO_NUM_4, GPIO_NUM_5, GPIO_NUM_6},  // as built: blue, green (2k), yellow, orange (1k)
     .panel_button = {GPIO_NUM_7, GPIO_NUM_8, GPIO_NUM_9, GPIO_NUM_3},
+    .panel_led_max = {25, 25, 100, 35},  // all too bright at full duty, and yellow a little dim against the rest
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = ADC_CHANNEL_0,  // GPIO1
+};
+#elif CONFIG_AIRMIDI_BOARD_REV_C
+// pcb/midi_receiver_c/circuit.py in the design workspace. MIDI TX is off UART0's pin, so the ROM's boot log stays out of
+// the MIDI output, and off the pins Espressif lists with a power-up glitch; TX and RX stay off VDD_SPI's GPIO33-37.
+static const board_t the_board = {
+    .name = "receiver rev C",
+    .midi_tx = GPIO_NUM_38,
+    .midi_rx = GPIO_NUM_39,  // H11L1 output, 270R pull-up, on the switched supply
+    .led = GPIO_NUM_NC,
+    .button = GPIO_NUM_NC,
+    .panel = true,
+    .panel_led = {GPIO_NUM_11, GPIO_NUM_13, GPIO_NUM_15, GPIO_NUM_17},  // blue, green (10k), yellow (1.5k), orange (3.3k)
+    .panel_button = {GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_16, GPIO_NUM_18},
+    .panel_led_max = {100, 100, 150, 110},  // rev B's judged levels scaled to these resistors: confirm on the first board
+    .batt_adc_unit = ADC_UNIT_1,
+    .batt_adc_channel = ADC_CHANNEL_9,  // GPIO10
+    .opto_en = GPIO_NUM_40,
+    .vbus_sense = GPIO_NUM_21,
 };
 #elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
 static const board_t the_board = {
@@ -72,6 +91,11 @@ void board_init(void) {
     gpio_set_level(RF_SWITCH_EN, 0);
     gpio_set_level(ANT_SELECT, 0);
 #endif
+    if (the_board.opto_en) {  // before the UART looks at its line; the pin floats in deep sleep and a pull-up turns it off
+        gpio_config_t en = {.pin_bit_mask = 1ULL << the_board.opto_en, .mode = GPIO_MODE_OUTPUT};
+        gpio_config(&en);
+        gpio_set_level(the_board.opto_en, 0);
+    }
     if (the_board.led != GPIO_NUM_NC) {
         gpio_config_t led = {.pin_bit_mask = 1ULL << the_board.led, .mode = GPIO_MODE_OUTPUT};
         gpio_config(&led);

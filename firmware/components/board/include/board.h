@@ -1,7 +1,8 @@
 // The one place that knows which pin is what. The receiver rev A PCB takes either XIAO module on the same
 // headers, so both boards share the signals and differ only in GPIO numbers (and the C6's internal RF switch). A bare
 // ESP32-S3-DevKitC-1 is a third board, for USB MIDI and ESP-NOW without a second receiver PCB. Rev B keeps rev A's
-// MIDI and battery pins and swaps the one button and LED for a panel: a button per mode with an LED over each.
+// MIDI and battery pins and swaps the one button and LED for a panel: a button per mode with an LED over each. Rev C
+// has rev B's panel on a bare S3 module: other GPIOs, one USB-C.
 #pragma once
 
 #include "esp_adc/adc_oneshot.h"
@@ -18,6 +19,9 @@ typedef struct {
     bool panel;
     gpio_num_t panel_led[4];
     gpio_num_t panel_button[4];
+    uint8_t panel_led_max[4];  // PWM duty at full brightness: the colours differ, and 3 mm LEDs are bright on a dark panel
+    gpio_num_t opto_en;        // Rev C: held low to power the H11L1, which draws ~1 mA otherwise. 0 = always powered
+    gpio_num_t vbus_sense;     // Rev C: high while USB is plugged in (self-powered USB device). 0 = none
     adc_unit_t batt_adc_unit;  // A0: half the switched cell voltage (1:1 divider)
     int batt_adc_channel;      // -1: no battery (a dev kit on USB)
     int batt_offset_mv;        // added to the cell reading, from comparing it with a multimeter on this board
