@@ -42,6 +42,7 @@ import 'package:airmidi/desktop/keys_page.dart';
 import 'package:airmidi/shared/discovery.dart';
 import 'package:airmidi/shared/ui/synth_page.dart' show SynthControls;
 import 'package:airmidi/shared/ui/theme.dart';
+import 'package:airmidi/shared/ui/clickable.dart';
 
 Project _fresh() => Project(tracks: [
       Track('drums', channel: 9, clips: [Clip('beat', 0, 4, Pattern(gmDrumRows()))]),
@@ -682,7 +683,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
     final b = player.beat, bpb = p.beatsPerBar, left = player.countInLeft;
     final pos = left > 0 ? 'count ${left.ceil()}' : '${b ~/ bpb + 1}.${b.floor() % bpb + 1}.${(b * 4).floor() % 4 + 1}';
     final click = p.click;
-    Widget button(String label, VoidCallback tap, {bool lit = false, Color? litColor}) => GestureDetector(
+    Widget button(String label, VoidCallback tap, {bool lit = false, Color? litColor}) => Clickable(
+            child: GestureDetector(
           onTap: tap,
           child: Container(
             width: 64,
@@ -692,7 +694,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                 color: lit ? (litColor ?? cAc) : null, border: Border.all(color: litColor ?? cAc, width: 1.5)),
             child: Text(label, style: TextStyle(color: lit ? cBg : (litColor ?? cAc), fontSize: 13)),
           ),
-        );
+        ));
     const red = Color(0xFFD9574F);
     return Padding(
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
@@ -857,14 +859,15 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
   // A word that opens a menu of choices.
   Widget _pick<T>(String label, List<(String, T)> items, void Function(T) set, {Color color = cN, double size = 12}) =>
       Builder(
-        builder: (context) => GestureDetector(
+        builder: (context) => Clickable(
+            child: GestureDetector(
           onTapDown: (d) async {
             final v = await _menu<T>(d.globalPosition, items);
             if (v != null) set(v);
             focus.requestFocus();
           },
           child: Text('$label ▾', style: TextStyle(color: color, fontSize: size), overflow: TextOverflow.ellipsis),
-        ),
+        )),
       );
 
   Widget _headers() => Listener(
@@ -900,7 +903,8 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
 
   Widget _header(Track t, int i) {
     const red = Color(0xFFD9574F);
-    Widget small(String label, bool on, VoidCallback tap, {Color c = cAc}) => GestureDetector(
+    Widget small(String label, bool on, VoidCallback tap, {Color c = cAc}) => Clickable(
+            child: GestureDetector(
           onTap: tap,
           child: Container(
             width: 22,
@@ -910,8 +914,9 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
             decoration: BoxDecoration(color: on ? c : null, border: Border.all(color: on ? c : cGrey)),
             child: Text(label, style: TextStyle(color: on ? cBg : cN, fontSize: 11)),
           ),
-        );
-    return GestureDetector(
+        ));
+    return Clickable(
+        child: GestureDetector(
       onTap: () => setState(() => track = t),
       onSecondaryTapDown: (d) => _trackMenu(t, d.globalPosition),
       onDoubleTap: () => _rename('track name', t.name, (v) => t.name = v),
@@ -951,10 +956,11 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
                         (c) => _edit(() => t.channel = c),
                         size: 11),
                   const SizedBox(width: 6),
-                  GestureDetector(
+                  Clickable(
+                      child: GestureDetector(
                     onTap: () => _edit(() => t.mpe = !t.mpe),
                     child: Text('MPE', style: TextStyle(color: t.mpe ? cAc : cGrey, fontSize: 11)),
-                  ),
+                  )),
                 ]),
                 const SizedBox(height: 3),
                 _pick<String>('← ${t.input ?? 'record from'}', [for (final n in player.inputs) (n, n)], (n) {
@@ -966,7 +972,7 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
           ),
         ]),
       ),
-    );
+    ));
   }
 
   Widget _panel(double playhead) {
@@ -1011,10 +1017,11 @@ class _ArrangePageState extends State<ArrangePage> with SingleTickerProviderStat
       padding: const EdgeInsets.fromLTRB(0, 6, 0, 10), // the panel pads the sides already
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Wrap(spacing: 14, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          GestureDetector(
+          Clickable(
+              child: GestureDetector(
             onTap: () => _rename('clip name', c.name, (v) => c.name = v),
             child: Text(c.name, style: const TextStyle(color: cAc, fontSize: 14)),
-          ),
+          )),
           Text(content is Pattern ? 'pattern · sequencer' : 'MIDI · piano roll',
               style: const TextStyle(color: cGrey, fontSize: 12)),
           Text('on the timeline ${beats(c.length)}', style: const TextStyle(color: cGrey, fontSize: 12)),

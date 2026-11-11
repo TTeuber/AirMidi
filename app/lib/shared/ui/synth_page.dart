@@ -17,6 +17,7 @@ import 'package:airmidi/shared/ui/envelope_editor.dart';
 import 'package:airmidi/shared/ui/strips_page.dart';
 import 'package:airmidi/shared/ui/wave_icon.dart';
 import 'package:airmidi/shared/ui/xy_pad.dart';
+import 'package:airmidi/shared/ui/clickable.dart';
 
 /// The app bar's buttons for a synth: graphics on/off (to compare the page with and without its widgets), rescan.
 List<Widget> synthActions(SynthState synth) => [
@@ -302,17 +303,19 @@ class _SynthControlsState extends State<SynthControls> {
   Widget _toggle(Control c) {
     final on = c.value >= 0x80000000;
     if (c.typeHint == 'momentary') {
-      return GestureDetector(
+      return Clickable(
+          child: GestureDetector(
         onTapDown: (_) => _set(c, kMax32),
         onTapUp: (_) => _set(c, 0),
         onTapCancel: () => _set(c, 0),
         child: _box(c.title, on),
-      );
+      ));
     }
-    return GestureDetector(onTap: () => _set(c, on ? 0 : kMax32), child: _box(c.title, on));
+    return Clickable(child: GestureDetector(onTap: () => _set(c, on ? 0 : kMax32), child: _box(c.title, on)));
   }
 
-  Widget _iconCell(WaveShape shape, bool on, VoidCallback onTap) => GestureDetector(
+  Widget _iconCell(WaveShape shape, bool on, VoidCallback onTap) => Clickable(
+          child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
@@ -324,10 +327,10 @@ class _SynthControlsState extends State<SynthControls> {
           ),
           child: Center(child: WaveIcon(shape, color: on ? cBg : cN)),
         ),
-      );
+      ));
 
-  Widget _cell(String label, bool on, VoidCallback onTap) =>
-      GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: _box(label, on, minWidth: 64));
+  Widget _cell(String label, bool on, VoidCallback onTap) => Clickable(
+      child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: onTap, child: _box(label, on, minWidth: 64)));
 
   // As wide as its label (a set alignment would stretch it across the whole row inside a Wrap).
   Widget _box(String label, bool on, {double minWidth = 96}) => Container(

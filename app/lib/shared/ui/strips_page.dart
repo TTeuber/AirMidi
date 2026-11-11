@@ -15,6 +15,7 @@ import 'package:airmidi/shared/strips/strips.dart';
 import 'package:airmidi/shared/synth/state.dart';
 import 'package:airmidi/shared/ui/theme.dart';
 import 'package:airmidi/shared/ui/synth_page.dart';
+import 'package:airmidi/shared/ui/clickable.dart';
 
 export 'theme.dart';
 
@@ -273,30 +274,32 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
 
   // A quarter of the bar each; the whole bar height responds, not just the word. Lit = a mode that is on.
   Widget _barButton(String label, VoidCallback onTap, {bool enabled = true, bool lit = false}) => Expanded(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: enabled ? onTap : null,
-          child: SizedBox(
-            height: _barH,
-            child: Center(
-              child: Container(
-                height: 40,
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                    color: lit ? cAc : null, border: Border.all(color: enabled ? cAc : cGrey, width: 1.5)),
-                child: Text(label,
-                    style: TextStyle(
-                        color: lit
-                            ? cBg
-                            : enabled
-                                ? cAc
-                                : cGrey,
-                        fontSize: 15)),
+        child: Clickable(
+            enabled: enabled,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: enabled ? onTap : null,
+              child: SizedBox(
+                height: _barH,
+                child: Center(
+                  child: Container(
+                    height: 40,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        color: lit ? cAc : null, border: Border.all(color: enabled ? cAc : cGrey, width: 1.5)),
+                    child: Text(label,
+                        style: TextStyle(
+                            color: lit
+                                ? cBg
+                                : enabled
+                                    ? cAc
+                                    : cGrey,
+                            fontSize: 15)),
+                  ),
+                ),
               ),
-            ),
-          ),
-        ),
+            )),
       );
 
   Widget _slider(String label, double v, double min, double max, ValueChanged<double> f, {String unit = ''}) {
@@ -316,7 +319,8 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
       ]);
 
   // A square cell that fills with the accent colour when selected (the forslike tile, small).
-  Widget _cell(String label, bool selected, VoidCallback onTap, {double width = 44}) => GestureDetector(
+  Widget _cell(String label, bool selected, VoidCallback onTap, {double width = 44}) => Clickable(
+          child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: Container(
@@ -329,7 +333,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
           ),
           child: Text(label, style: TextStyle(color: selected ? cBg : cN, fontSize: 14)),
         ),
-      );
+      ));
 
   Widget _settings() {
     final keyed = s.scale != 'off';

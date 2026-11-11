@@ -10,6 +10,7 @@ import 'package:airmidi/desktop/desktop_midi.dart';
 import 'package:airmidi/desktop/router.dart';
 import 'package:airmidi/shared/play/keys.dart';
 import 'package:airmidi/shared/ui/theme.dart';
+import 'package:airmidi/shared/ui/clickable.dart';
 
 class RouterPage extends StatefulWidget {
   const RouterPage({super.key});
@@ -115,7 +116,8 @@ class _RouterPageState extends State<RouterPage> {
   Widget _cell(String from, String to) {
     final r = router.find(from, to), picked = r != null && r == sel;
     final on = r != null, live = r != null && router.live(r), lit = r != null && active.contains(r);
-    return GestureDetector(
+    return Clickable(
+        child: GestureDetector(
       onTap: () => setState(() => sel = r ?? router.add(from, to)),
       child: Container(
         width: _cellW - 4,
@@ -134,7 +136,7 @@ class _RouterPageState extends State<RouterPage> {
             ? Text(r.summary, overflow: TextOverflow.ellipsis, style: TextStyle(color: lit ? cBg : cN, fontSize: 12))
             : null,
       ),
-    );
+    ));
   }
 
   Widget _inspector(RouteSpec r) {
@@ -193,10 +195,11 @@ class _RouterPageState extends State<RouterPage> {
               border: Border.all(color: r.passes(c) ? stripHues[1].drag : cGrey),
             ),
             child: Column(children: [
-              GestureDetector(
+              Clickable(
+                  child: GestureDetector(
                 onTap: () => edit(() => r.mask ^= 1 << c),
                 child: Text('ch ${c + 1}', style: TextStyle(color: r.passes(c) ? cN : cGrey, fontSize: 13)),
-              ),
+              )),
               DropdownButton<int>(
                 value: r.map[c],
                 isDense: true,
@@ -254,12 +257,13 @@ class _RouterPageState extends State<RouterPage> {
             onPressed: up, icon: const Icon(Icons.add, size: 14), color: cAc, visualDensity: VisualDensity.compact),
       ]);
 
-  Widget _chip(String label, bool on, VoidCallback tap) => GestureDetector(
+  Widget _chip(String label, bool on, VoidCallback tap) => Clickable(
+          child: GestureDetector(
         onTap: tap,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(color: on ? cAc : null, border: Border.all(color: on ? cAc : cGrey)),
           child: Text(label, style: TextStyle(color: on ? cBg : cN, fontSize: 12)),
         ),
-      );
+      ));
 }

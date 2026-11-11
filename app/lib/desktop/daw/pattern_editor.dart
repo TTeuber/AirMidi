@@ -23,6 +23,7 @@ import 'package:airmidi/desktop/daw/model.dart';
 import 'package:airmidi/shared/synth/controls.dart' show Device;
 import 'package:airmidi/shared/play/keys.dart' show Pads;
 import 'package:airmidi/shared/ui/theme.dart';
+import 'package:airmidi/shared/ui/clickable.dart';
 
 enum StepParam { velocity, gate, probability, nudge, repeat }
 
@@ -765,20 +766,23 @@ Widget stepper(String label, String value, VoidCallback down, VoidCallback up) =
     ]);
 
 /// A chip that opens a menu where it was clicked.
-Widget menuChip(String label, void Function(Offset global) open) => GestureDetector(
+Widget menuChip(String label, void Function(Offset global) open) => Clickable(
+        child: GestureDetector(
       onTapDown: (d) => open(d.globalPosition),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         decoration: BoxDecoration(border: Border.all(color: cGrey)),
         child: Text(label, style: const TextStyle(color: cN, fontSize: 12)),
       ),
-    );
+    ));
 
-Widget chip(String label, bool on, VoidCallback? tap) => GestureDetector(
+Widget chip(String label, bool on, VoidCallback? tap) => Clickable(
+    enabled: tap != null,
+    child: GestureDetector(
       onTap: tap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         decoration: BoxDecoration(color: on ? cAc : null, border: Border.all(color: on ? cAc : cGrey)),
         child: Text(label, style: TextStyle(color: on ? cBg : (tap == null ? cGrey : cN), fontSize: 12)),
       ),
-    );
+    ));

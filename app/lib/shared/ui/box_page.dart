@@ -9,6 +9,7 @@ import 'package:airmidi/shared/link/config.dart';
 import 'package:airmidi/shared/link/link.dart';
 import 'package:airmidi/shared/synth/state.dart';
 import 'package:airmidi/shared/ui/theme.dart';
+import 'package:airmidi/shared/ui/clickable.dart';
 
 /// Finds the box again on BLE or Wi-Fi after it left the link this page uses, and returns its page (null: not found).
 typedef Follow = Future<Widget?> Function(String id, {required bool toWifi, required DateTime since});
@@ -255,13 +256,14 @@ class _BoxPageState extends State<BoxPage> {
     final ip = wifi['ip'] as String? ?? '';
     final up = (wifi['state'] == 'connected' || wifi['state'] == 'access point') && ip.isNotEmpty;
     if (!up) return _row('web page: in network or setup mode', dim: true);
-    Widget link(String url) => GestureDetector(
+    Widget link(String url) => Clickable(
+            child: GestureDetector(
           onTap: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
           child: Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Text(url, style: const TextStyle(color: cAc, fontSize: 14, decoration: TextDecoration.underline)),
           ),
-        );
+        ));
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF1A2228)))),
@@ -511,7 +513,8 @@ Widget _banner(String t, {bool good = false}) => Container(
       child: Text(t, style: const TextStyle(color: cN, fontSize: 13)),
     );
 
-Widget _cell(String label, bool selected, VoidCallback onTap, {double width = 44}) => GestureDetector(
+Widget _cell(String label, bool selected, VoidCallback onTap, {double width = 44}) => Clickable(
+        child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
@@ -522,9 +525,10 @@ Widget _cell(String label, bool selected, VoidCallback onTap, {double width = 44
             color: selected ? cAc : Colors.transparent, border: Border.all(color: selected ? cAc : cGrey)),
         child: Text(label, style: TextStyle(color: selected ? cBg : cN, fontSize: 14)),
       ),
-    );
+    ));
 
-Widget _bigButton(String label, VoidCallback onTap) => GestureDetector(
+Widget _bigButton(String label, VoidCallback onTap) => Clickable(
+        child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
@@ -533,9 +537,10 @@ Widget _bigButton(String label, VoidCallback onTap) => GestureDetector(
         decoration: BoxDecoration(border: Border.all(color: cAc, width: 1.5)),
         child: Text(label, style: const TextStyle(color: cAc, fontSize: 16)),
       ),
-    );
+    ));
 
-Widget _textButton(String label, VoidCallback onTap) => GestureDetector(
+Widget _textButton(String label, VoidCallback onTap) => Clickable(
+        child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
@@ -543,4 +548,4 @@ Widget _textButton(String label, VoidCallback onTap) => GestureDetector(
         decoration: BoxDecoration(border: Border.all(color: cGrey)),
         child: Text(label, style: const TextStyle(color: cN, fontSize: 13)),
       ),
-    );
+    ));
