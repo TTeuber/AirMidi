@@ -10,6 +10,10 @@
 // after a power-on, or for 2 min when a trusted phone (or the web page) asks for it to add another. Other phones get
 // ATT error 0x08 (insufficient authorization) and the app explains how to open the window. Up to 4 phones, kept
 // in NVS; /api/phones forgets them.
+//
+// A timed window is for one phone: it closes as soon as a new phone becomes trusted through it. The power-on window
+// also closes when a phone already trusted uses the service (nobody needs it then), so it does not stay open, and
+// the BLE LED does not blink, after the owner's own phone has connected. Setup mode's window stays open.
 #pragma once
 
 #include <stdbool.h>
@@ -40,6 +44,10 @@ void ble_config_disconnected(uint16_t conn);
 #define BLE_CONFIG_WINDOW_FOREVER UINT32_MAX
 // Open the pairing window for seconds (FOREVER: until closed), 0 closes it.
 void ble_config_set_window(uint32_t seconds);
+// The window after a power-on: as ble_config_set_window, and a trusted phone using the service closes it too.
+void ble_config_set_boot_window(uint32_t seconds);
+// The open window is the power-on one.
+bool ble_config_window_is_boot(void);
 // Seconds left, BLE_CONFIG_WINDOW_FOREVER, or 0 when closed.
 uint32_t ble_config_window_left(void);
 

@@ -44,6 +44,12 @@ the pairing window is open, in which case it joins the list:
   restarts it, and the LAN web page can cause that);
 - for 2 minutes when a trusted phone (or the web page) asks, to add another (`POST /api/phones/window`).
 
+A timed window is for one phone: it closes as soon as a new phone joins the list. The power-on window also closes
+when a phone already on the list uses the service, and the BLE LED does not blink for it while a connection is up:
+otherwise the owner's own phone, connected and working, sat next to an LED saying "pairing" for two minutes
+(2026-11-11). A connection for MIDI alone is not encrypted and says nothing about who it is, so it does not close the
+window; it only stops the blinking.
+
 `DELETE /api/phones` forgets them all. Rev B's BLE button ("hold = pair") will open the window too. The web page on
 the LAN and the Setup access point remain open, as before; BLE is now the stricter path.
 

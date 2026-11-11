@@ -311,12 +311,14 @@ static void panel_update(void) {
 
     net_state_t ns = net_state();
     uint32_t window = ble_running ? ble_config_window_left() : 0;
+    bool connected = ble_running && ble_midi_connected();
     ota_fetch_status_t fs;
     ota_fetch_status(&fs);
     panel_state_t p = {
         .ble_on = ble_running,
-        .ble_connected = ble_running && ble_midi_connected(),
-        .ble_pairing = window && window != BLE_CONFIG_WINDOW_FOREVER,
+        .ble_connected = connected,
+        // the power-on window does not blink over a connection (one for MIDI alone never closes it: ble_config.h)
+        .ble_pairing = window && window != BLE_CONFIG_WINDOW_FOREVER && !(connected && ble_config_window_is_boot()),
         .net = ns == NET_JOINING     ? PANEL_NET_JOINING
                : ns == NET_CONNECTED ? PANEL_NET_JOINED
                : ns == NET_AP        ? PANEL_NET_AP
@@ -444,7 +446,7 @@ void app_main(void) {
     if (s.mode == AIRMIDI_MODE_SETUP)
         ble_config_set_window(BLE_CONFIG_WINDOW_FOREVER);
     else if (why == ESP_RST_POWERON || why == ESP_RST_EXT)
-        ble_config_set_window(120);
+        ble_config_set_boot_window(120);
     power_start();
     button_events = xQueueCreate(8, sizeof(uint16_t));
     ui_start(on_button);

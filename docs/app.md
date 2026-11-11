@@ -223,6 +223,7 @@ per module as for the firmware. UI in the forslike style.
 | 2026-10-24 | One API for HTTP and BLE (`components/api`), a GATT service carrying it (`ble_config`, framing in `lib/blecfg.c`), trusted phones + pairing window | design note config-over-ble.md; ESP-IDF's wifi_provisioning would bring a second BLE setup and cover Wi-Fi only |
 | 2026-10-24 | Wi-Fi scan and try work in Play mode too (radio on for the probe only) | a phone on BLE never needs Setup mode |
 | 2026-10-24 | The pairing window also opens for 2 min after a power-on | rev A has one button (8 s = Setup); power is physical access too |
+| 2026-11-11 | A timed pairing window closes once a phone has joined; the power-on one also when a trusted phone connects, and never blinks over a connection | user: BLE blinked for 2 min after the Mac had connected, as if it had not |
 | 2026-10-24 | An LL procedure collision is no refusal; the box re-asks for 7.5-15 ms when Android drifts to 48.75 ms after pairing | measured on the Pixel 9a: back to 15 ms |
 | 2026-10-24 | A2 tried on the phone; the page follows the box only on sightings after its link died, and closes that link first | a stale BLE sighting and the replaced page's dispose both broke the follow (app commit 9fcad12) |
 | 2026-10-24 | Strips bar: box, synth, layout; synth page from the device's MIDI-CI control list; values kept per box screen | user: no way back to settings, and a page for the synth's parameters filled by MIDI-CI |

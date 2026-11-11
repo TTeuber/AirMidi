@@ -43,6 +43,7 @@ static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 static ble_addr_t phones[BLE_CONFIG_PHONES];
 static int n_phones;
 static int64_t window_until;  // esp_timer time in us; INT64_MAX = until closed, 0 = closed
+static bool window_boot;      // the power-on window (ble_config.h): a trusted phone showing up closes it
 static bool phones_loaded;
 
 static void load_phones(void) {
@@ -71,20 +72,25 @@ static bool allow(const ble_addr_t *id) {
     taskENTER_CRITICAL(&lock);
     for (int i = 0; i < n_phones; i++)
         if (!ble_addr_cmp(&phones[i], id)) {
+            bool closed = window_boot && window_open();
+            if (window_boot) window_until = 0, window_boot = false;  // the owner's phone is here: nobody needs it
             taskEXIT_CRITICAL(&lock);
+            if (closed) ESP_LOGI(TAG, "pairing window closed: a trusted phone connected");
             return true;
         }
     bool open = window_open();
+    bool closed = false;
     if (open) {  // newest first; the oldest of four falls off
         memmove(phones + 1, phones, (BLE_CONFIG_PHONES - 1) * sizeof phones[0]);
         phones[0] = *id;
         if (n_phones < BLE_CONFIG_PHONES) n_phones++;
+        if (window_until != INT64_MAX) window_until = 0, window_boot = false, closed = true;  // one phone per window
     }
     taskEXIT_CRITICAL(&lock);
     if (open) {
         save_phones();
-        ESP_LOGI(TAG, "phone %02x:%02x:%02x:%02x:%02x:%02x trusted (%d)", id->val[5], id->val[4], id->val[3],
-                 id->val[2], id->val[1], id->val[0], n_phones);
+        ESP_LOGI(TAG, "phone %02x:%02x:%02x:%02x:%02x:%02x trusted (%d)%s", id->val[5], id->val[4], id->val[3],
+                 id->val[2], id->val[1], id->val[0], n_phones, closed ? ", pairing window closed" : "");
     }
     return open;
 }
@@ -94,9 +100,19 @@ void ble_config_set_window(uint32_t seconds) {
     window_until = !seconds                               ? 0
                    : seconds == BLE_CONFIG_WINDOW_FOREVER ? INT64_MAX
                                                           : esp_timer_get_time() + (int64_t)seconds * 1000000;
+    window_boot = false;
     taskEXIT_CRITICAL(&lock);
     if (seconds) ESP_LOGI(TAG, "pairing window open%s", seconds == BLE_CONFIG_WINDOW_FOREVER ? "" : " for a while");
 }
+
+void ble_config_set_boot_window(uint32_t seconds) {
+    ble_config_set_window(seconds);
+    taskENTER_CRITICAL(&lock);
+    window_boot = seconds != 0;
+    taskEXIT_CRITICAL(&lock);
+}
+
+bool ble_config_window_is_boot(void) { return window_boot && window_open(); }
 
 uint32_t ble_config_window_left(void) {
     if (!window_open()) return 0;

@@ -52,7 +52,9 @@ board's revision history: the photo shows rev A, and rev B fixes what its bring-
 
 Two quick taps on any button: all notes off, at the second tap. A hold that needs the other mode switches first
 (with the restart a BLE change takes), then does its job. The LEDs: BLE flashes once a second while advertising, is
-on when connected (dark flicker on MIDI), blinks fast while the pairing window is open; NET blinks while joining,
+on when connected (dark flicker on MIDI), blinks fast while the pairing window for a new phone is open (it closes
+once a phone is added; the one after power-on also closes when a trusted phone connects, and never blinks over a
+connection); NET blinks while joining,
 is dim when joined and on with a session, blinks fast while checking or installing, then shows the result (on: up
 to date, three flashes: failed); STP double-flashes in Setup, blinks dim during a scan, then on (found) or three
 flashes (nothing); PWR is on, triple-flashes on a low cell. The battery bar is a quarter per LED; with the switch
