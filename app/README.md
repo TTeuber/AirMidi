@@ -30,4 +30,8 @@ Shared (`lib/shared`):
 
 Phone: `flutter run` with the phone on USB debugging, `flutter build apk --release`. Desktop: `flutter build macos
 --debug`. Tests: `flutter test`. The project pins Gradle 8.11 / AGP 8.7 / Kotlin 2.1 so it builds with Java 21 on
-Flutter 3.27.
+Flutter 3.27. The Mac
+build needs macOS 12 as its target (Xcode 27 builds nothing older), and Flutter 3.27's `flutter build macos` fails
+on Xcode 27's `lipo`, whose `-verify_arch` takes one architecture per call: the local SDK is patched for that
+(`packages/flutter_tools/lib/src/build_system/targets/macos.dart`, `_thinFramework`, one call per arch; then delete
+`bin/cache/flutter_tools.snapshot`), until the project moves to a newer Flutter.
