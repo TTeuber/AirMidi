@@ -312,7 +312,7 @@ class _StripsPageState extends State<StripsPage> with SingleTickerProviderStateM
 
   Widget _toggle(String label, bool v, ValueChanged<bool> f) => Row(mainAxisSize: MainAxisSize.min, children: [
         Text(label, style: const TextStyle(color: cN, fontSize: 12)),
-        Switch(value: v, activeColor: cAc, onChanged: f),
+        Switch(value: v, activeThumbColor: cAc, onChanged: f),
       ]);
 
   // A square cell that fills with the accent colour when selected (the forslike tile, small).

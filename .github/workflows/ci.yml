@@ -56,3 +56,54 @@ jobs:
             firmware/build_${{ matrix.board }}/bootloader/bootloader.bin
             firmware/build_${{ matrix.board }}/partition_table/partition-table.bin
             firmware/build_${{ matrix.board }}/flash_args
+
+  # The app: analyzer and tests, the Android and Mac release builds. The Flutter version is the one app/.fvmrc pins.
+  app-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - id: flutter
+        run: echo "version=$(jq -r .flutter app/.fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: flutter analyze
+        working-directory: app
+      - run: flutter test
+        working-directory: app
+
+  app-android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - id: flutter
+        run: echo "version=$(jq -r .flutter app/.fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      # build.gradle.kts signs with ~/.android/debug.keystore; the runner has none, so make a throwaway one
+      - run: |
+          mkdir -p ~/.android
+          keytool -genkeypair -keystore ~/.android/debug.keystore -storepass android -keypass android \
+            -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
+      - run: flutter build apk --release
+        working-directory: app
+
+  app-macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - id: flutter
+        run: echo "version=$(jq -r .flutter app/.fvmrc)" >> "$GITHUB_OUTPUT"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ steps.flutter.outputs.version }}
+          cache: true
+      - run: flutter build macos --release
+        working-directory: app

@@ -104,14 +104,15 @@ class _BoxPageState extends State<BoxPage> {
     final id = status?['id'] as String?;
     changing = true;
     await Future.delayed(const Duration(seconds: 2)); // a restart is under way by then (it waits ~0.5 s)
+    var answers = false;
     try {
       await api.call('GET', '/api/status');
-      changing = false;
-      return _refresh(all: true);
+      answers = true;
     } catch (_) {
       // gone from this link: follow it
     }
     changing = false;
+    if (answers) return _refresh(all: true);
     final since = DateTime.now(); // the link is gone: only sightings from now on count
     await _close();
     if (id == null || widget.follow == null) {
@@ -449,7 +450,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Widget _switch(String label, String key, String help) => SwitchListTile(
         contentPadding: EdgeInsets.zero,
-        activeColor: cAc,
+        activeThumbColor: cAc,
         title: Text(label, style: const TextStyle(color: cN, fontSize: 14)),
         subtitle: Text(help, style: const TextStyle(color: cGrey, fontSize: 12)),
         value: s![key] == true,

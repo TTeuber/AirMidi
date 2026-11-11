@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:universal_ble/universal_ble.dart';
 
 import 'package:airmidi/desktop/home_page.dart';
 import 'package:airmidi/mobile/home_page.dart';
@@ -11,6 +12,9 @@ import 'package:airmidi/shared/ui/theme.dart';
 
 void main() {
   registerDrive(); // debug builds: screenshots, taps and keys from tool/drive.py
+  // One BLE command at a time on every platform, as the box was tested with (universal_ble 3's default runs
+  // them in parallel on Apple).
+  UniversalBle.queueType = QueueType.global;
   runApp(const App());
 }
 

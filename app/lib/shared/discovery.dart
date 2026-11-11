@@ -57,7 +57,7 @@ class Discovery extends ChangeNotifier {
     if (_mdns == null) {
       try {
         final d = BonsoirDiscovery(type: '_http._tcp');
-        await d.ready;
+        await d.initialize();
         d.eventStream!.listen(_onMdns);
         await d.start();
         _mdns = d;
@@ -97,16 +97,18 @@ class Discovery extends ChangeNotifier {
   void _onMdns(BonsoirDiscoveryEvent e) {
     final svc = e.service;
     if (svc == null) return;
-    if (e.type == BonsoirDiscoveryEventType.discoveryServiceFound) {
-      svc.resolve(_mdns!.serviceResolver);
-    } else if (e.type == BonsoirDiscoveryEventType.discoveryServiceResolved && svc is ResolvedBonsoirService) {
+    if (e is BonsoirDiscoveryServiceFoundEvent) {
+      _mdns!.serviceResolver.resolveService(svc);
+    } else if (e is BonsoirDiscoveryServiceResolvedEvent || e is BonsoirDiscoveryServiceUpdatedEvent) {
       final id = svc.attributes['id'];
-      if (id == null || !_hexId.hasMatch(id) || svc.host == null) return; // not an airmidi box
+      // The host goes into URLs: the mDNS name, else an IPv4 address (a bare IPv6 one would need brackets).
+      final host = svc.hostname ?? svc.hostAddresses.where((a) => !a.contains(':')).firstOrNull;
+      if (id == null || !_hexId.hasMatch(id) || host == null) return; // not an airmidi box
       final s = boxes.putIfAbsent(id, () => Sighting(id, svc.name));
-      s.host = svc.host!.replaceAll(RegExp(r'\.$'), '');
+      s.host = host.replaceAll(RegExp(r'\.$'), '');
       if (!s.onBle) s.name = svc.name;
       notifyListeners();
-    } else if (e.type == BonsoirDiscoveryEventType.discoveryServiceLost) {
+    } else if (e is BonsoirDiscoveryServiceLostEvent) {
       for (final s in boxes.values.where((s) => s.name == svc.name && s.onWifi).toList()) {
         s.host = null;
         if (!s.onBle) boxes.remove(s.key);

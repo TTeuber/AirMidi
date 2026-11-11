@@ -133,10 +133,10 @@ synth page drawn from the synth's MIDI-CI control list.
 ## How it is tested
 
 - **Host tests** (`test/`): the portable core under ASan + UBSan, with randomized round trips and property tests.
-- **App tests** (`app/test`, `flutter test`): the strips, MPE and BLE MIDI packing, the router, and the DAW (editing,
+- **App tests** (`app/test`, `fvm flutter test`): the strips, MPE and BLE MIDI packing, the router, and the DAW (editing,
   timing, files, recording, the player against a fake MIDI engine).
-- **CI** (`.github/workflows/ci.yml`): host tests, the clang-format check, and the firmware for all three boards on
-  every push. `tools/check.sh` runs the same steps locally. Tagging `vX.Y.Z` builds, signs and publishes a release.
+- **CI** (`.github/workflows/ci.yml`): host tests, the clang-format check, the firmware for every board, and the
+  app's analyzer, tests and Android and Mac release builds on every push. `tools/check.sh` runs the same steps locally. Tagging `vX.Y.Z` builds, signs and publishes a release.
 - **Hardware in the loop** (`tools/hil/`): Python and Swift tools on the Mac drive the box and an Arturia AudioFuse
   wired to its jacks. Their first runs found real bugs; each one is written up in [docs/design](docs/design).
 
@@ -187,8 +187,8 @@ app/        Flutter: the Android app, the macOS app with the DAW, and the code t
 ```sh
 tools/check.sh                    # what CI runs: host tests, clang-format check, firmware for every board
 firmware/build.sh c6 flash        # build and flash the C6 board (s3: XIAO S3 on rev A, s3b: on rev B, s3kit: S3 dev kit)
-cd app && flutter test            # the apps' tests
-flutter build apk --release       # the Android app (flutter build macos --release for the Mac)
+cd app && fvm flutter test        # the apps' tests (Flutter pinned in app/.fvmrc)
+fvm flutter build apk --release   # the Android app (fvm flutter build macos --release for the Mac)
 ```
 
 Needs ESP-IDF v5.5.5 or later in the v5.5 series (`IDF_PATH`, default `~/Developer/esp-idf`), CMake, and `uv` (for

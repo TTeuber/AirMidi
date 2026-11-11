@@ -28,10 +28,14 @@ Shared (`lib/shared`):
   and project folder). `tool/shots.py` builds it and takes the README's desktop screenshots (`--window WxH` sets the
   window's size); the phone's are `adb exec-out screencap -p` from a release APK.
 
-Phone: `flutter run` with the phone on USB debugging, `flutter build apk --release`. Desktop: `flutter build macos
---debug`. Tests: `flutter test`. The project pins Gradle 8.11 / AGP 8.7 / Kotlin 2.1 so it builds with Java 21 on
-Flutter 3.27. The Mac
-build needs macOS 12 as its target (Xcode 27 builds nothing older), and Flutter 3.27's `flutter build macos` fails
-on Xcode 27's `lipo`, whose `-verify_arch` takes one architecture per call: the local SDK is patched for that
-(`packages/flutter_tools/lib/src/build_system/targets/macos.dart`, `_thinFramework`, one call per arch; then delete
-`bin/cache/flutter_tools.snapshot`), until the project moves to a newer Flutter.
+The Flutter version is pinned in `.fvmrc` (FVM: `brew install fvm`, then `fvm install` here), so every command
+goes through `fvm flutter`. Phone: `fvm flutter run` with the phone on USB debugging, `fvm flutter build apk
+--release`. Desktop: `fvm flutter build macos --release`. Tests: `fvm flutter test`; CI runs them, the analyzer and
+both builds (`.github/workflows/ci.yml`, the version read from `.fvmrc`). The Android build files follow the
+template of the pinned Flutter (Gradle, AGP and Kotlin as `flutter create` writes them), the Mac app needs macOS 12.
+
+Upgrading Flutter is one step at a time, each on its own branch: `fvm use <version>` (writes `.fvmrc`), `fvm flutter
+pub upgrade --major-versions`, analyzer and tests clean, the Android files compared with a fresh `fvm flutter create`
+of the same version, both release builds, then the phone and the Mac against a box.
+
+targetSdk stays at 35 (Android 15, as tested on the phone) until a move to 36 is tested on the phone.

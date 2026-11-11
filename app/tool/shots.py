@@ -34,7 +34,7 @@ def main():
     ap.add_argument("--box", default="10.0.0.18")
     a = ap.parse_args()
     if not a.no_build:
-        subprocess.run(["flutter", "build", "macos", "--release", "-t", "tool/shots_main.dart"], cwd=APP, check=True)
+        subprocess.run(["fvm", "flutter", "build", "macos", "--release", "-t", "tool/shots_main.dart"], cwd=APP, check=True)
     app = subprocess.Popen([str(BUNDLE / "Contents/MacOS/airmidi"), "--window", "1440x900"])
     try:
         call = Http(URL)
