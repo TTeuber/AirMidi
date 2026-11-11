@@ -2,14 +2,15 @@
 // own backend: CoreMIDI, Windows MIDI, ALSA.
 #include "engine.h"
 
-#include <libremidi/libremidi.hpp>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
+#include <functional>
+#include <future>
+#include <libremidi/libremidi.hpp>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -91,9 +92,9 @@ bool routeMessage(const Route &r, const std::vector<uint8_t> &in, std::vector<ui
     if (in.empty()) return false;
     const uint8_t s = in[0];
     if (s >= 0xF0) {
-        uint32_t t = s == 0xF0 ? AME_T_SYSEX
+        uint32_t t = s == 0xF0                                                         ? AME_T_SYSEX
                      : (s == 0xF8 || s == 0xFA || s == 0xFB || s == 0xFC || s == 0xF2) ? AME_T_CLOCK
-                                                                                        : AME_T_OTHER;
+                                                                                       : AME_T_OTHER;
         if (!(r.types & t)) return false;
         out = in;
         return true;
@@ -141,10 +142,47 @@ struct Engine {
     std::unique_ptr<libremidi::observer> observer;
 #if defined(__APPLE__)
     // CoreMIDI calls a client's notifications on the run loop of the thread that made it: the observer lives on a
-    // thread of its own that runs one (the Dart thread does not)
+    // thread of its own that runs one. libremidi also runs the calling thread's run loop once when it lists or opens
+    // ports; on the main thread (where Dart runs in current Flutter on macOS) that re-enters Dart in the middle of an
+    // ffi call, which deadlocked on listMu. So every libremidi call that touches CoreMIDI runs on this thread
+    // (onObserver).
     std::thread observerThread;
     CFRunLoopRef observerLoop = nullptr;
+    CFRunLoopSourceRef work = nullptr;
+    std::mutex jobMu;
+    std::deque<std::function<void()>> jobs;
+
+    void runJobs() {
+        for (;;) {
+            std::function<void()> job;
+            {
+                std::lock_guard<std::mutex> l(jobMu);
+                if (jobs.empty()) return;
+                job = std::move(jobs.front());
+                jobs.pop_front();
+            }
+            job();
+        }
+    }
 #endif
+
+    // f() on the observer thread (Apple), waiting for its result; elsewhere on the caller's thread
+    template <class F>
+    auto onObserver(F f) -> decltype(f()) {
+#if defined(__APPLE__)
+        std::packaged_task<decltype(f())()> task(std::move(f));
+        auto result = task.get_future();
+        {
+            std::lock_guard<std::mutex> l(jobMu);
+            jobs.push_back([&task] { task(); });
+        }
+        CFRunLoopSourceSignal(work);
+        CFRunLoopWakeUp(observerLoop);
+        return result.get();
+#else
+        return f();
+#endif
+    }
 
     // the send thread
     std::mutex dueMu;
@@ -269,9 +307,11 @@ int ame_start(void (*wake)(void)) {
     E->observerThread = std::thread([&, oc] {
         E->observer = std::make_unique<libremidi::observer>(oc);
         E->observerLoop = CFRunLoopGetCurrent();
-        CFRunLoopSourceContext ctx{};  // a source keeps CFRunLoopRun from returning while there is nothing to do
-        ctx.perform = [](void *) {};
+        // the job queue's source; it also keeps CFRunLoopRun from returning while there is nothing to do
+        CFRunLoopSourceContext ctx{};
+        ctx.perform = [](void *) { E->runJobs(); };
         CFRunLoopSourceRef keep = CFRunLoopSourceCreate(nullptr, 0, &ctx);
+        E->work = keep;
         CFRunLoopAddSource(E->observerLoop, keep, kCFRunLoopDefaultMode);
         {
             std::lock_guard<std::mutex> l(m);
@@ -322,9 +362,11 @@ int64_t ame_now_ns(void) { return now_ns(); }
 
 int ame_refresh(void) {
     if (!E) return -1;
+    auto lists =
+        E->onObserver([] { return std::make_pair(E->observer->get_input_ports(), E->observer->get_output_ports()); });
     std::lock_guard<std::mutex> l(E->listMu);
-    E->inputs = E->observer->get_input_ports();
-    E->outputs = E->observer->get_output_ports();
+    E->inputs = std::move(lists.first);
+    E->outputs = std::move(lists.second);
     E->inNames.clear();
     E->outNames.clear();
     for (auto &p : E->inputs) E->inNames.push_back(p.display_name.empty() ? p.port_name : p.display_name);
@@ -362,8 +404,11 @@ int ame_open(int out, int i) {
             if (i < 0 || i >= (int)E->outputs.size()) return -1;
             port = E->outputs[i];
         }
-        p.out = std::make_unique<libremidi::midi_out>(libremidi::output_configuration{});
-        if (p.out->open_port(port, "airmidi") != stdx::error{}) return -1;
+        bool ok = E->onObserver([&] {
+            p.out = std::make_unique<libremidi::midi_out>(libremidi::output_configuration{});
+            return p.out->open_port(port, "airmidi") == stdx::error{};
+        });
+        if (!ok) return -1;
         return E->add(std::move(p));
     }
     libremidi::input_port port;
@@ -377,8 +422,11 @@ int ame_open(int out, int i) {
         std::lock_guard<std::mutex> l(E->portMu);
         h = E->nextHandle++;
     }
-    p.in = std::make_unique<libremidi::midi_in>(E->inputConfig(h));
-    if (p.in->open_port(port, "airmidi") != stdx::error{}) return -1;
+    bool ok = E->onObserver([&] {
+        p.in = std::make_unique<libremidi::midi_in>(E->inputConfig(h));
+        return p.in->open_port(port, "airmidi") == stdx::error{};
+    });
+    if (!ok) return -1;
     std::lock_guard<std::mutex> l(E->portMu);
     E->ports[h] = std::move(p);
     return h;
@@ -388,8 +436,11 @@ int ame_open_virtual(int out, const char *name) {
     if (!E) return -1;
     Port p;
     if (out) {
-        p.out = std::make_unique<libremidi::midi_out>(libremidi::output_configuration{});
-        if (p.out->open_virtual_port(name) != stdx::error{}) return -1;
+        bool ok = E->onObserver([&] {
+            p.out = std::make_unique<libremidi::midi_out>(libremidi::output_configuration{});
+            return p.out->open_virtual_port(name) == stdx::error{};
+        });
+        if (!ok) return -1;
         return E->add(std::move(p));
     }
     int h;
@@ -397,8 +448,11 @@ int ame_open_virtual(int out, const char *name) {
         std::lock_guard<std::mutex> l(E->portMu);
         h = E->nextHandle++;
     }
-    p.in = std::make_unique<libremidi::midi_in>(E->inputConfig(h));
-    if (p.in->open_virtual_port(name) != stdx::error{}) return -1;
+    bool ok = E->onObserver([&] {
+        p.in = std::make_unique<libremidi::midi_in>(E->inputConfig(h));
+        return p.in->open_virtual_port(name) == stdx::error{};
+    });
+    if (!ok) return -1;
     std::lock_guard<std::mutex> l(E->portMu);
     E->ports[h] = std::move(p);
     return h;
