@@ -12,7 +12,7 @@
 static const char *TAG = "settings";
 
 #define NAMESPACE "airmidi"
-#define SCHEMA 4  // bump when a field is added or changes meaning; add a step to migrate()
+#define SCHEMA 5  // bump when a field is added or changes meaning; add a step to migrate()
 
 static settings_t current;
 static SemaphoreHandle_t lock;
@@ -25,6 +25,7 @@ static esp_err_t write_all(nvs_handle_t h, const settings_t *s) {
     if (!e) e = nvs_set_str(h, "ble_dev", s->ble_device);
     if (!e) e = nvs_set_u8(h, "espnow", s->espnow);
     if (!e) e = nvs_set_str(h, "espnow_grp", s->espnow_group);
+    if (!e) e = nvs_set_u8(h, "trs_out", (uint8_t)s->trs_out);
     if (!e) e = nvs_set_u8(h, "schema", SCHEMA);
     if (!e) e = nvs_commit(h);
     return e;
@@ -39,6 +40,8 @@ static void migrate(nvs_handle_t h, uint8_t from) {
         case 2:  // schema 3 added ble_device; its default (none) needs no key
             /* fall through */
         case 3:  // schema 4 added espnow and espnow_group; their defaults (off, "airmidi") need no keys
+            /* fall through */
+        case 4:  // schema 5 added trs_out; its default (auto) needs no key
             /* fall through */
         default:
             break;
@@ -92,6 +95,9 @@ esp_err_t nvs_settings_init(void) {
         s.espnow = espnow;
         len = sizeof s.espnow_group;
         nvs_get_str(h, "espnow_grp", s.espnow_group, &len);
+        uint8_t trs_out = s.trs_out;
+        nvs_get_u8(h, "trs_out", &trs_out);
+        s.trs_out = (trs_type_t)trs_out;
         const char *why = settings_check(&s);
         if (why) {
             ESP_LOGW(TAG, "stored settings invalid (%s), using defaults", why);

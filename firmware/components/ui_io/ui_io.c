@@ -27,9 +27,10 @@ static uint32_t bar_until, sweep_from;
 static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
 static void panel_leds_init(const board_t *b) {
-    // XTAL clock: steady while frequency scaling moves the APB clock (power mode 1).
+    // XTAL clock: steady while frequency scaling moves the APB clock (power mode 1). 12 bits (PANEL_LED_FULL): a
+    // ceiling near 20 of 255 would leave a fade only 20 steps long.
     ledc_timer_config_t t = {.speed_mode = LEDC_LOW_SPEED_MODE,
-                             .duty_resolution = LEDC_TIMER_8_BIT,
+                             .duty_resolution = LEDC_TIMER_12_BIT,
                              .timer_num = LEDC_TIMER_0,
                              .freq_hz = 2000,
                              .clk_cfg = LEDC_USE_XTAL_CLK};
@@ -59,7 +60,7 @@ static void panel_show(uint32_t now) {
     }
     const board_t *b = board();
     for (int k = 0; k < PANEL_KEYS; k++) {
-        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)k, level[k] * b->panel_led_max[k] / 255);
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)k, (uint32_t)level[k] * b->panel_led_max[k] / 255);
         ledc_update_duty(LEDC_LOW_SPEED_MODE, (ledc_channel_t)k);
     }
 }

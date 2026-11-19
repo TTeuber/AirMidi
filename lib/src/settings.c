@@ -11,6 +11,7 @@ void settings_defaults(settings_t *s, const uint8_t mac[6]) {
     s->ble_in_network = false;
     s->espnow = false;
     strcpy(s->espnow_group, "airmidi");
+    s->trs_out = TRS_TYPE_AUTO;
 }
 
 const char *settings_check(const settings_t *s) {
@@ -38,6 +39,7 @@ const char *settings_check(const settings_t *s) {
     }
     if (s->sysex_timeout_ms < SETTINGS_SYSEX_TIMEOUT_MIN || s->sysex_timeout_ms > SETTINGS_SYSEX_TIMEOUT_MAX)
         return "SysEx timeout out of range";
+    if ((unsigned)s->trs_out >= TRS_TYPE_COUNT) return "TRS type is auto, A or B";
     return NULL;
 }
 
@@ -52,4 +54,25 @@ const char *airmidi_mode_name(airmidi_mode_t m) {
         default:
             return "?";
     }
+}
+
+const char *trs_type_name(trs_type_t t) {
+    switch (t) {
+        case TRS_TYPE_AUTO:
+            return "auto";
+        case TRS_TYPE_A:
+            return "A";
+        case TRS_TYPE_B:
+            return "B";
+        default:
+            return "?";
+    }
+}
+
+trs_type_t trs_type_from_name(const char *name) {
+    if (!name) return TRS_TYPE_COUNT;
+    if (!strcmp(name, "auto")) return TRS_TYPE_AUTO;
+    if (!strcmp(name, "A") || !strcmp(name, "a")) return TRS_TYPE_A;
+    if (!strcmp(name, "B") || !strcmp(name, "b")) return TRS_TYPE_B;
+    return TRS_TYPE_COUNT;
 }

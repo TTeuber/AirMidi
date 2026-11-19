@@ -28,6 +28,13 @@ menu "airmidi board"
             help
                 Rev B's panel on a bare S3 module: one USB-C, the charger on the board, no power switch.
 
+        config AIRMIDI_BOARD_REV_D
+            bool "receiver rev D (ESP32-S3-MINI-1, TRS Type A or B)"
+            depends on IDF_TARGET_ESP32S3
+            help
+                Rev C's module and panel on a smaller assembled board: the BQ24073 charger (PGOOD as USB detect,
+                CHG as charging), and either TRS type on both jacks (two MIDI IN pins, FET pairs on OUT).
+
         config AIRMIDI_BOARD_DEVKITC_S3
             bool "ESP32-S3-DevKitC-1 on its own"
             depends on IDF_TARGET_ESP32S3

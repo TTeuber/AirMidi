@@ -1,0 +1,3 @@
+# Receiver rev D with the ESP32-S3-MINI-1-N8 (build.sh s3d): no PSRAM on the module.
+CONFIG_AIRMIDI_BOARD_REV_D=y
+# CONFIG_SPIRAM is not set

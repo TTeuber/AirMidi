@@ -38,6 +38,31 @@ H11L1 instead of the 6N138 (same polarity on RX), and a panel instead of the but
 and the RTC pull-up, and `power_confirm_wake()` at boot sends the box back to sleep unless the button is still down
 1 s after the press. The release manifest has its own image (`s3b`).
 
+**Rev D** (`build.sh s3d`, `CONFIG_AIRMIDI_BOARD_REV_D`; the design workspace's docs/midi_receiver_d/brief.md has the
+pin table and the reasons): an ESP32-S3-MINI-1-N8 (no PSRAM) on an assembled board with a BQ24073 charger, and either
+TRS type on both jacks. What the board layer adds:
+
+- **IN, either type:** two H11L1 back to back, U4 lit by a Type A cable (GPIO38, UART1's RX) and U7 by a Type B
+  (GPIO41, UART2's RX, a second parser into the same port). Whichever receives bytes is the cable type.
+- **OUT, either type:** each line has a P/N FET pair with its gates on one GPIO (tip GPIO47, ring GPIO21), gate low =
+  line high. The UART's TX is routed by hand through the GPIO matrix, inverted, onto the data line's gate; the other
+  gate stays low and its line is the source. `trs_out` (auto, A, B) picks the type; auto follows IN, Type A until IN
+  has heard something. The gates are outputs from `board_init()` on, before OPTO_EN (GPIO39) powers the source, and
+  are never inputs or reset while it is on: a floating gate turns both FETs of a pair on.
+- **Nothing driven without a receiver:** a mono plug shorts a line to the sleeve (92 mA a line). JACK_DET (GPIO48, no
+  internal pull) reads high only with a receiver in and the ring line high, so it is sampled while the UART is idle;
+  three low readings in a row park both lines low (gates high: no current whatever is plugged in) and messages for
+  OUT are counted, not sent. Every 500 ms both lines go high for 1 ms to look again.
+- **Power:** USB detect is the charger's PGOOD (GPIO6), low with USB in, so it reaches the USB controller's
+  B-session-valid input inverted; CHG (GPIO4, internal pull-up) reads charging. With USB in the box runs from it
+  through the charger's power path, so a low cell reading never shuts it down then. The cell is on GPIO9 (1M/1M).
+- **LEDs:** the panel PWM is 12 bits on every board (`panel_led_max` out of 4095), since rev D's resistors were sized
+  bright on purpose and its ceiling is set by eye.
+
+Not yet: the charge-only state (PGOOD waking the box to show charging on the Battery LED while it is off), a USB-in
+wake source, and stopping MIDI IN before the cell drags 3V3 under the H11L1's 3.0 V. No PSRAM: see "The S3 and RAM"
+below, and check the heap in every mode on this board.
+
 **Wi-Fi transmit power** is a board property too (`wifi_max_tx`, in 0.25 dBm, 0 = the chip's 20 dBm), applied
 whenever Wi-Fi starts. The dev kit is held to 15 dBm. At 20 dBm none of its Wi-Fi frames arrived anywhere, while its
 BLE worked: most likely its 3.3 V sags at the transmit peaks on a USB port ([transports.md](transports.md), ESP-NOW).
@@ -54,7 +79,7 @@ and the S3 Xtensa, so there are two images anyway and a compile-time table is th
 ## Settings (`lib/src/settings.c` + `firmware/components/nvs_settings`)
 
 The rules live in the portable core and are host-tested: the fields (`settings_t`: name, mode, SysEx timeout, BLE
-in Network mode, the BLE device to connect to, the ESP-NOW cable and its group), the defaults (the name ends in the
+in Network mode, the BLE device to connect to, the ESP-NOW cable and its group, MIDI OUT's TRS type), the defaults (the name ends in the
 last two MAC bytes, `airmidi-7530`, so two boxes in one room differ), and `settings_check()`, which returns a reason
 string the web UI will show. The name doubles as mDNS host name, so it
 follows RFC 1123 label rules (letters, digits, '-', not at either end, at most 31 characters here).
@@ -64,7 +89,7 @@ Storage is NVS, namespace `airmidi`:
 - **One key per field plus a `schema` number**, not one blob. After an OTA rollback the older firmware still reads
   the fields it knows and ignores newer keys; a blob would have to be versioned and converted both ways.
 - **Migration** runs at boot when the stored schema is older (`migrate()`, a fall-through switch, one step per
-  version). Schema 2 added `ble_in_network`, 3 `ble_device`, 4 `espnow` and `espnow_group`. A newer schema (after a
+  version). Schema 2 added `ble_in_network`, 3 `ble_device`, 4 `espnow` and `espnow_group`, 5 `trs_out`. A newer schema (after a
   rollback) is logged and read as far as this firmware understands it.
 - Missing keys keep their defaults; if the stored values fail `settings_check()`, the defaults are used for this
   boot without overwriting the store.

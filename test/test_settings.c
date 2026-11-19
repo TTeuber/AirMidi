@@ -18,7 +18,23 @@ static void test_defaults_are_valid(void) {
     TEST_ASSERT_EQUAL_STRING("", s.ble_device);  // connects to nothing until told
     TEST_ASSERT_FALSE(s.espnow);
     TEST_ASSERT_EQUAL_STRING("airmidi", s.espnow_group);
+    TEST_ASSERT_EQUAL(TRS_TYPE_AUTO, s.trs_out);
     TEST_ASSERT_NULL(settings_check(&s));
+}
+
+static void test_trs_type(void) {
+    settings_t s;
+    settings_defaults(&s, mac);
+    s.trs_out = TRS_TYPE_B;
+    TEST_ASSERT_NULL(settings_check(&s));
+    s.trs_out = TRS_TYPE_COUNT;
+    TEST_ASSERT_NOT_NULL(settings_check(&s));
+    TEST_ASSERT_EQUAL(TRS_TYPE_A, trs_type_from_name("a"));
+    TEST_ASSERT_EQUAL(TRS_TYPE_B, trs_type_from_name("B"));
+    TEST_ASSERT_EQUAL(TRS_TYPE_AUTO, trs_type_from_name("auto"));
+    TEST_ASSERT_EQUAL(TRS_TYPE_COUNT, trs_type_from_name("C"));
+    TEST_ASSERT_EQUAL(TRS_TYPE_COUNT, trs_type_from_name(NULL));
+    TEST_ASSERT_EQUAL_STRING("B", trs_type_name(TRS_TYPE_B));
 }
 
 static void test_name_rules(void) {
@@ -99,6 +115,7 @@ int main(void) {
     RUN_TEST(test_mode_and_timeout_ranges);
     RUN_TEST(test_ble_device_rules);
     RUN_TEST(test_espnow_group_rules);
+    RUN_TEST(test_trs_type);
     RUN_TEST(test_mode_names);
     return UNITY_END();
 }

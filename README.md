@@ -188,7 +188,7 @@ app/        Flutter: the Android app, the macOS app with the DAW, and the code t
 
 ```sh
 tools/check.sh                    # what CI runs: host tests, clang-format check, firmware for every board
-firmware/build.sh c6 flash        # build and flash the C6 board (s3: XIAO S3 on rev A, s3b: on rev B, s3kit: S3 dev kit)
+firmware/build.sh c6 flash        # build and flash the C6 board (s3: XIAO S3 on rev A, s3b: on rev B, s3d: rev D, s3kit: S3 dev kit)
 cd app && fvm flutter test        # the apps' tests (Flutter pinned in app/.fvmrc)
 fvm flutter build apk --release   # the Android app (fvm flutter build macos --release for the Mac)
 ```

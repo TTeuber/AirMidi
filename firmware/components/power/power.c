@@ -38,10 +38,13 @@ static void sample_task(void *arg) {
         battery_update(&battery, cell > 0 ? cell : 0);
         if (n % 60 == 0) {
             if (battery.absent)
-                ESP_LOGI(TAG, "no cell voltage: power switch off, running from USB");
+                ESP_LOGI(TAG, "no cell voltage: power switch off (or no cell), running from USB");
             else
                 ESP_LOGI(TAG, "cell %lu mV (%d %%)%s", (unsigned long)battery.mv, battery_percent(battery.mv),
                          battery.low ? ", low" : "");
+            if (b->vbus_sense)
+                ESP_LOGI(TAG, "USB %s%s", board_usb_present() ? "in" : "out",
+                         b->charging ? (board_charging() ? ", charging" : ", not charging") : "");
         }
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -91,7 +94,11 @@ uint32_t power_cell_mv(void) { return battery.mv; }
 int power_percent(void) { return battery_percent(battery.mv); }
 bool power_low(void) { return battery.low; }
 bool power_on_usb(void) { return battery.absent; }
-bool power_empty(void) { return battery.empty; }
+// A board that sees USB runs from it through the charger's power path whatever the cell reads (rev D: with no cell
+// fitted the charger's BAT pin can sit anywhere), so the cell is only "empty" without USB.
+bool power_empty(void) { return battery.empty && !board_usb_present(); }
+bool power_usb_present(void) { return board_usb_present(); }
+bool power_charging(void) { return board_charging(); }
 
 // Deep sleep with the button (active low, RTC GPIO) as the wake source. A press still under way would wake the
 // chip at once, so wait for the release first. The RTC pull-up holds the pin high while asleep (ext0 keeps the RTC

@@ -2,7 +2,8 @@
 // headers, so both boards share the signals and differ only in GPIO numbers (and the C6's internal RF switch). A bare
 // ESP32-S3-DevKitC-1 is a third board, for USB MIDI and ESP-NOW without a second receiver PCB. Rev B keeps rev A's
 // MIDI and battery pins and swaps the one button and LED for a panel: a button per mode with an LED over each. Rev C
-// has rev B's panel on a bare S3 module: other GPIOs, one USB-C.
+// has rev B's panel on a bare S3 module: other GPIOs, one USB-C. Rev D takes either TRS type (A or B) on both jacks:
+// two receive pins, and a FET pair per OUT line driven from a GPIO in place of a UART pin (trs_ab).
 #pragma once
 
 #include "esp_adc/adc_oneshot.h"
@@ -19,10 +20,22 @@ typedef struct {
     bool panel;
     gpio_num_t panel_led[4];
     gpio_num_t panel_button[4];
-    // PWM duty at full brightness: the colours differ, and 3 mm LEDs are bright on a dark panel
-    uint8_t panel_led_max[4];
-    gpio_num_t opto_en;        // Rev C: held low to power the H11L1, which draws ~1 mA otherwise. 0 = always powered
-    gpio_num_t vbus_sense;     // Rev C: high while USB is plugged in (self-powered USB device). 0 = none
+    // PWM duty at full brightness, of PANEL_LED_FULL (12-bit PWM): the colours differ, and the LEDs are bright on a
+    // dark panel. 12 bits so a low ceiling still leaves a smooth fade.
+    uint16_t panel_led_max[4];
+    gpio_num_t opto_en;     // Rev C, D: held low to power the H11L1 (and rev D's OUT source). 0 = always powered
+    gpio_num_t vbus_sense;  // Rev C, D: USB plugged in (self-powered USB device). 0 = none
+    bool vbus_sense_low;    // Rev D: vbus_sense reads low with USB in (the charger's PGOOD), high on rev C
+    gpio_num_t charging;    // Rev D: the charger's CHG, low while charging (open drain, internal pull-up). 0 = none
+    // Rev D, TRS Type A or B (trs_ab): midi_rx is U4 (bytes there mean a Type A cable in IN), midi_rx_b U7 (Type B).
+    // midi_tx is unused: each OUT line has a P/N FET pair whose gates share a GPIO, gate low = line high. The UART
+    // sends inverted on the tip gate (Type A) or the ring gate (Type B) while the other gate holds its line high as
+    // the source. jack_det reads high with a receiver in OUT and the ring line high (no internal pull).
+    bool trs_ab;
+    gpio_num_t midi_rx_b;
+    gpio_num_t midi_gate_tip;
+    gpio_num_t midi_gate_ring;
+    gpio_num_t jack_det;
     adc_unit_t batt_adc_unit;  // A0: half the switched cell voltage (1:1 divider)
     int batt_adc_channel;      // -1: no battery (a dev kit on USB)
     int batt_offset_mv;        // added to the cell reading, from comparing it with a multimeter on this board
@@ -31,6 +44,13 @@ typedef struct {
 
 // The board this firmware was built for (Kconfig AIRMIDI_BOARD).
 const board_t *board(void);
+
+// USB plugged in, from vbus_sense (false on boards without it).
+bool board_usb_present(void);
+// The charger is charging the cell (false on boards that cannot tell).
+bool board_charging(void);
+
+#define PANEL_LED_FULL 4095  // panel_led_max's scale: the LED PWM's full duty
 
 // The box's id: six hex digits from the chip's base MAC. The same box shows it over BLE (scan response,
 // manufacturer data FFFF "am" + 3 bytes), mDNS (TXT id=) and /api/status, so the app can tell that a box it sees

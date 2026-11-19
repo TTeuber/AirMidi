@@ -42,7 +42,7 @@ static const board_t the_board = {
     .panel = true,
     .panel_led = {GPIO_NUM_2, GPIO_NUM_4, GPIO_NUM_5, GPIO_NUM_6},  // as built: blue, green (2k), yellow, orange (1k)
     .panel_button = {GPIO_NUM_7, GPIO_NUM_8, GPIO_NUM_9, GPIO_NUM_3},
-    .panel_led_max = {25, 25, 100, 35},  // all too bright at full duty, and yellow a little dim against the rest
+    .panel_led_max = {400, 400, 1600, 560},  // all too bright at full duty, and yellow a little dim against the rest
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = ADC_CHANNEL_0,  // GPIO1
 };
@@ -60,11 +60,38 @@ static const board_t the_board = {
     .panel_led = {GPIO_NUM_11, GPIO_NUM_13, GPIO_NUM_15, GPIO_NUM_17},
     .panel_button = {GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_16, GPIO_NUM_18},
     // rev B's judged levels scaled to these resistors: confirm on the first board
-    .panel_led_max = {100, 100, 150, 110},
+    .panel_led_max = {1600, 1600, 2400, 1760},
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = ADC_CHANNEL_9,  // GPIO10
     .opto_en = GPIO_NUM_40,
     .vbus_sense = GPIO_NUM_21,
+};
+#elif CONFIG_AIRMIDI_BOARD_REV_D
+// pcb/midi_receiver_d/circuit.py in the design workspace; docs/midi_receiver_d/brief.md there has the pin table
+// ("Pins") and the rules for the OUT drivers ("TRS Type A and B", firmware rules 1-7).
+static const board_t the_board = {
+    .name = "receiver rev D",
+    .midi_tx = GPIO_NUM_NC,  // OUT is midi_gate_tip / midi_gate_ring
+    .midi_rx = GPIO_NUM_38,  // U4 (Type A), H11L1 output, 270R pull-up, on the switched supply
+    .led = GPIO_NUM_NC,
+    .button = GPIO_NUM_NC,
+    .panel = true,
+    // blue 270R, green 1k, yellow 270R, orange 270R (0603 LEDs). PWR's pins are swapped against the other columns.
+    .panel_led = {GPIO_NUM_11, GPIO_NUM_13, GPIO_NUM_15, GPIO_NUM_18},
+    .panel_button = {GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_16, GPIO_NUM_17},
+    // A guess: the resistors were sized bright on purpose, to be trimmed here by eye on the first board.
+    .panel_led_max = {1024, 1024, 1024, 1024},
+    .batt_adc_unit = ADC_UNIT_1,
+    .batt_adc_channel = ADC_CHANNEL_8,  // GPIO9, the cell through 1M/1M (always connected: no power switch)
+    .opto_en = GPIO_NUM_39,
+    .vbus_sense = GPIO_NUM_6,  // BQ24073 PGOOD, 100k pull-up; an RTC pin
+    .vbus_sense_low = true,
+    .charging = GPIO_NUM_4,
+    .trs_ab = true,
+    .midi_rx_b = GPIO_NUM_41,  // U7 (Type B)
+    .midi_gate_tip = GPIO_NUM_47,
+    .midi_gate_ring = GPIO_NUM_21,
+    .jack_det = GPIO_NUM_48,  // through 100k, 1M pull-down on the board
 };
 #elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
 static const board_t the_board = {
@@ -86,6 +113,13 @@ static const board_t the_board = {
 
 const board_t *board(void) { return &the_board; }
 
+bool board_usb_present(void) {
+    if (!the_board.vbus_sense) return false;
+    return gpio_get_level(the_board.vbus_sense) == !the_board.vbus_sense_low;
+}
+
+bool board_charging(void) { return the_board.charging && gpio_get_level(the_board.charging) == 0; }
+
 void board_init(void) {
 #ifdef RF_SWITCH_EN
     gpio_config_t rf = {.pin_bit_mask = 1ULL << RF_SWITCH_EN | 1ULL << ANT_SELECT, .mode = GPIO_MODE_OUTPUT};
@@ -93,6 +127,27 @@ void board_init(void) {
     gpio_set_level(RF_SWITCH_EN, 0);
     gpio_set_level(ANT_SELECT, 0);
 #endif
+    // Rev D: the OUT gates are outputs before the source comes on (a gate left floating between the thresholds turns
+    // both FETs of its pair on, rail to ground). High = both lines low: no current whatever is in the jack. uart_midi
+    // takes them from here (and must never leave them as inputs, or reset them, while the source is on).
+    if (the_board.trs_ab) {
+        gpio_set_level(the_board.midi_gate_tip, 1);  // the level first, so the pin never drives low on the way
+        gpio_set_level(the_board.midi_gate_ring, 1);
+        gpio_config_t gates = {.pin_bit_mask = 1ULL << the_board.midi_gate_tip | 1ULL << the_board.midi_gate_ring,
+                               .mode = GPIO_MODE_OUTPUT};
+        gpio_config(&gates);
+        gpio_config_t det = {.pin_bit_mask = 1ULL << the_board.jack_det, .mode = GPIO_MODE_INPUT};  // no pulls
+        gpio_config(&det);
+    }
+    if (the_board.charging) {
+        gpio_config_t chg = {
+            .pin_bit_mask = 1ULL << the_board.charging, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
+        gpio_config(&chg);
+    }
+    if (the_board.vbus_sense) {
+        gpio_config_t vb = {.pin_bit_mask = 1ULL << the_board.vbus_sense, .mode = GPIO_MODE_INPUT};
+        gpio_config(&vb);
+    }
     // before the UART looks at its line; the pin floats in deep sleep and a pull-up turns it off
     if (the_board.opto_en) {
         gpio_config_t en = {.pin_bit_mask = 1ULL << the_board.opto_en, .mode = GPIO_MODE_OUTPUT};

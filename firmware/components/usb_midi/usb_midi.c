@@ -10,7 +10,9 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_rom_gpio.h"
 #include "esp_system.h"
+#include "soc/gpio_sig_map.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/usb_serial_jtag_reg.h"
 #include "tinyusb.h"
@@ -161,6 +163,10 @@ void usb_midi_start(const char *name) {
         cfg.phy.vbus_monitor_io = board()->vbus_sense;
     }
     ESP_ERROR_CHECK(tinyusb_driver_install(&cfg));
+    // The PHY routes the pin to the controller's B-session-valid input as it is; rev D's PGOOD reads low with USB in,
+    // so route it again inverted. (Until this line the controller sees no host and keeps D+ released.)
+    if (board()->vbus_sense && board()->vbus_sense_low)
+        esp_rom_gpio_connect_in_signal(board()->vbus_sense, USB_SRP_BVALID_IN_IDX, true);
     tinyusb_config_cdcacm_t acm = {.cdc_port = TINYUSB_CDC_ACM_0, .callback_line_state_changed = line_state};
     ESP_ERROR_CHECK(tinyusb_cdcacm_init(&acm));
     // The console (log and commands) moves here. A dev kit's UART console keeps what comes before this and panics.

@@ -12,8 +12,10 @@ void power_start(void);
 uint32_t power_cell_mv(void);  // filtered, 0 before the first sample
 int power_percent(void);
 bool power_low(void);
-bool power_on_usb(void);  // no cell voltage: the switch is off and USB powers the board
-bool power_empty(void);
+bool power_on_usb(void);       // no cell voltage: the switch is off and USB powers the board
+bool power_empty(void);        // never while board_usb_present()
+bool power_usb_present(void);  // a USB supply, on boards that can see it (rev C, D); false elsewhere
+bool power_charging(void);     // rev D: the charger is charging the cell
 
 // Power management modes (being measured, phase 2):
 //   0 = CPU fixed at 160 MHz, no light sleep

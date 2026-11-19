@@ -366,6 +366,10 @@ static void print_status(void) {
     uart_midi_get_stats(&t);
     printf("trs: rx %lu bytes (%lu dropped), tx %lu bytes (%lu messages dropped)\n", (unsigned long)t.rx_bytes,
            (unsigned long)t.rx_dropped_bytes, (unsigned long)t.tx_bytes, (unsigned long)t.tx_dropped);
+    if (t.both_types)
+        printf("trs: IN %s%c, OUT Type %c, %s (%lu messages not sent unplugged)\n", t.in_type ? "Type " : "nothing yet",
+               t.in_type ? t.in_type : ' ', t.out_type, t.out_plugged ? "receiver in" : "parked, no receiver",
+               (unsigned long)t.tx_unplugged);
     for (int i = 0; i < 2; i++) {
         ble_midi_slot_stats_t s;
         ble_midi_get_stats(i, &s);
@@ -397,6 +401,9 @@ static void print_status(void) {
             (unsigned long)en.tx_failed, esp_err_to_name(en.last_tx_error));
         printf("espnow: unicast acknowledged %lu, not %lu\n", (unsigned long)en.tx_acked, (unsigned long)en.tx_unacked);
     }
+    if (board()->vbus_sense)
+        printf("USB power %s%s; ", power_usb_present() ? "in" : "out",
+               board()->charging ? (power_charging() ? ", charging" : ", not charging") : "");
     if (power_on_usb())
         printf("battery: switch off, on USB power; ");
     else
@@ -428,7 +435,7 @@ void app_main(void) {
 
     bus_start(s.sysex_timeout_ms);
     usb_midi_start(s.name);  // S3: the console moves to USB from here on
-    uart_midi_start();
+    uart_midi_start(s.trs_out);
     ci_start();
     ble_running = ble_wanted(&s);
     if (ble_running) ble_midi_start(s.name, s.ble_device);
@@ -487,7 +494,7 @@ void app_main(void) {
         }
 
         int c = getchar();              // console: 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
-                                        // '0'-'2' power mode, 'B' bootloader (S3)
+                                        // '0'-'2' power mode, 'B' bootloader (S3), 't' TRS OUT type (rev D)
         if (c == EOF) clearerr(stdin);  // no input yet; on a UART console EOF would otherwise stick
         // TinyUSB's console drops output nobody reads (a short write), which leaves stdout in its error state for
         // good: the box ran on but never printed again (S3). Clear it, so output resumes when someone reads.
@@ -503,6 +510,11 @@ void app_main(void) {
         if (c >= '0' && c <= '2') power_set_mode(c - '0');  // power modes, for measuring ('2' needs RESET after)
         if (c == 'B') usb_midi_bootloader();                // S3: restart into the ROM bootloader (flashing over USB)
         if (c == 'E') toggle_espnow();
+        if (c == 't') {  // rev D: OUT's TRS type for this session, auto -> A -> B -> auto (the setting is in the API)
+            static trs_type_t t = TRS_TYPE_AUTO;
+            t = (trs_type_t)((t + 1) % TRS_TYPE_COUNT);
+            uart_midi_set_out_type(t);
+        }
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

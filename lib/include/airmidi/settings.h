@@ -16,6 +16,10 @@ typedef enum {
     AIRMIDI_MODE_COUNT
 } airmidi_mode_t;
 
+// Which TRS MIDI wiring the box sends on (rev D; other boards have Type A wired): Type A has the source on the ring and
+// data on the tip, Type B the other way round. Auto follows the type last heard on MIDI IN, Type A until then.
+typedef enum { TRS_TYPE_AUTO, TRS_TYPE_A, TRS_TYPE_B, TRS_TYPE_COUNT } trs_type_t;
+
 #define SETTINGS_NAME_MAX 31    // BLE device name, mDNS host name and UMP endpoint name; ASCII letters, digits, '-'
 #define SETTINGS_DEVICE_MAX 31  // BLE device name to connect to
 #define SETTINGS_GROUP_MAX 15   // ESP-NOW group name
@@ -34,6 +38,7 @@ typedef struct {
     // default: in Play mode it keeps the Wi-Fi radio on.
     bool espnow;
     char espnow_group[SETTINGS_GROUP_MAX + 1];
+    trs_type_t trs_out;  // MIDI OUT's wiring
 } settings_t;
 
 // Defaults; the name ends in the last two bytes of the MAC address so two boxes in one room differ.
@@ -43,6 +48,10 @@ void settings_defaults(settings_t *s, const uint8_t mac[6]);
 const char *settings_check(const settings_t *s);
 
 const char *airmidi_mode_name(airmidi_mode_t m);
+
+// "auto", "A", "B"; trs_type_from_name() takes them in either case, TRS_TYPE_COUNT for anything else.
+const char *trs_type_name(trs_type_t t);
+trs_type_t trs_type_from_name(const char *name);
 
 #ifdef __cplusplus
 }
