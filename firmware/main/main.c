@@ -477,11 +477,14 @@ void app_main(void) {
             panel_update();
         } else {
             net_state_t ns = net_state();
-            ui_set_led(power_low()            ? LED_LOW_BATTERY
-                       : ns == NET_AP         ? LED_SETUP
-                       : ns == NET_JOINING    ? LED_WIFI_JOINING
-                       : ble_midi_connected() ? LED_CONNECTED
-                                              : LED_ADVERTISING);
+            // A slot reads connected before BLE has started (nothing wrote its free value into it yet), so Network
+            // mode without BLE showed the connected LED: only ask once the stack runs.
+            bool on_ble = ble_running && ble_midi_connected();
+            ui_set_led(power_low()         ? LED_LOW_BATTERY
+                       : ns == NET_AP      ? LED_SETUP
+                       : ns == NET_JOINING ? LED_WIFI_JOINING
+                       : on_ble            ? LED_CONNECTED
+                                           : LED_ADVERTISING);
         }
 
         int c = getchar();              // console: 's' counters, 'i' image info, 'P'/'N'/'S' mode, 'm' merge test hook,
