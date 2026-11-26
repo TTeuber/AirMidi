@@ -19,9 +19,12 @@ typedef struct {
     bool panel;
     gpio_num_t panel_led[4];
     gpio_num_t panel_button[4];
-    uint8_t panel_led_max[4];  // PWM duty at full brightness: the colours differ, and 3 mm LEDs are bright on a dark panel
-    gpio_num_t opto_en;        // Rev C: held low to power the H11L1, which draws ~1 mA otherwise. 0 = always powered
-    gpio_num_t vbus_sense;     // Rev C: high while USB is plugged in (self-powered USB device). 0 = none
+    // PWM duty at full brightness: the colours differ, and 3 mm LEDs are bright on a dark panel.
+    uint8_t panel_led_max[4];
+    // Rev C: held low to power the H11L1, which draws ~1 mA otherwise. 0 = always powered.
+    gpio_num_t opto_en;
+    // Rev C: high while USB is plugged in (self-powered USB device). 0 = none.
+    gpio_num_t vbus_sense;
     adc_unit_t batt_adc_unit;  // A0: half the switched cell voltage (1:1 divider)
     int batt_adc_channel;      // -1: no battery (a dev kit on USB)
     int batt_offset_mv;        // added to the cell reading, from comparing it with a multimeter on this board

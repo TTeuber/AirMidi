@@ -114,7 +114,8 @@ static void __attribute__((noreturn)) sleep_until_pressed(gpio_num_t button) {
 
 void power_shutdown(void) {
     ESP_LOGW(TAG, "battery empty (%lu mV): sleeping until PWR or the switch", (unsigned long)battery.mv);
-    vTaskDelay(pdMS_TO_TICKS(100));  // let the log out
+    // Let the log out.
+    vTaskDelay(pdMS_TO_TICKS(100));
     if (board()->panel) sleep_until_pressed(board()->panel_button[PANEL_PWR]);  // rev C has no switch to cycle
     esp_deep_sleep_start();
 }
