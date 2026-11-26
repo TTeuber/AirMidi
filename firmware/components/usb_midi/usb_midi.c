@@ -9,14 +9,15 @@
 #include "bus.h"
 #include "esp_log.h"
 #include "esp_mac.h"
-#include "esp_private/periph_ctrl.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "soc/rtc_cntl_reg.h"
-#include "soc/usb_serial_jtag_reg.h"
 #include "tinyusb.h"
 #include "tinyusb_cdc_acm.h"
 #include "tinyusb_console.h"
 #include "tinyusb_default_config.h"
+#include "tusb.h"
 
 static const char *TAG = "usb";
 
@@ -129,21 +130,13 @@ static void line_state(int itf, cdcacm_event_t *e) {
     }
 }
 
-// Every restart: give the USB PHY back to the chip's USB-Serial-JTAG first. The PHY selection lives in the RTC
-// domain and survives a restart; left on USB OTG, the next boot's console output waited forever for a USB-Serial-
-// JTAG nobody could reach, and the box never came back (found on the dev kit). Restarts into the ROM bootloader need
-// it too: the bootloader talks USB-Serial-JTAG.
-static void give_back_phy(void) {
-    periph_module_reset(PERIPH_USB_MODULE);
-    periph_module_disable(PERIPH_USB_MODULE);
-    CLEAR_PERI_REG_MASK(RTC_CNTL_USB_CONF_REG,
-                        RTC_CNTL_SW_HW_USB_PHY_SEL | RTC_CNTL_SW_USB_PHY_SEL | RTC_CNTL_USB_PAD_ENABLE);
-    CLEAR_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_PHY_SEL);  // the internal PHY
-    SET_PERI_REG_MASK(USB_SERIAL_JTAG_CONF0_REG, USB_SERIAL_JTAG_USB_PAD_ENABLE);
-}
+// Into the ROM bootloader: its USB-Serial-JTAG needs the internal PHY, so the mux is chosen in software
+// (sw_hw_usb_phy_sel = 1, sw_usb_phy_sel = 0); left to the hardware it is not the mux the ROM needs after a restart,
+// and the box came up in download mode with no port at all. The whole register is written because the rest has to go
+// back to 0 as well: usb_reset_disable and the DP/DM pad overrides keep the ROM's port from enumerating if left set.
+static void give_back_phy(void) { REG_WRITE(RTC_CNTL_USB_CONF_REG, RTC_CNTL_SW_HW_USB_PHY_SEL); }
 
 void usb_midi_start(const char *name) {
-    esp_register_shutdown_handler(give_back_phy);
     snprintf(product, sizeof product, "%s", name);
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_BASE);
@@ -171,7 +164,16 @@ void usb_midi_start(const char *name) {
 void usb_midi_get_stats(usb_midi_stats_t *out) { *out = stats; }
 
 void usb_midi_bootloader(void) {
-    ESP_LOGW(TAG, "restarting into the ROM bootloader");
+    // No log line first: the console is this very CDC, and writing to it while the host has closed the port (the
+    // caller sends 'B' and goes away) blocked here for good.
+    //
+    // The host has to see the box leave the bus, or it never asks the ROM's USB-Serial-JTAG anything: it keeps the
+    // port it has. Drop the D+ pull-up and give the host a moment to notice, then hand the internal PHY to the
+    // USB-Serial-JTAG (the RTC register that muxes it survives the restart, and the OTG driver left it on the OTG),
+    // set the ROM download bit, and restart.
     REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+    tud_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(200));
+    give_back_phy();
     esp_restart();
 }
