@@ -1,0 +1,2 @@
+# A bare ESP32-S3 with its own TRS port (build.sh s3direct).
+CONFIG_AIRMIDI_BOARD_DIRECT_S3=y

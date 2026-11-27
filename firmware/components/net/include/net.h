@@ -65,7 +65,9 @@ esp_err_t net_try_network(const char *ssid, const char *pass);
 void net_probe(net_probe_t *out);
 const char *net_probe_state_name(net_probe_state_t s);
 
-// The channel of the access point the box is joined to, 0 when not joined.
+// The channel the radio has to stay on: the access point the box is joined to (Network mode) or the box's own
+// access point (Setup mode), so ESP-NOW does not hop and move either of them. 0: the radio is free to look for its
+// peers (Play mode).
 uint8_t net_ap_channel(void);
 
 // True once SNTP has set the clock (wall-clock time).

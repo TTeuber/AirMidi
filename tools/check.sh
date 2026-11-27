@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run locally what CI runs: host tests (ASan + UBSan), the clang-format check, and the firmware for both boards.
+# Run locally what CI runs: host tests (ASan + UBSan), the clang-format check, and the firmware for every board.
 #   tools/check.sh [--fix]     --fix reformats instead of only checking
 set -e
 cd "$(dirname "$0")/.."
@@ -14,7 +14,7 @@ cf=(uv tool run --quiet --from clang-format==18.1.8 clang-format)
 if [ "$1" = --fix ]; then "${cf[@]}" -i $files; fi
 "${cf[@]}" --dry-run --Werror $files && echo "clean"
 
-for board in c6 s3 s3b s3kit; do
+for board in c6 s3 s3b s3kit s3direct; do
     echo "== firmware $board"
     firmware/build.sh $board 2>&1 | grep -E "error|warning:|binary size|build complete" || true
 done

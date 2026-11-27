@@ -20,6 +20,7 @@ static const char *TAG = "net";
 
 #define RETRIES_PER_NETWORK 3
 #define RETRY_DELAY_US (2 * 1000 * 1000)
+#define AP_CHANNEL 1  // Setup: the box's own open access point
 
 static volatile net_state_t state = NET_OFF;
 static airmidi_mode_t mode = AIRMIDI_MODE_PLAY;
@@ -209,7 +210,7 @@ void net_set_mode(airmidi_mode_t m) {
         state = NET_JOINING;
         network_index = 0, attempts = 0;
     } else if (m == AIRMIDI_MODE_SETUP) {
-        wifi_config_t wc = {.ap = {.channel = 1, .max_connection = 2, .authmode = WIFI_AUTH_OPEN}};
+        wifi_config_t wc = {.ap = {.channel = AP_CHANNEL, .max_connection = 2, .authmode = WIFI_AUTH_OPEN}};
         // Open on purpose: it exists only while the box is in Setup mode (8 s button press), so a phone can join
         // without a password to give it one. Firmware it accepts must be signed anyway.
         size_t len = strlen(host);  // host is at most 31 characters, the SSID field holds 32
@@ -468,6 +469,7 @@ void net_probe(net_probe_t *out) {
 }
 
 uint8_t net_ap_channel(void) {
+    if (state == NET_AP) return AP_CHANNEL;  // Setup: the box's own access point, and ESP-NOW must not hop off it
     wifi_ap_record_t ap;
     return state == NET_CONNECTED && esp_wifi_sta_get_ap_info(&ap) == ESP_OK ? ap.primary : 0;
 }

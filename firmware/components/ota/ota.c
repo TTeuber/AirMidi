@@ -198,6 +198,8 @@ void ota_abort(void) {
 #define BOARD_KEY "s3c"
 #elif CONFIG_AIRMIDI_BOARD_DEVKITC_S3
 #define BOARD_KEY "s3kit"
+#elif CONFIG_AIRMIDI_BOARD_DIRECT_S3
+#define BOARD_KEY "s3direct"
 #endif
 
 static char fetch_base[160];

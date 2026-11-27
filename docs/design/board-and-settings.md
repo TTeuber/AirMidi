@@ -38,8 +38,15 @@ H11L1 instead of the 6N138 (same polarity on RX), and a panel instead of the but
 and the RTC pull-up, and `power_confirm_wake()` at boot sends the box back to sleep unless the button is still down
 1 s after the press. The release manifest has its own image (`s3b`).
 
+**A bare ESP32-S3 on a board of its own** (`build.sh s3direct`, `CONFIG_AIRMIDI_BOARD_DIRECT_S3`): no USB-UART
+bridge; power and flashing ride the native USB port, and the console is TinyUSB's serial port once the app starts.
+The TRS port hangs straight off two pins, each through a 22 ohm series resistor: TIP on GPIO14, RING on GPIO15 held
+high, so the data is on the TIP (Type A); Type B swaps the two. The input is a 6N137 on GPIO21. A blue LED on GPIO48,
+through its resistor to GND, is the status light (active high, the same on/off pattern as the other boards' LED), and
+BOOT (GPIO0) is the button.
+
 **Wi-Fi transmit power** is a board property too (`wifi_max_tx`, in 0.25 dBm, 0 = the chip's 20 dBm), applied
-whenever Wi-Fi starts. The dev kit is held to 15 dBm. At 20 dBm none of its Wi-Fi frames arrived anywhere, while its
+whenever Wi-Fi starts. The dev kit and the bare S3 are held to 15 dBm. At 20 dBm none of the dev kit's Wi-Fi frames arrived anywhere, while its
 BLE worked: most likely its 3.3 V sags at the transmit peaks on a USB port ([transports.md](transports.md), ESP-NOW).
 
 **The S3 and RAM.** Without PSRAM the S3 had 7 KB of heap left in Play mode. PSRAM is used where the board has it

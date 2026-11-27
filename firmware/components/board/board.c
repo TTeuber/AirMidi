@@ -47,8 +47,8 @@ static const board_t the_board = {
     .batt_adc_channel = ADC_CHANNEL_0,  // GPIO1
 };
 #elif CONFIG_AIRMIDI_BOARD_REV_C
-// pcb/midi_receiver_c/circuit.py in the design workspace. MIDI TX is off UART0's pin, so the ROM's boot log stays out of
-// the MIDI output, and off the pins Espressif lists with a power-up glitch; TX and RX stay off VDD_SPI's GPIO33-37.
+// pcb/midi_receiver_c/circuit.py in the design workspace. MIDI TX is off UART0's pin, so the ROM's boot log stays out
+// of the MIDI output, and off the pins Espressif lists with a power-up glitch; TX and RX stay off VDD_SPI's GPIO33-37.
 static const board_t the_board = {
     .name = "receiver rev C",
     .midi_tx = GPIO_NUM_38,
@@ -56,9 +56,11 @@ static const board_t the_board = {
     .led = GPIO_NUM_NC,
     .button = GPIO_NUM_NC,
     .panel = true,
-    .panel_led = {GPIO_NUM_11, GPIO_NUM_13, GPIO_NUM_15, GPIO_NUM_17},  // blue, green (10k), yellow (1.5k), orange (3.3k)
+    // Blue, green (10k), yellow (1.5k), orange (3.3k).
+    .panel_led = {GPIO_NUM_11, GPIO_NUM_13, GPIO_NUM_15, GPIO_NUM_17},
     .panel_button = {GPIO_NUM_12, GPIO_NUM_14, GPIO_NUM_16, GPIO_NUM_18},
-    .panel_led_max = {100, 100, 150, 110},  // rev B's judged levels scaled to these resistors: confirm on the first board
+    // Rev B's judged levels scaled to these resistors: confirm on the first board.
+    .panel_led_max = {100, 100, 150, 110},
     .batt_adc_unit = ADC_UNIT_1,
     .batt_adc_channel = ADC_CHANNEL_9,  // GPIO10
     .opto_en = GPIO_NUM_40,
@@ -78,6 +80,22 @@ static const board_t the_board = {
     // transmit peaks on a USB port.
     .wifi_max_tx = 60,
 };
+
+#elif CONFIG_AIRMIDI_BOARD_DIRECT_S3
+// A bare ESP32-S3 with its TRS port straight off two pins: TIP on GPIO14 (the data, Type A), RING on GPIO15 held
+// high in board_init(), and the input through a 6N137 on GPIO21; the LED is on GPIO48 and BOOT on GPIO0.
+#define TRS_RING GPIO_NUM_15
+static const board_t the_board = {
+    .name = "bare ESP32-S3 with a TRS port",
+    .midi_tx = GPIO_NUM_14,  // TRS TIP: the data out on a Type A port
+    .midi_rx = GPIO_NUM_21,  // TRS IN, through the 6N137
+    .led = GPIO_NUM_48,      // one blue LED, GPIO48 -> resistor -> GND, active high
+    .button = GPIO_NUM_0,    // BOOT, with the board's pull-up
+    .batt_adc_unit = ADC_UNIT_1,
+    .batt_adc_channel = -1,  // no battery: always "on USB"
+    // The bare board is USB-powered like the dev kit: hold Wi-Fi to 15 dBm, where its 3.3 V does not sag.
+    .wifi_max_tx = 60,
+};
 #else
 #error "no board selected (CONFIG_AIRMIDI_BOARD)"
 #endif
@@ -91,7 +109,8 @@ void board_init(void) {
     gpio_set_level(RF_SWITCH_EN, 0);
     gpio_set_level(ANT_SELECT, 0);
 #endif
-    if (the_board.opto_en) {  // before the UART looks at its line; the pin floats in deep sleep and a pull-up turns it off
+    // Before the UART looks at its line: the pin floats in deep sleep, and a pull-up turns it off.
+    if (the_board.opto_en) {
         gpio_config_t en = {.pin_bit_mask = 1ULL << the_board.opto_en, .mode = GPIO_MODE_OUTPUT};
         gpio_config(&en);
         gpio_set_level(the_board.opto_en, 0);
@@ -101,6 +120,12 @@ void board_init(void) {
         gpio_config(&led);
         gpio_set_level(the_board.led, 0);
     }
+#ifdef TRS_RING
+    // Hold the RING high: a Type A port, the data is on the TIP.
+    gpio_config_t ring = {.pin_bit_mask = 1ULL << TRS_RING, .mode = GPIO_MODE_OUTPUT};
+    gpio_config(&ring);
+    gpio_set_level(TRS_RING, 1);
+#endif
     if (the_board.button != GPIO_NUM_NC) {
         gpio_config_t btn = {
             .pin_bit_mask = 1ULL << the_board.button, .mode = GPIO_MODE_INPUT, .pull_up_en = GPIO_PULLUP_ENABLE};
